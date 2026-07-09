@@ -11,11 +11,17 @@ class EscuelaController
     public function procesarArchivos(): void
     {
         $this->validarToken();
-        $campos = ['archivo_seg', 'archivo_oficializacion', 'archivo_cfe_a', 'archivo_cfe_b'];
-        foreach ($campos as $campo) {
+        $camposRequeridos = ['archivo_seg', 'archivo_oficializacion', 'archivo_cfe_a'];
+        $campos = $camposRequeridos;
+        if (isset($_FILES['archivo_cfe_b']) && $_FILES['archivo_cfe_b']['error'] === UPLOAD_ERR_OK) {
+            $campos[] = 'archivo_cfe_b';
+        }
+        foreach ($camposRequeridos as $campo) {
             if (!isset($_FILES[$campo]) || $_FILES[$campo]['error'] !== UPLOAD_ERR_OK) {
-                $this->responder(['ok' => false, 'error' => 'Carga los cuatro archivos requeridos para la consolidacion.'], 422);
+                $this->responder(['ok' => false, 'error' => 'Carga estructura SEG, Oficializacion 911 y al menos un reporte CFE.'], 422);
             }
+        }
+        foreach ($campos as $campo) {
             $extension = strtolower(pathinfo($_FILES[$campo]['name'], PATHINFO_EXTENSION));
             if (!in_array($extension, ['xlsx', 'xls'], true)) {
                 $this->responder(['ok' => false, 'error' => 'Solo se admiten archivos Excel XLSX o XLS.'], 422);
@@ -37,9 +43,11 @@ class EscuelaController
                 . ' ' . escapeshellarg($script)
                 . ' ' . escapeshellarg($rutas['archivo_seg'])
                 . ' ' . escapeshellarg($rutas['archivo_oficializacion'])
-                . ' ' . escapeshellarg($rutas['archivo_cfe_a'])
-                . ' ' . escapeshellarg($rutas['archivo_cfe_b'])
-                . ' 2>&1';
+                . ' ' . escapeshellarg($rutas['archivo_cfe_a']);
+            if (isset($rutas['archivo_cfe_b'])) {
+                $comando .= ' ' . escapeshellarg($rutas['archivo_cfe_b']);
+            }
+            $comando .= ' 2>&1';
             $salida = shell_exec($comando);
             $lineas = is_string($salida)
                 ? array_values(array_filter(array_map('trim', preg_split('/\R/', $salida))))

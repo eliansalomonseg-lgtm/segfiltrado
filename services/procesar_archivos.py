@@ -167,7 +167,7 @@ try:
         )
         return similitud, similitud + prioridad, nivel_coincide
 
-    def procesar(ruta_seg, ruta_oficializacion, ruta_cfe_a, ruta_cfe_b):
+    def procesar(ruta_seg, ruta_oficializacion, ruta_cfe_a, ruta_cfe_b=None):
         columnas_seg = ["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "NIVEL", "SUBNIVEL", "HOMO", "ADMINISTRATIVO"]
         columnas_cfe = ["RPU", "NOMBRE", "DIRECCION", "POBLACION", "TARIFA"]
         catalogo_seg = cargar_excel_seg(ruta_seg, columnas_seg)
@@ -178,7 +178,7 @@ try:
         seg = seg[seg["CCT"].notna() & (seg["CCT"] != "")]
         seg = seg.drop_duplicates(subset=["CCT"], keep="first")
         cfe_a = cargar_excel_cfe(ruta_cfe_a, columnas_cfe)
-        cfe_b = cargar_excel_cfe(ruta_cfe_b, columnas_cfe)
+        cfe_b = cargar_excel_cfe(ruta_cfe_b, columnas_cfe) if ruta_cfe_b is not None else pd.DataFrame(columns=columnas_cfe)
         cfe = pd.concat([cfe_a, cfe_b], ignore_index=True)
         cfe["RPU"] = cfe["RPU"].map(limpiar)
         cfe = cfe[cfe["RPU"].notna() & (cfe["RPU"] != "")]
@@ -242,10 +242,11 @@ try:
             "resultados": resultados
         }
 
-    if len(sys.argv) != 5:
-        raise ValueError("Se requieren Catalogo SEG, Oficializacion 911 y dos periodos CFE.")
+    if len(sys.argv) not in {4, 5}:
+        raise ValueError("Se requieren Catalogo SEG, Oficializacion 911 y al menos un reporte CFE.")
 
-    resultado = procesar(Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]))
+    ruta_cfe_b = Path(sys.argv[4]) if len(sys.argv) == 5 else None
+    resultado = procesar(Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), ruta_cfe_b)
     print(json.dumps(resultado, ensure_ascii=False))
 
 except Exception as e:

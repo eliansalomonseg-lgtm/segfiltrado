@@ -99,9 +99,9 @@ $segBasePath = '../';
                             <em class="file-name">Seleccionar archivo Excel</em>
                         </label>
                         <label class="drop-zone" data-input="archivo_cfe_b">
-                            <input id="archivo_cfe_b" name="archivo_cfe_b" type="file" accept=".xlsx,.xls" required>
+                            <input id="archivo_cfe_b" name="archivo_cfe_b" type="file" accept=".xlsx,.xls">
                             <span class="file-icon">4</span>
-                            <strong>4. Reporte CFE - Periodo B</strong>
+                            <strong>4. Reporte CFE - Periodo B (opcional)</strong>
                             <small>RPU, nombre, dirección, población y tarifa</small>
                             <em class="file-name">Seleccionar archivo Excel</em>
                         </label>
@@ -109,7 +109,7 @@ $segBasePath = '../';
                 </section>
             </div>
         </div>
-        <button class="btn-seg" type="submit">Procesar Consolidación Masiva (4 Flujos)</button>
+        <button class="btn-seg" type="submit">Procesar Consolidación Masiva</button>
         <div id="progress" class="progress-box" hidden>
             <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
             <span id="progress-text" class="progress-text">Preparando archivos...</span>
@@ -194,7 +194,7 @@ $segBasePath = '../';
         button.disabled = true;
         progress.hidden = false;
         bar.style.width = '8%';
-        text.textContent = 'Empaquetando los cuatro flujos de información...';
+        text.textContent = 'Empaquetando los archivos de información...';
         request.open('POST', controller);
         request.setRequestHeader('X-CSRF-Token', token);
         request.upload.onprogress = upload => {
@@ -206,7 +206,7 @@ $segBasePath = '../';
         };
         request.upload.onload = () => {
             bar.style.width = '75%';
-            text.textContent = 'Unificando escuelas, periodos CFE y calculando coincidencias...';
+            text.textContent = 'Unificando escuelas, reporte CFE y calculando coincidencias...';
         };
         request.onload = () => {
             button.disabled = false;
