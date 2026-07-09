@@ -15,6 +15,20 @@ try:
 
     warnings.filterwarnings("ignore")
 
+    MAPA_HOMO = {
+        "DCC": ("PREESCOLAR", "Preescolar Indígena"),
+        "DDI": ("PREESCOLAR", "Preescolar General"),
+        "DJN": ("PREESCOLAR", "Preescolar General"),
+        "DCI": ("PRIMARIA", "Primaria Indígena"),
+        "DPB": ("PRIMARIA", "Primaria Indígena"),
+        "DPR": ("PRIMARIA", "Primaria General"),
+        "DST": ("SECUNDARIA", "Secundaria Técnica"),
+        "DTV": ("TELESECUNDARIA", "Telesecundaria"),
+        "DES": ("SECUNDARIA", "Secundaria General"),
+        "DSM": ("SECUNDARIA", "Secundaria General"),
+        "DSN": ("SECUNDARIA", "Secundaria General"),
+    }
+
     def normalizar(valor):
         if valor is None or pd.isna(valor):
             return ""
@@ -29,55 +43,83 @@ try:
             return str(int(valor))
         return str(valor).strip()
 
+    def normalizar_codigo(valor):
+        return normalizar(valor).replace(" ", "")
+
+    def preparar_columnas(datos):
+        datos.columns = [normalizar_codigo(columna) for columna in datos.columns]
+        return datos
+
+    def filtrar_publico(datos, columna, origen):
+        if columna not in datos.columns:
+            raise ValueError(f"Faltan columnas {origen}: {columna}")
+        return datos[datos[columna].map(normalizar) == "PUBLICO"].copy()
+
+    def mapear_homo(valor):
+        homo = normalizar_codigo(valor)
+        if homo.startswith("F"):
+            return "OFICINA/ZONA ADMINISTRATIVA", "OFICINA/ZONA ADMINISTRATIVA", True
+        nivel, subnivel = MAPA_HOMO.get(homo, ("SIN CLASIFICAR", "Sin clasificar"))
+        return nivel, subnivel, False
+
+    def aplicar_homo(datos):
+        datos["HOMO"] = datos["HOMO"].map(normalizar_codigo)
+        mapeos = datos["HOMO"].map(mapear_homo)
+        datos["NIVEL"] = [mapeo[0] for mapeo in mapeos]
+        datos["SUBNIVEL"] = [mapeo[1] for mapeo in mapeos]
+        datos["ADMINISTRATIVO"] = [mapeo[2] for mapeo in mapeos]
+        return datos
+
     def cargar_excel_seg(ruta, columnas):
-        datos = pd.read_excel(ruta, dtype=object)
-        datos.columns = [normalizar(columna).replace(" ", "") for columna in datos.columns]
-        faltantes = [columna for columna in columnas if columna not in datos.columns]
+        datos = preparar_columnas(pd.read_excel(ruta, dtype=object))
+        requeridas = ["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "HOMO", "SOSTCONTROL"]
+        faltantes = [columna for columna in requeridas if columna not in datos.columns]
         if faltantes:
             raise ValueError(f"Faltan columnas SEG: {', '.join(faltantes)}")
+        datos = filtrar_publico(datos, "SOSTCONTROL", "SEG")
+        datos = aplicar_homo(datos)
         return datos[columnas].copy()
 
     def cargar_excel_oficializacion(ruta_oficializacion):
         try:
-            df_raw_ofic = pd.read_excel(ruta_oficializacion, header=None, dtype=object)
-            df_ofic = None
-            columnas_ofic_req = ["CV_CCT", "NOMBRECT", "C_NOM_MUN", "C_NOM_LOC", "TIPO"]
-            for idx, row in df_raw_ofic.iterrows():
-                row_clean = [str(x).strip().upper() for x in row.values]
-                if "CV_CCT" in row_clean and "NOMBRECT" in row_clean:
-                    df_ofic = pd.read_excel(ruta_oficializacion, header=idx, dtype=object)
+            crudos = pd.read_excel(ruta_oficializacion, header=None, dtype=object)
+            datos = None
+            columnas_requeridas = ["CVCCT", "NOMBRECT", "CNOMMUN", "CNOMLOC", "HOMO", "CONTROL"]
+            for indice, fila in crudos.iterrows():
+                valores = [normalizar_codigo(valor) for valor in fila.values]
+                if "CVCCT" in valores and "NOMBRECT" in valores:
+                    datos = preparar_columnas(pd.read_excel(ruta_oficializacion, header=indice, dtype=object))
                     break
-            if df_ofic is None:
-                raise ValueError("No se encontró la fila de cabeceras en el archivo de Oficialización 911.")
-            df_ofic.columns = [str(c).strip() for c in df_ofic.columns]
-            faltantes_ofic = [col for col in columnas_ofic_req if col not in df_ofic.columns]
-            if faltantes_ofic:
-                raise ValueError(f"Faltan columnas Oficialización 911: {', '.join(faltantes_ofic)}")
+            if datos is None:
+                raise ValueError("No se encontro la fila de cabeceras en el archivo de Oficializacion 911.")
+            faltantes = [columna for columna in columnas_requeridas if columna not in datos.columns]
+            if faltantes:
+                raise ValueError(f"Faltan columnas Oficializacion 911: {', '.join(faltantes)}")
         except Exception as e:
-            raise ValueError(f"Error al procesar Oficialización: {str(e)}") from e
-        datos = df_ofic[columnas_ofic_req].rename(columns={
-            "CV_CCT": "CCT",
-            "C_NOM_MUN": "NOMBREMUN",
-            "C_NOM_LOC": "NOMBRELOC",
-            "TIPO": "NIVEL"
+            raise ValueError(f"Error al procesar Oficializacion: {str(e)}") from e
+
+        datos = filtrar_publico(datos, "CONTROL", "Oficializacion 911")
+        datos = aplicar_homo(datos)
+        datos = datos[columnas_requeridas + ["NIVEL", "SUBNIVEL", "ADMINISTRATIVO"]].rename(columns={
+            "CVCCT": "CCT",
+            "CNOMMUN": "NOMBREMUN",
+            "CNOMLOC": "NOMBRELOC",
         })
         datos["STATUS"] = "ACTIVO"
-        return datos[["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "NIVEL"]]
+        return datos[["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "NIVEL", "SUBNIVEL", "HOMO", "ADMINISTRATIVO"]].copy()
 
     def cargar_excel_cfe(ruta, columnas):
-        datos = pd.read_excel(ruta, header=2, dtype=object)
-        datos.columns = [normalizar(columna).replace(" ", "") for columna in datos.columns]
+        datos = preparar_columnas(pd.read_excel(ruta, header=2, dtype=object))
         if not all(columna in datos.columns for columna in columnas):
-            datos_crudos = pd.read_excel(ruta, header=None, dtype=object)
+            crudos = pd.read_excel(ruta, header=None, dtype=object)
             fila_cabecera = None
-            for indice, fila in datos_crudos.iterrows():
-                valores = [normalizar(valor).replace(" ", "") for valor in fila.values]
+            for indice, fila in crudos.iterrows():
+                valores = [normalizar_codigo(valor) for valor in fila.values]
                 if "RPU" in valores and "POBLACION" in valores:
                     fila_cabecera = indice
                     break
             if fila_cabecera is not None:
-                datos = pd.read_excel(ruta, header=fila_cabecera, dtype=object)
-                datos.columns = [normalizar(columna).replace(" ", "") for columna in datos.columns]
+                datos = preparar_columnas(pd.read_excel(ruta, header=fila_cabecera, dtype=object))
         faltantes = [columna for columna in columnas if columna not in datos.columns]
         if faltantes:
             raise ValueError(f"Faltan columnas reales CFE: {', '.join(faltantes)}")
@@ -95,8 +137,20 @@ try:
             return "SECUNDARIA"
         return None
 
+    def coincide_nivel(nivel_cfe, escuela):
+        if nivel_cfe is None:
+            return False
+        nivel = normalizar(escuela["NIVEL"])
+        subnivel = normalizar(escuela["SUBNIVEL"])
+        if nivel_cfe == "TELESECUNDARIA":
+            return nivel == "TELESECUNDARIA" or subnivel == "TELESECUNDARIA"
+        return nivel == nivel_cfe
+
     def esta_activa(status):
         return normalizar(limpiar(status)) in {"1", "ACTIVO", "ACTIVA"}
+
+    def es_administrativa(escuela):
+        return bool(escuela["ADMINISTRATIVO"])
 
     def puntuar(nombre_cfe, escuela):
         similitud = SequenceMatcher(
@@ -105,18 +159,21 @@ try:
             normalizar(escuela["NOMBRECT"])
         ).ratio() * 100
         nivel_cfe = identificar_nivel(nombre_cfe)
-        nivel_seg = normalizar(escuela["NIVEL"]).replace(" ", "")
-        nivel_coincide = nivel_cfe is not None and nivel_cfe in nivel_seg
-        prioridad = (10 if esta_activa(escuela["STATUS"]) else 0) + (40 if nivel_coincide else 0)
+        nivel_coincide = coincide_nivel(nivel_cfe, escuela)
+        prioridad = (
+            (10 if esta_activa(escuela["STATUS"]) else 0)
+            + (60 if nivel_coincide else 0)
+            - (1000 if es_administrativa(escuela) else 0)
+        )
         return similitud, similitud + prioridad, nivel_coincide
 
     def procesar(ruta_seg, ruta_oficializacion, ruta_cfe_a, ruta_cfe_b):
-        columnas_seg = ["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "NIVEL"]
+        columnas_seg = ["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "NIVEL", "SUBNIVEL", "HOMO", "ADMINISTRATIVO"]
         columnas_cfe = ["RPU", "NOMBRE", "DIRECCION", "POBLACION", "TARIFA"]
         catalogo_seg = cargar_excel_seg(ruta_seg, columnas_seg)
         oficializacion = cargar_excel_oficializacion(ruta_oficializacion)
-        catalogo_seg["CCT"] = catalogo_seg["CCT"].map(lambda valor: normalizar(valor).replace(" ", ""))
-        oficializacion["CCT"] = oficializacion["CCT"].map(lambda valor: normalizar(valor).replace(" ", ""))
+        catalogo_seg["CCT"] = catalogo_seg["CCT"].map(normalizar_codigo)
+        oficializacion["CCT"] = oficializacion["CCT"].map(normalizar_codigo)
         seg = pd.concat([catalogo_seg, oficializacion], ignore_index=True)
         seg = seg[seg["CCT"].notna() & (seg["CCT"] != "")]
         seg = seg.drop_duplicates(subset=["CCT"], keep="first")
@@ -144,16 +201,19 @@ try:
                     "localidad": limpiar(escuela["NOMBRELOC"]),
                     "status": limpiar(escuela["STATUS"]),
                     "nivel": limpiar(escuela["NIVEL"]),
-                    "subnivel": limpiar(escuela["NIVEL"]),
+                    "subnivel": limpiar(escuela["SUBNIVEL"]),
+                    "homo": limpiar(escuela["HOMO"]),
+                    "administrativo": es_administrativa(escuela),
                     "similitud": round(similitud, 2),
                     "puntaje_predictivo": round(puntuacion, 2),
                     "nivel_coincide": nivel_coincide
                 })
-            opciones_nivel = [opcion for opcion in opciones if opcion["nivel_coincide"]]
+            opciones_nivel = [opcion for opcion in opciones if opcion["nivel_coincide"] and not opcion["administrativo"]]
             if nivel_cfe is not None and opciones_nivel:
                 opciones = opciones_nivel
             opciones.sort(
                 key=lambda opcion: (
+                    not opcion["administrativo"],
                     opcion["puntaje_predictivo"],
                     opcion["similitud"],
                     esta_activa(opcion["status"])
@@ -183,7 +243,7 @@ try:
         }
 
     if len(sys.argv) != 5:
-        raise ValueError("Se requieren Catálogo SEG, Oficialización 911 y dos periodos CFE.")
+        raise ValueError("Se requieren Catalogo SEG, Oficializacion 911 y dos periodos CFE.")
 
     resultado = procesar(Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]))
     print(json.dumps(resultado, ensure_ascii=False))
