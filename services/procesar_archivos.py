@@ -1,162 +1,158 @@
-import argparse
-import json
-import math
-import re
 import sys
-import unicodedata
-import warnings
-from difflib import SequenceMatcher
-from pathlib import Path
+import json
 
-import pandas as pd
+sys.stdout.reconfigure(encoding="utf-8")
 
-warnings.filterwarnings("ignore", category=UserWarning)
-warnings.filterwarnings("ignore")
+try:
+    import math
+    import re
+    import unicodedata
+    import warnings
+    from difflib import SequenceMatcher
+    from pathlib import Path
 
+    import pandas as pd
 
-def normalizar(valor):
-    if pd.isna(valor) or valor is None:
-        return ""
-    texto = unicodedata.normalize("NFKD", str(valor))
-    texto = "".join(letra for letra in texto if not unicodedata.combining(letra))
-    return re.sub(r"\s+", " ", re.sub(r"[^A-Z0-9 ]", " ", texto.upper())).strip()
+    warnings.filterwarnings("ignore")
 
+    def normalizar(valor):
+        if valor is None or pd.isna(valor):
+            return ""
+        texto = unicodedata.normalize("NFKD", str(valor))
+        texto = "".join(letra for letra in texto if not unicodedata.combining(letra))
+        return re.sub(r"\s+", " ", re.sub(r"[^A-Z0-9 ]", " ", texto.upper())).strip()
 
-def limpiar(valor):
-    if pd.isna(valor) or valor is None:
-        return None
-    if isinstance(valor, float) and math.isfinite(valor) and valor.is_integer():
-        return str(int(valor))
-    return str(valor).strip()
+    def limpiar(valor):
+        if valor is None or pd.isna(valor):
+            return None
+        if isinstance(valor, float) and math.isfinite(valor) and valor.is_integer():
+            return str(int(valor))
+        return str(valor).strip()
 
-
-def cargar_excel(ruta, columnas, saltar_filas=0):
-    datos = pd.read_excel(ruta, skiprows=saltar_filas, dtype=object)
-    datos.columns = [normalizar(columna).replace(" ", "") for columna in datos.columns]
-    faltantes = [columna for columna in columnas if columna not in datos.columns]
-    if faltantes:
-        raise ValueError(f"Faltan columnas en {ruta.name}: {', '.join(faltantes)}")
-    return datos[columnas].copy()
-
-
-def nivel_referencia(nombre):
-    texto = normalizar(nombre)
-    if any(termino in texto for termino in ["KINDER", "JARDIN DE NINOS", "PREESCOLAR"]):
-        return ["KINDER", "PREESC", "JARDIN"]
-    if "PRIM" in texto:
-        return ["PRIM"]
-    if "SECUND" in texto or "TELESEC" in texto:
-        return ["SECUND", "TELESEC"]
-    return []
-
-
-def esta_activa(status):
-    return normalizar(limpiar(status)) in {"1", "ACTIVO", "ACTIVA"}
-
-
-def puntuar(nombre_cfe, escuela):
-    similitud = SequenceMatcher(
-        None,
-        normalizar(nombre_cfe),
-        normalizar(escuela["NOMBRECT"])
-    ).ratio() * 100
-    terminos = nivel_referencia(nombre_cfe)
-    subnivel = normalizar(escuela["SUBNIVEL"])
-    nivel_coincide = bool(terminos) and any(termino in subnivel for termino in terminos)
-    prioridad = (10 if esta_activa(escuela["STATUS"]) else 0) + (15 if nivel_coincide else 0)
-    return similitud, similitud + prioridad, nivel_coincide
-
-
-def procesar(ruta_seg, ruta_cfe):
-    columnas_seg = ["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "SUBNIVEL"]
-    seg = cargar_excel(ruta_seg, columnas_seg)
-    try:
-        df_cfe = pd.read_excel(ruta_cfe, header=2)
-        columnas_requeridas = ["RPU", "NOMBRE", "DIRECCION", "POBLACION", "TARIFA"]
-        if not all(col in df_cfe.columns for col in columnas_requeridas):
-            df_raw = pd.read_excel(ruta_cfe, header=None)
-            for idx, row in df_raw.iterrows():
-                row_values = [str(x).strip().upper() for x in row.values]
-                if "RPU" in row_values and "POBLACION" in row_values:
-                    df_cfe = pd.read_excel(ruta_cfe, header=idx)
-                    break
-        df_cfe.columns = [str(c).strip() for c in df_cfe.columns]
-        faltantes = [col for col in columnas_requeridas if col not in df_cfe.columns]
+    def cargar_excel_seg(ruta, columnas):
+        datos = pd.read_excel(ruta, dtype=object)
+        datos.columns = [normalizar(columna).replace(" ", "") for columna in datos.columns]
+        faltantes = [columna for columna in columnas if columna not in datos.columns]
         if faltantes:
-            print(json.dumps({"ok": False, "error": f"Faltan columnas reales: {', '.join(faltantes)}"}))
-            sys.exit(1)
-    except Exception as e:
-        print(json.dumps({"ok": False, "error": f"Error al procesar el Excel: {str(e)}"}))
-        sys.exit(1)
-    cfe = df_cfe[columnas_requeridas].copy()
-    cfe["RPU"] = cfe["RPU"].map(limpiar)
-    cfe = cfe[cfe["RPU"].notna() & (cfe["RPU"] != "")]
-    cfe = cfe.groupby("RPU", as_index=False, sort=True).agg({
-        "NOMBRE": "last",
-        "DIRECCION": "last",
-        "POBLACION": "last",
-        "TARIFA": "last"
-    })
-    indice_localidades = {}
-    for _, escuela in seg.iterrows():
-        localidad = normalizar(escuela["NOMBRELOC"])
-        if localidad:
-            indice_localidades.setdefault(localidad, []).append(escuela)
-    resultados = []
-    for _, medidor in cfe.iterrows():
-        opciones = []
-        for escuela in indice_localidades.get(normalizar(medidor["POBLACION"]), []):
-            similitud, puntuacion, nivel_coincide = puntuar(medidor["NOMBRE"], escuela)
-            opciones.append({
-                "cct": limpiar(escuela["CCT"]),
-                "nombre_escuela": limpiar(escuela["NOMBRECT"]),
-                "municipio": limpiar(escuela["NOMBREMUN"]),
-                "localidad": limpiar(escuela["NOMBRELOC"]),
-                "status": limpiar(escuela["STATUS"]),
-                "subnivel": limpiar(escuela["SUBNIVEL"]),
-                "similitud": round(similitud, 2),
-                "puntaje_predictivo": round(puntuacion, 2),
-                "nivel_coincide": nivel_coincide
-            })
-        opciones.sort(
-            key=lambda opcion: (
-                esta_activa(opcion["status"]),
-                opcion["nivel_coincide"],
-                opcion["puntaje_predictivo"],
-                opcion["similitud"]
-            ),
-            reverse=True
-        )
-        resultados.append({
-            "rpu": limpiar(medidor["RPU"]),
-            "nombre_cfe": limpiar(medidor["NOMBRE"]),
-            "direccion_cfe": limpiar(medidor["DIRECCION"]),
-            "poblacion_cfe": limpiar(medidor["POBLACION"]),
-            "tarifa_cfe": limpiar(medidor["TARIFA"]),
-            "opciones": opciones[:3]
+            raise ValueError(f"Faltan columnas SEG: {', '.join(faltantes)}")
+        return datos[columnas].copy()
+
+    def cargar_excel_cfe(ruta, columnas):
+        datos = pd.read_excel(ruta, header=2, dtype=object)
+        datos.columns = [normalizar(columna).replace(" ", "") for columna in datos.columns]
+        if not all(columna in datos.columns for columna in columnas):
+            datos_crudos = pd.read_excel(ruta, header=None, dtype=object)
+            fila_cabecera = None
+            for indice, fila in datos_crudos.iterrows():
+                valores = [normalizar(valor).replace(" ", "") for valor in fila.values]
+                if "RPU" in valores and "POBLACION" in valores:
+                    fila_cabecera = indice
+                    break
+            if fila_cabecera is not None:
+                datos = pd.read_excel(ruta, header=fila_cabecera, dtype=object)
+                datos.columns = [normalizar(columna).replace(" ", "") for columna in datos.columns]
+        faltantes = [columna for columna in columnas if columna not in datos.columns]
+        if faltantes:
+            raise ValueError(f"Faltan columnas reales CFE: {', '.join(faltantes)}")
+        return datos[columnas].copy()
+
+    def identificar_nivel(nombre):
+        texto = normalizar(nombre)
+        if any(termino in texto for termino in ["TELE", "TV", "TS"]):
+            return "TELESECUNDARIA"
+        if any(termino in texto for termino in ["JN", "JARDIN", "KINDER", "PREES"]):
+            return "PREESCOLAR"
+        if any(termino in texto for termino in ["PRIM", "ESC PRIM", "FED REG"]):
+            return "PRIMARIA"
+        if any(termino in texto for termino in ["SEC", "TEC", "EST", "GRAL"]):
+            return "SECUNDARIA"
+        return None
+
+    def esta_activa(status):
+        return normalizar(limpiar(status)) in {"1", "ACTIVO", "ACTIVA"}
+
+    def puntuar(nombre_cfe, escuela):
+        similitud = SequenceMatcher(
+            None,
+            normalizar(nombre_cfe),
+            normalizar(escuela["NOMBRECT"])
+        ).ratio() * 100
+        nivel_cfe = identificar_nivel(nombre_cfe)
+        nivel_seg = normalizar(escuela["NIVEL"])
+        nivel_coincide = nivel_cfe is not None and nivel_seg == nivel_cfe
+        prioridad = (10 if esta_activa(escuela["STATUS"]) else 0) + (25 if nivel_coincide else 0)
+        return similitud, similitud + prioridad, nivel_coincide
+
+    def procesar(ruta_seg, ruta_cfe):
+        columnas_seg = ["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "NIVEL"]
+        columnas_cfe = ["RPU", "NOMBRE", "DIRECCION", "POBLACION", "TARIFA"]
+        seg = cargar_excel_seg(ruta_seg, columnas_seg)
+        cfe = cargar_excel_cfe(ruta_cfe, columnas_cfe)
+        cfe["RPU"] = cfe["RPU"].map(limpiar)
+        cfe = cfe[cfe["RPU"].notna() & (cfe["RPU"] != "")]
+        cfe = cfe.groupby("RPU", as_index=False, sort=True).agg({
+            "NOMBRE": "last",
+            "DIRECCION": "last",
+            "POBLACION": "last",
+            "TARIFA": "last"
         })
-    return {
-        "ok": True,
-        "resumen": {
-            "registros_seg": len(seg),
-            "rpu_unicos": len(cfe),
-            "rpu_con_sugerencias": sum(bool(registro["opciones"]) for registro in resultados)
-        },
-        "resultados": resultados
-    }
+        indice_localidades = {}
+        for _, escuela in seg.iterrows():
+            localidad = normalizar(escuela["NOMBRELOC"])
+            if localidad:
+                indice_localidades.setdefault(localidad, []).append(escuela)
+        resultados = []
+        for _, medidor in cfe.iterrows():
+            opciones = []
+            for escuela in indice_localidades.get(normalizar(medidor["POBLACION"]), []):
+                similitud, puntuacion, nivel_coincide = puntuar(medidor["NOMBRE"], escuela)
+                opciones.append({
+                    "cct": limpiar(escuela["CCT"]),
+                    "nombre_escuela": limpiar(escuela["NOMBRECT"]),
+                    "municipio": limpiar(escuela["NOMBREMUN"]),
+                    "localidad": limpiar(escuela["NOMBRELOC"]),
+                    "status": limpiar(escuela["STATUS"]),
+                    "nivel": limpiar(escuela["NIVEL"]),
+                    "subnivel": limpiar(escuela["NIVEL"]),
+                    "similitud": round(similitud, 2),
+                    "puntaje_predictivo": round(puntuacion, 2),
+                    "nivel_coincide": nivel_coincide
+                })
+            opciones.sort(
+                key=lambda opcion: (
+                    esta_activa(opcion["status"]),
+                    opcion["puntaje_predictivo"],
+                    opcion["similitud"]
+                ),
+                reverse=True
+            )
+            resultados.append({
+                "rpu": limpiar(medidor["RPU"]),
+                "nombre_cfe": limpiar(medidor["NOMBRE"]),
+                "direccion_cfe": limpiar(medidor["DIRECCION"]),
+                "poblacion_cfe": limpiar(medidor["POBLACION"]),
+                "tarifa_cfe": limpiar(medidor["TARIFA"]),
+                "opciones": opciones[:3]
+            })
+        return {
+            "ok": True,
+            "resumen": {
+                "registros_seg": len(seg),
+                "rpu_unicos": len(cfe),
+                "rpu_con_sugerencias": sum(bool(registro["opciones"]) for registro in resultados)
+            },
+            "resultados": resultados
+        }
 
+    if len(sys.argv) != 3:
+        raise ValueError("Se requieren las rutas de los archivos SEG y CFE.")
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("archivo_seg", type=Path)
-    parser.add_argument("archivo_cfe", type=Path)
-    argumentos = parser.parse_args()
-    try:
-        print(json.dumps(procesar(argumentos.archivo_seg, argumentos.archivo_cfe), ensure_ascii=False))
-    except Exception as error:
-        print(json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False))
-        sys.exit(1)
+    resultado = procesar(Path(sys.argv[1]), Path(sys.argv[2]))
+    print(json.dumps(resultado, ensure_ascii=False))
 
-
-if __name__ == "__main__":
-    main()
+except Exception as e:
+    print(json.dumps({
+        "ok": False,
+        "error": f"Error interno en el motor de Python: {str(e)}"
+    }, ensure_ascii=False))
+    sys.exit(1)
