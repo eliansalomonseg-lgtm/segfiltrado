@@ -78,6 +78,7 @@ try:
             raise ValueError(f"Faltan columnas SEG: {', '.join(faltantes)}")
         datos = filtrar_publico(datos, "SOSTCONTROL", "SEG")
         datos = aplicar_homo(datos)
+        datos["ORIGEN"] = "Catalogo SEG"
         return datos[columnas].copy()
 
     def cargar_excel_oficializacion(ruta_oficializacion):
@@ -106,7 +107,8 @@ try:
             "CNOMLOC": "NOMBRELOC",
         })
         datos["STATUS"] = "ACTIVO"
-        return datos[["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "NIVEL", "SUBNIVEL", "HOMO", "ADMINISTRATIVO"]].copy()
+        datos["ORIGEN"] = "Oficializacion 911"
+        return datos[["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "NIVEL", "SUBNIVEL", "HOMO", "ADMINISTRATIVO", "ORIGEN"]].copy()
 
     def cargar_excel_cfe(ruta, columnas):
         datos = preparar_columnas(pd.read_excel(ruta, header=2, dtype=object))
@@ -168,7 +170,7 @@ try:
         return similitud, similitud + prioridad, nivel_coincide
 
     def procesar(ruta_seg, ruta_oficializacion, ruta_cfe_a, ruta_cfe_b=None):
-        columnas_seg = ["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "NIVEL", "SUBNIVEL", "HOMO", "ADMINISTRATIVO"]
+        columnas_seg = ["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "NIVEL", "SUBNIVEL", "HOMO", "ADMINISTRATIVO", "ORIGEN"]
         columnas_cfe = ["RPU", "NOMBRE", "DIRECCION", "POBLACION", "TARIFA"]
         catalogo_seg = cargar_excel_seg(ruta_seg, columnas_seg)
         oficializacion = cargar_excel_oficializacion(ruta_oficializacion)
@@ -176,7 +178,7 @@ try:
         oficializacion["CCT"] = oficializacion["CCT"].map(normalizar_codigo)
         seg = pd.concat([catalogo_seg, oficializacion], ignore_index=True)
         seg = seg[seg["CCT"].notna() & (seg["CCT"] != "")]
-        seg = seg.drop_duplicates(subset=["CCT"], keep="first")
+        seg = seg.drop_duplicates(subset=["CCT"], keep="last")
         cfe_a = cargar_excel_cfe(ruta_cfe_a, columnas_cfe)
         cfe_b = cargar_excel_cfe(ruta_cfe_b, columnas_cfe) if ruta_cfe_b is not None else pd.DataFrame(columns=columnas_cfe)
         cfe = pd.concat([cfe_a, cfe_b], ignore_index=True)
@@ -203,6 +205,7 @@ try:
                     "nivel": limpiar(escuela["NIVEL"]),
                     "subnivel": limpiar(escuela["SUBNIVEL"]),
                     "homo": limpiar(escuela["HOMO"]),
+                    "origen": limpiar(escuela["ORIGEN"]),
                     "administrativo": es_administrativa(escuela),
                     "similitud": round(similitud, 2),
                     "puntaje_predictivo": round(puntuacion, 2),

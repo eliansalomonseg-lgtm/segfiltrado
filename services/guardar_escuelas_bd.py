@@ -56,7 +56,8 @@ try:
         if faltantes:
             raise ValueError(f"Faltan columnas Catalogo SEG: {', '.join(faltantes)}")
         datos = datos[datos["SOSTCONTROL"].map(normalizar) == "PUBLICO"].copy()
-        return datos[["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "SUBNIVEL"]]
+        datos["_PRIORIDAD_ORIGEN"] = 0
+        return datos[["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "SUBNIVEL", "_PRIORIDAD_ORIGEN"]]
 
     def leer_oficializacion(ruta):
         crudos = pd.read_excel(ruta, header=None, dtype=object)
@@ -80,6 +81,7 @@ try:
             "NOMBRELOC": datos["CNOMLOC"],
             "STATUS": datos["STATUS"] if "STATUS" in datos.columns else "ACTIVO",
             "SUBNIVEL": datos["SUBNIVEL"] if "SUBNIVEL" in datos.columns else datos["TIPO"] if "TIPO" in datos.columns else datos["HOMO"] if "HOMO" in datos.columns else None,
+            "_PRIORIDAD_ORIGEN": 1,
         })
         return salida
 
@@ -87,7 +89,7 @@ try:
         datos = pd.concat(conjuntos, ignore_index=True)
         datos["CCT"] = datos["CCT"].map(normalizar_codigo)
         datos = datos[datos["CCT"].notna() & (datos["CCT"] != "")]
-        datos = datos.drop_duplicates(subset=["CCT"], keep="first")
+        datos = datos.sort_values("_PRIORIDAD_ORIGEN").drop_duplicates(subset=["CCT"], keep="last")
         registros = []
         for _, fila in datos.iterrows():
             registros.append((

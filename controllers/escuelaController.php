@@ -154,25 +154,27 @@ class EscuelaController
         }
         $marcadores = implode(',', array_fill(0, count($rpus), '?'));
         $consulta = Conexion::conectar()->prepare(
-            "SELECT er.RPU, er.CCT, e.NOMBRECT FROM escuelas_rpu er LEFT JOIN escuelas e ON e.CCT = er.CCT WHERE er.RPU IN ($marcadores)"
+            "SELECT er.RPU, er.CCT, e.NOMBRECT FROM escuelas_rpu er LEFT JOIN escuelas e ON e.CCT = er.CCT WHERE er.RPU IN ($marcadores) ORDER BY er.RPU, er.id"
         );
         $consulta->execute($rpus);
         $vinculos = [];
         foreach ($consulta->fetchAll() as $fila) {
-            $vinculos[(string) $fila['RPU']] = [
+            $vinculos[(string) $fila['RPU']][] = [
                 'cct' => (string) $fila['CCT'],
                 'nombre_escuela' => $fila['NOMBRECT'] ?? null
             ];
         }
         foreach ($resultado['resultados'] as &$registro) {
             $rpu = (string) ($registro['rpu'] ?? '');
-            $vinculo = $vinculos[$rpu] ?? null;
-            $registro['vinculo_confirmado'] = $vinculo !== null;
-            $registro['cct_vinculado'] = $vinculo['cct'] ?? null;
-            $registro['nombre_escuela_vinculada'] = $vinculo['nombre_escuela'] ?? null;
+            $vinculosRpu = $vinculos[$rpu] ?? [];
+            $cctsVinculados = array_map(static fn (array $vinculo): string => (string) $vinculo['cct'], $vinculosRpu);
+            $registro['vinculo_confirmado'] = $vinculosRpu !== [];
+            $registro['vinculos_confirmados'] = $vinculosRpu;
+            $registro['cct_vinculado'] = $cctsVinculados[0] ?? null;
+            $registro['nombre_escuela_vinculada'] = $vinculosRpu[0]['nombre_escuela'] ?? null;
             if (!empty($registro['opciones']) && is_array($registro['opciones'])) {
                 foreach ($registro['opciones'] as &$opcion) {
-                    $opcion['vinculado'] = $vinculo !== null && (string) ($opcion['cct'] ?? '') === (string) $vinculo['cct'];
+                    $opcion['vinculado'] = in_array((string) ($opcion['cct'] ?? ''), $cctsVinculados, true);
                 }
                 unset($opcion);
             }
@@ -207,6 +209,7 @@ class EscuelaController
         $this->validarToken();
         try {
             $conexion = Conexion::conectar();
+            $this->prepararTablaVinculos($conexion);
             $cct = trim((string) ($_POST['CCT'] ?? $_POST['cct'] ?? ''));
             $rpu = trim((string) ($_POST['RPU'] ?? $_POST['rpu'] ?? ''));
             $nombreRecibo = trim((string) ($_POST['nombre_recibo_cfe'] ?? ''));
@@ -220,7 +223,7 @@ class EscuelaController
             $consulta = $conexion->prepare(
                 'INSERT INTO escuelas_rpu (CCT, RPU, nombre_recibo_cfe, poblacion_cfe, tarifa_cfe)
                  VALUES (:cct, :rpu, :nombre_recibo, :poblacion, :tarifa)
-                 ON DUPLICATE KEY UPDATE CCT = VALUES(CCT), nombre_recibo_cfe = VALUES(nombre_recibo_cfe), poblacion_cfe = VALUES(poblacion_cfe), tarifa_cfe = VALUES(tarifa_cfe)'
+                 ON DUPLICATE KEY UPDATE nombre_recibo_cfe = VALUES(nombre_recibo_cfe), poblacion_cfe = VALUES(poblacion_cfe), tarifa_cfe = VALUES(tarifa_cfe)'
             );
             $consulta->execute([
                 'cct' => $cct,
@@ -233,6 +236,43 @@ class EscuelaController
             $this->responder(['ok' => true, 'mensaje' => 'Vinculo registrado con exito en el padron de escuelas_rpu.']);
         } catch (Throwable $e) {
             $this->responder(['ok' => false, 'error' => 'Fallo de base de datos: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function eliminarVinculo(): void
+    {
+        $this->validarToken();
+        try {
+            $conexion = Conexion::conectar();
+            $this->prepararTablaVinculos($conexion);
+            $cct = trim((string) ($_POST['CCT'] ?? $_POST['cct'] ?? ''));
+            $rpu = trim((string) ($_POST['RPU'] ?? $_POST['rpu'] ?? ''));
+            if ($cct === '' || $rpu === '') {
+                throw new RuntimeException('Faltan los parametros obligatorios CCT o RPU.');
+            }
+            $consulta = $conexion->prepare('DELETE FROM escuelas_rpu WHERE CCT = :cct AND RPU = :rpu');
+            $consulta->execute(['cct' => $cct, 'rpu' => $rpu]);
+            $this->responder(['ok' => true, 'mensaje' => 'Vinculo eliminado correctamente.']);
+        } catch (Throwable $e) {
+            $this->responder(['ok' => false, 'error' => 'Fallo de base de datos: ' . $e->getMessage()], 500);
+        }
+    }
+
+    private function prepararTablaVinculos(PDO $conexion): void
+    {
+        $consulta = $conexion->query(
+            "SELECT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'escuelas_rpu' AND NON_UNIQUE = 0 GROUP BY INDEX_NAME HAVING SUM(COLUMN_NAME = 'RPU') = 1 AND COUNT(*) = 1"
+        );
+        foreach ($consulta->fetchAll(PDO::FETCH_COLUMN) as $indice) {
+            if ($indice !== 'PRIMARY') {
+                $conexion->exec('ALTER TABLE escuelas_rpu DROP INDEX `' . str_replace('`', '``', (string) $indice) . '`');
+            }
+        }
+        $consulta = $conexion->query(
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'escuelas_rpu' AND INDEX_NAME = 'uniq_escuela_rpu'"
+        );
+        if ((int) $consulta->fetchColumn() === 0) {
+            $conexion->exec('ALTER TABLE escuelas_rpu ADD UNIQUE KEY `uniq_escuela_rpu` (`CCT`, `RPU`)');
         }
     }
 
@@ -271,6 +311,10 @@ if ($accion === 'sincronizar_catalogos') {
 
 if ($accion === 'confirmar_vinculo') {
     $controlador->confirmarVinculo();
+}
+
+if ($accion === 'eliminar_vinculo') {
+    $controlador->eliminarVinculo();
 }
 
 http_response_code(400);
