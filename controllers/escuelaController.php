@@ -8,58 +8,48 @@ require_once dirname(__DIR__) . '/models/escuelaModel.php';
 
 class EscuelaController
 {
-    public function procesarPeriodos(): void
+    public function procesarArchivos(): void
     {
         $this->validarToken();
-        foreach (['archivo_mes_uno', 'archivo_mes_dos'] as $campo) {
+        foreach (['archivo_seg', 'archivo_cfe'] as $campo) {
             if (!isset($_FILES[$campo]) || $_FILES[$campo]['error'] !== UPLOAD_ERR_OK) {
-                $this->responder(['ok' => false, 'error' => 'Carga los dos archivos Excel de CFE.'], 422);
+                $this->responder(['ok' => false, 'error' => 'Carga el catálogo SEG y el reporte CFE.'], 422);
             }
-            if (!in_array(strtolower(pathinfo($_FILES[$campo]['name'], PATHINFO_EXTENSION)), ['xlsx', 'xls'], true)) {
-                $this->responder(['ok' => false, 'error' => 'Los dos archivos deben ser Excel.'], 422);
+            $extension = strtolower(pathinfo($_FILES[$campo]['name'], PATHINFO_EXTENSION));
+            if (!in_array($extension, ['xlsx', 'xls'], true)) {
+                $this->responder(['ok' => false, 'error' => 'Solo se admiten archivos Excel XLSX o XLS.'], 422);
             }
         }
-        $modelo = new EscuelaModel();
-        $archivoEscuelas = tempnam(sys_get_temp_dir(), 'seg_');
-        if ($archivoEscuelas === false) {
-            $this->responder(['ok' => false, 'error' => 'No fue posible preparar el catálogo SEG.'], 500);
-        }
+        $rutas = [];
         try {
-            file_put_contents(
-                $archivoEscuelas,
-                json_encode($modelo->obtenerEscuelas(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
-            );
+            foreach (['archivo_seg', 'archivo_cfe'] as $campo) {
+                $extension = strtolower(pathinfo($_FILES[$campo]['name'], PATHINFO_EXTENSION));
+                $ruta = sys_get_temp_dir() . DIRECTORY_SEPARATOR . bin2hex(random_bytes(16)) . '.' . $extension;
+                if (!move_uploaded_file($_FILES[$campo]['tmp_name'], $ruta)) {
+                    throw new RuntimeException('No fue posible almacenar temporalmente los archivos.');
+                }
+                $rutas[$campo] = $ruta;
+            }
             $python = getenv('PYTHON_BIN') ?: 'python';
             $script = dirname(__DIR__) . '/services/procesar_archivos.py';
             $comando = escapeshellcmd($python)
                 . ' ' . escapeshellarg($script)
-                . ' ' . escapeshellarg($_FILES['archivo_mes_uno']['tmp_name'])
-                . ' ' . escapeshellarg($_FILES['archivo_mes_dos']['tmp_name'])
-                . ' ' . escapeshellarg($archivoEscuelas);
-            $salidaPrecarga = shell_exec($comando . ' --solo-precarga 2>&1');
-            $precarga = is_string($salidaPrecarga) ? json_decode(trim($salidaPrecarga), true) : null;
-            if (!is_array($precarga) || empty($precarga['ok'])) {
-                $this->responder([
-                    'ok' => false,
-                    'error' => $precarga['error'] ?? 'No fue posible leer los dos periodos CFE.'
-                ], 422);
-            }
-            $modelo->reemplazarPrecarga($precarga['precarga'] ?? []);
-            $salida = shell_exec($comando . ' 2>&1');
+                . ' ' . escapeshellarg($rutas['archivo_seg'])
+                . ' ' . escapeshellarg($rutas['archivo_cfe'])
+                . ' 2>&1';
+            $salida = shell_exec($comando);
             $resultado = is_string($salida) ? json_decode(trim($salida), true) : null;
             if (!is_array($resultado)) {
-                $this->responder(['ok' => false, 'error' => 'El motor Python no devolvió una respuesta válida.'], 500);
+                $this->responder(['ok' => false, 'error' => 'El motor predictivo no devolvió un JSON válido.'], 500);
             }
-            if (empty($resultado['ok'])) {
-                $this->responder($resultado, 422);
-            }
-            unset($resultado['precarga']);
-            $this->responder($resultado);
+            $this->responder($resultado, !empty($resultado['ok']) ? 200 : 422);
         } catch (Throwable $e) {
-            $this->responder(['ok' => false, 'error' => 'No fue posible procesar los periodos CFE.'], 500);
+            $this->responder(['ok' => false, 'error' => $e->getMessage()], 500);
         } finally {
-            if (is_file($archivoEscuelas)) {
-                unlink($archivoEscuelas);
+            foreach ($rutas as $ruta) {
+                if (is_file($ruta)) {
+                    unlink($ruta);
+                }
             }
         }
     }
@@ -70,18 +60,25 @@ class EscuelaController
         $cct = trim((string) ($_POST['cct'] ?? ''));
         $rpu = trim((string) ($_POST['rpu'] ?? ''));
         $nombre = trim((string) ($_POST['nombre_recibo_cfe'] ?? ''));
-        if ($cct === '' || $rpu === '' || mb_strlen($cct) > 50 || mb_strlen($rpu) > 20 || mb_strlen($nombre) > 255) {
-            $this->responder(['ok' => false, 'error' => 'El vínculo seleccionado no es válido.'], 422);
+        $poblacion = trim((string) ($_POST['poblacion_cfe'] ?? ''));
+        $tarifa = trim((string) ($_POST['tarifa_cfe'] ?? ''));
+        if ($cct === '' || $rpu === '' || mb_strlen($cct) > 50 || mb_strlen($rpu) > 20) {
+            $this->responder(['ok' => false, 'error' => 'Los datos del vínculo no son válidos.'], 422);
         }
         try {
-            $modelo = new EscuelaModel();
-            if ($modelo->rpuRegistrado($rpu)) {
-                $this->responder(['ok' => false, 'error' => 'Este RPU ya está vinculado.'], 409);
+            if (EscuelaModel::rpuEnlazado($rpu)) {
+                $this->responder(['ok' => false, 'error' => 'El RPU ya se encuentra enlazado.'], 409);
             }
-            $modelo->insertarVinculo($cct, $rpu, $nombre !== '' ? $nombre : null);
-            $this->responder(['ok' => true, 'mensaje' => 'Vínculo confirmado correctamente.']);
+            EscuelaModel::guardarVinculacion(
+                $cct,
+                $rpu,
+                $nombre !== '' ? $nombre : null,
+                $poblacion !== '' ? $poblacion : null,
+                $tarifa !== '' ? $tarifa : null
+            );
+            $this->responder(['ok' => true, 'mensaje' => 'Vinculación guardada correctamente.']);
         } catch (Throwable $e) {
-            $this->responder(['ok' => false, 'error' => 'No fue posible guardar el vínculo.'], 500);
+            $this->responder(['ok' => false, 'error' => 'No fue posible guardar la vinculación.'], 500);
         }
     }
 
@@ -110,8 +107,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $controlador = new EscuelaController();
 $accion = $_POST['accion'] ?? '';
 
-if ($accion === 'procesar_periodos') {
-    $controlador->procesarPeriodos();
+if ($accion === 'procesar_archivos') {
+    $controlador->procesarArchivos();
 }
 
 if ($accion === 'confirmar_vinculo') {

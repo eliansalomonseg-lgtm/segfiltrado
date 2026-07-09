@@ -9,13 +9,14 @@
     </style>
 </head>
 <body>
+<?php $segBasePath = ''; ?>
 <?php include_once __DIR__ . '/fragments/navbar.php'; ?>
 <?php include_once __DIR__ . '/fragments/sidebar.php'; ?>
 <main class="content">
     <section class="card">
         <h1>Panel de Control</h1>
-        <p>Módulo operativo para consolidar RPUs únicos de dos periodos CFE y vincularlos con las CCT de Guerrero.</p>
-        <a href="consolidacion.php">Abrir consolidación</a>
+        <p>Módulo operativo para ejecutar el emparejamiento predictivo entre el catálogo SEG y los RPUs únicos de CFE en Guerrero.</p>
+        <a href="consolidacion/consolidacion.php">Abrir consolidación</a>
     </section>
 </main>
 </body>

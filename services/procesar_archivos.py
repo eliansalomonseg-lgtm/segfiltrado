@@ -26,128 +26,112 @@ def limpiar(valor):
     return str(valor).strip()
 
 
-def preparar_cfe(ruta, periodo):
-    datos = pd.read_excel(ruta, dtype=object)
-    datos.columns = [normalizar(columna).replace(" ", "_") for columna in datos.columns]
-    alias = {
-        "RPU": ["RPU"],
-        "NOMBRE": ["NOMBRE", "NOMBRE_CFE", "NOMBRE_RECIBO"],
-        "POBLACION": ["POBLACION", "POBLACION_CFE"],
-        "TARIFA": ["TARIFA", "TARIFA_CFE"],
-        "PERIODO_VENCE": ["PERIODO_VENCE", "VENCIMIENTO", "FECHA_VENCIMIENTO"]
-    }
-    columnas = {}
-    for destino, opciones in alias.items():
-        columnas[destino] = next((opcion for opcion in opciones if opcion in datos.columns), None)
-    if not all(columnas[clave] for clave in ["RPU", "NOMBRE", "POBLACION"]):
-        raise ValueError(f"El Excel CFE del periodo {periodo} requiere RPU, NOMBRE y POBLACION")
-    salida = pd.DataFrame()
-    salida["RPU"] = datos[columnas["RPU"]].map(limpiar)
-    salida["NOMBRE"] = datos[columnas["NOMBRE"]].map(limpiar)
-    salida["POBLACION"] = datos[columnas["POBLACION"]].map(limpiar)
-    salida["TARIFA"] = datos[columnas["TARIFA"]].map(limpiar) if columnas["TARIFA"] else None
-    salida["PERIODO_VENCE"] = pd.to_datetime(
-        datos[columnas["PERIODO_VENCE"]],
-        errors="coerce",
-        dayfirst=True
-    ) if columnas["PERIODO_VENCE"] else pd.NaT
-    salida["PERIODO"] = periodo
-    return salida[salida["RPU"].notna() & (salida["RPU"] != "")]
-
-
-def cargar_escuelas(ruta):
-    escuelas = pd.read_json(ruta, dtype=False)
-    requeridas = ["CCT", "NOMBRECT", "MUNICIPIO", "NOMBRELOC"]
-    faltantes = [columna for columna in requeridas if columna not in escuelas.columns]
+def cargar_excel(ruta, columnas, saltar_filas=0):
+    datos = pd.read_excel(ruta, skiprows=saltar_filas, dtype=object)
+    datos.columns = [normalizar(columna).replace(" ", "") for columna in datos.columns]
+    faltantes = [columna for columna in columnas if columna not in datos.columns]
     if faltantes:
-        raise ValueError(f"Faltan columnas SEG: {', '.join(faltantes)}")
-    return escuelas
+        raise ValueError(f"Faltan columnas en {ruta.name}: {', '.join(faltantes)}")
+    return datos[columnas].copy()
 
 
-def registro_precarga(fila):
-    fecha = fila["PERIODO_VENCE"]
-    return {
-        "rpu": limpiar(fila["RPU"]),
-        "nombre_cfe": limpiar(fila["NOMBRE"]),
-        "poblacion_cfe": limpiar(fila["POBLACION"]),
-        "tarifa_cfe": limpiar(fila["TARIFA"]),
-        "periodo_vence": fecha.strftime("%Y-%m-%d") if not pd.isna(fecha) else None
-    }
+def nivel_referencia(nombre):
+    texto = normalizar(nombre)
+    if any(termino in texto for termino in ["KINDER", "JARDIN DE NINOS", "PREESCOLAR"]):
+        return ["KINDER", "PREESC", "JARDIN"]
+    if "PRIM" in texto:
+        return ["PRIM"]
+    if "SECUND" in texto or "TELESEC" in texto:
+        return ["SECUND", "TELESEC"]
+    return []
 
 
-def cargar_periodos(mes_uno, mes_dos):
-    return pd.concat([
-        preparar_cfe(mes_uno, "A"),
-        preparar_cfe(mes_dos, "B")
-    ], ignore_index=True)
+def esta_activa(status):
+    return normalizar(limpiar(status)) in {"1", "ACTIVO", "ACTIVA"}
 
 
-def obtener_precarga(cfe):
-    return [registro_precarga(fila) for _, fila in cfe.iterrows()]
+def puntuar(nombre_cfe, escuela):
+    similitud = SequenceMatcher(
+        None,
+        normalizar(nombre_cfe),
+        normalizar(escuela["NOMBRECT"])
+    ).ratio() * 100
+    terminos = nivel_referencia(nombre_cfe)
+    subnivel = normalizar(escuela["SUBNIVEL"])
+    nivel_coincide = bool(terminos) and any(termino in subnivel for termino in terminos)
+    prioridad = (10 if esta_activa(escuela["STATUS"]) else 0) + (15 if nivel_coincide else 0)
+    return similitud, similitud + prioridad, nivel_coincide
 
 
-def procesar(mes_uno, mes_dos, archivo_escuelas):
-    cfe = cargar_periodos(mes_uno, mes_dos)
-    escuelas = cargar_escuelas(archivo_escuelas)
-    escuelas["_LOCALIDAD"] = escuelas["NOMBRELOC"].map(normalizar)
-    indice = {}
-    for _, escuela in escuelas.iterrows():
-        localidad = escuela["_LOCALIDAD"]
+def procesar(ruta_seg, ruta_cfe):
+    columnas_seg = ["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "SUBNIVEL"]
+    columnas_cfe = ["RPU", "NOMBRE", "DIRECCION", "POBLACION", "TARIFA"]
+    seg = cargar_excel(ruta_seg, columnas_seg)
+    cfe = cargar_excel(ruta_cfe, columnas_cfe, 2)
+    cfe["RPU"] = cfe["RPU"].map(limpiar)
+    cfe = cfe[cfe["RPU"].notna() & (cfe["RPU"] != "")]
+    cfe = cfe.groupby("RPU", as_index=False, sort=True).agg({
+        "NOMBRE": "last",
+        "DIRECCION": "last",
+        "POBLACION": "last",
+        "TARIFA": "last"
+    })
+    indice_localidades = {}
+    for _, escuela in seg.iterrows():
+        localidad = normalizar(escuela["NOMBRELOC"])
         if localidad:
-            indice.setdefault(localidad, []).append(escuela)
-    sugerencias = []
-    for rpu, grupo in cfe.groupby("RPU", sort=False):
-        referencia = grupo.iloc[-1]
-        localidad = normalizar(referencia["POBLACION"])
-        candidatos = []
-        for escuela in indice.get(localidad, []):
-            similitud = SequenceMatcher(
-                None,
-                normalizar(referencia["NOMBRE"]),
-                normalizar(escuela["NOMBRECT"])
-            ).ratio() * 100
-            candidatos.append({
+            indice_localidades.setdefault(localidad, []).append(escuela)
+    resultados = []
+    for _, medidor in cfe.iterrows():
+        opciones = []
+        for escuela in indice_localidades.get(normalizar(medidor["POBLACION"]), []):
+            similitud, puntuacion, nivel_coincide = puntuar(medidor["NOMBRE"], escuela)
+            opciones.append({
                 "cct": limpiar(escuela["CCT"]),
                 "nombre_escuela": limpiar(escuela["NOMBRECT"]),
-                "municipio": limpiar(escuela["MUNICIPIO"]),
+                "municipio": limpiar(escuela["NOMBREMUN"]),
                 "localidad": limpiar(escuela["NOMBRELOC"]),
-                "similitud": round(similitud, 2)
+                "status": limpiar(escuela["STATUS"]),
+                "subnivel": limpiar(escuela["SUBNIVEL"]),
+                "similitud": round(similitud, 2),
+                "puntaje_predictivo": round(puntuacion, 2),
+                "nivel_coincide": nivel_coincide
             })
-        candidatos.sort(key=lambda registro: registro["similitud"], reverse=True)
-        sugerencias.append({
-            "rpu": limpiar(rpu),
-            "nombre_cfe": limpiar(referencia["NOMBRE"]),
-            "poblacion_cfe": limpiar(referencia["POBLACION"]),
-            "periodos_detectados": int(grupo["PERIODO"].nunique()),
-            "opciones": candidatos[:3]
+        opciones.sort(
+            key=lambda opcion: (
+                esta_activa(opcion["status"]),
+                opcion["nivel_coincide"],
+                opcion["puntaje_predictivo"],
+                opcion["similitud"]
+            ),
+            reverse=True
+        )
+        resultados.append({
+            "rpu": limpiar(medidor["RPU"]),
+            "nombre_cfe": limpiar(medidor["NOMBRE"]),
+            "direccion_cfe": limpiar(medidor["DIRECCION"]),
+            "poblacion_cfe": limpiar(medidor["POBLACION"]),
+            "tarifa_cfe": limpiar(medidor["TARIFA"]),
+            "opciones": opciones[:3]
         })
-    sugerencias.sort(key=lambda registro: registro["rpu"])
     return {
         "ok": True,
-        "precarga": obtener_precarga(cfe),
         "resumen": {
-            "registros_precarga": len(cfe),
-            "rpu_unicos": int(cfe["RPU"].nunique()),
-            "rpu_con_sugerencias": sum(bool(registro["opciones"]) for registro in sugerencias)
+            "registros_seg": len(seg),
+            "rpu_unicos": len(cfe),
+            "rpu_con_sugerencias": sum(bool(registro["opciones"]) for registro in resultados)
         },
-        "resultados": sugerencias
+        "resultados": resultados
     }
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("mes_uno", type=Path)
-    parser.add_argument("mes_dos", type=Path)
-    parser.add_argument("escuelas", type=Path)
-    parser.add_argument("--solo-precarga", action="store_true")
+    parser.add_argument("archivo_seg", type=Path)
+    parser.add_argument("archivo_cfe", type=Path)
     argumentos = parser.parse_args()
     try:
-        if argumentos.solo_precarga:
-            cfe = cargar_periodos(argumentos.mes_uno, argumentos.mes_dos)
-            salida = {"ok": True, "precarga": obtener_precarga(cfe)}
-        else:
-            salida = procesar(argumentos.mes_uno, argumentos.mes_dos, argumentos.escuelas)
-        print(json.dumps(salida, ensure_ascii=False))
+        print(json.dumps(procesar(argumentos.archivo_seg, argumentos.archivo_cfe), ensure_ascii=False))
     except Exception as error:
         print(json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False))
         sys.exit(1)
