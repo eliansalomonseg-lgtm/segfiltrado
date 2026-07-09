@@ -67,7 +67,12 @@ def procesar(ruta_seg, ruta_cfe):
     columnas_seg = ["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "SUBNIVEL"]
     columnas_cfe = ["RPU", "NOMBRE", "DIRECCION", "POBLACION", "TARIFA"]
     seg = cargar_excel(ruta_seg, columnas_seg)
-    cfe = cargar_excel(ruta_cfe, columnas_cfe, 2)
+    df_cfe = pd.read_excel(ruta_cfe, header=2)
+    df_cfe.columns = [normalizar(columna).replace(" ", "") for columna in df_cfe.columns]
+    faltantes_cfe = [columna for columna in columnas_cfe if columna not in df_cfe.columns]
+    if faltantes_cfe:
+        raise ValueError(f"Faltan columnas en {ruta_cfe.name}: {', '.join(faltantes_cfe)}")
+    cfe = df_cfe[columnas_cfe].copy()
     cfe["RPU"] = cfe["RPU"].map(limpiar)
     cfe = cfe[cfe["RPU"].notna() & (cfe["RPU"] != "")]
     cfe = cfe.groupby("RPU", as_index=False, sort=True).agg({
