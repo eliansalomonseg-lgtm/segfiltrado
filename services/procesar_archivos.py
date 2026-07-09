@@ -38,16 +38,16 @@ try:
         return datos[columnas].copy()
 
     def cargar_excel_oficializacion(ruta):
-        columnas = ["CVCCT", "NOMBRECT", "CNOMMUN", "CNOMLOC", "TIPO"]
+        columnas_oficializacion = ["CV_CCT", "NOMBRECT", "C_NOM_MUN", "C_NOM_LOC", "TIPO"]
         datos = pd.read_excel(ruta, header=5, dtype=object)
-        datos.columns = [normalizar(columna).replace(" ", "") for columna in datos.columns]
-        faltantes = [columna for columna in columnas if columna not in datos.columns]
+        datos.columns = [str(columna).strip().upper() for columna in datos.columns]
+        faltantes = [columna for columna in columnas_oficializacion if columna not in datos.columns]
         if faltantes:
             raise ValueError(f"Faltan columnas Oficialización 911: {', '.join(faltantes)}")
-        datos = datos[columnas].rename(columns={
-            "CVCCT": "CCT",
-            "CNOMMUN": "NOMBREMUN",
-            "CNOMLOC": "NOMBRELOC",
+        datos = datos[columnas_oficializacion].rename(columns={
+            "CV_CCT": "CCT",
+            "C_NOM_MUN": "NOMBREMUN",
+            "C_NOM_LOC": "NOMBRELOC",
             "TIPO": "NIVEL"
         })
         datos["STATUS"] = "ACTIVO"
