@@ -10,7 +10,7 @@ try:
     from pathlib import Path
 
     import pandas as pd
-    import pymysql
+    import mysql.connector
 
     def normalizar(valor):
         if valor is None or pd.isna(valor):
@@ -22,6 +22,10 @@ try:
     def normalizar_codigo(valor):
         return normalizar(valor).replace(" ", "")
 
+    def normalizar_cabecera(valor):
+        texto = str(valor).replace("\ufeff", "").replace("ï»¿", "").strip()
+        return normalizar_codigo(texto)
+
     def limpiar(valor):
         if valor is None or pd.isna(valor):
             return None
@@ -31,7 +35,7 @@ try:
         return texto if texto != "" else None
 
     def preparar_columnas(datos):
-        datos.columns = [normalizar_codigo(columna) for columna in datos.columns]
+        datos.columns = [normalizar_cabecera(columna) for columna in datos.columns]
         return datos
 
     def leer_catalogo_seg(ruta):
@@ -96,21 +100,15 @@ try:
     def guardar(registros):
         if not registros:
             return 0
-        conexion = pymysql.connect(
-            host="localhost",
-            user="root",
-            password="",
-            database="escuelaseg",
-            charset="utf8mb4",
-            autocommit=False,
-        )
+        conexion = mysql.connector.connect(host="localhost", user="root", password="", database="seg")
         try:
-            with conexion.cursor() as cursor:
-                cursor.executemany(
-                    "INSERT INTO escuelas (CCT, NOMBRECT, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL) VALUES (%s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE NOMBRECT=VALUES(NOMBRECT)",
-                    registros
-                )
+            cursor = conexion.cursor()
+            cursor.executemany(
+                "INSERT INTO escuelas (CCT, NOMBRECT, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL) VALUES (%s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE NOMBRECT=VALUES(NOMBRECT), NOMBREMUN=VALUES(NOMBREMUN), NOMBRELOC=VALUES(NOMBRELOC), STATUS=VALUES(STATUS), SUBNIVEL=VALUES(SUBNIVEL)",
+                registros
+            )
             conexion.commit()
+            cursor.close()
             return len(registros)
         finally:
             conexion.close()

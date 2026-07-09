@@ -1,8 +1,8 @@
-CREATE DATABASE IF NOT EXISTS `escuelaseg`
+CREATE DATABASE IF NOT EXISTS `seg`
   CHARACTER SET utf8mb4
   COLLATE utf8mb4_unicode_ci;
 
-USE `escuelaseg`;
+USE `seg`;
 
 CREATE TABLE IF NOT EXISTS `escuelas` (
   `CCT` VARCHAR(50) NOT NULL PRIMARY KEY,

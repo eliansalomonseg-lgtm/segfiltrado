@@ -3,7 +3,7 @@
 class Conexion
 {
     private const HOST = 'localhost';
-    private const BASE_DATOS = 'escuelaseg';
+    private const BASE_DATOS = 'seg';
     private const USUARIO = 'root';
     private const CONTRASENA = '';
     private static ?PDO $conexion = null;
