@@ -33,6 +33,9 @@ $segBasePath = '../';
         .source-stack{display:grid;gap:14px}
         .source-stack .drop-zone{min-height:154px;padding:18px}
         .source-stack .file-icon{height:42px;margin-bottom:10px;width:42px}
+        .btn-sync-catalogs{align-items:center;background:#bfa276;border:0;border-radius:8px;color:#302719;display:flex;font-size:12px;font-weight:800;gap:8px;justify-content:center;margin-top:16px;padding:12px 14px;width:100%}
+        .btn-sync-catalogs:disabled{cursor:wait;opacity:.7}
+        .sync-status{align-items:center;color:#6a5434;display:flex;font-size:11px;font-weight:700;gap:8px;justify-content:center;margin-top:12px}
         .mass-divider{align-items:center;color:var(--dorado);display:flex;font-size:20px;font-weight:800;justify-content:center}
         @media(max-width:600px){.workflow{align-items:stretch;flex-direction:column}.workflow span{text-align:center}}
     </style>
@@ -63,11 +66,11 @@ $segBasePath = '../';
                     <div class="source-title"><span>SEG</span>Estructura educativa</div>
                     <div class="source-stack">
                         <label class="drop-zone" data-input="archivo_seg">
-                            <input id="archivo_seg" name="archivo_seg" type="file" accept=".xlsx,.xls" required>
+                            <input id="archivo_seg" name="archivo_seg" type="file" accept=".csv,.xlsx,.xls" required>
                             <span class="file-icon seg">1</span>
                             <strong>1. Catálogo Institucional SEG</strong>
                             <small>CCT, plantel, municipio, localidad, status y nivel</small>
-                            <em class="file-name">Seleccionar archivo Excel</em>
+                            <em class="file-name">Seleccionar CSV o Excel</em>
                         </label>
                         <label class="drop-zone" data-input="archivo_oficializacion">
                             <input id="archivo_oficializacion" name="archivo_oficializacion" type="file" accept=".xlsx,.xls" required>
@@ -76,6 +79,11 @@ $segBasePath = '../';
                             <small>CV_CCT, plantel, municipio, localidad y tipo</small>
                             <em class="file-name">Seleccionar archivo Excel</em>
                         </label>
+                    </div>
+                    <button id="sync-catalogs" class="btn-sync-catalogs" type="button">📥 Sincronizar Catálogos en Base de Datos</button>
+                    <div id="sync-status" class="sync-status" hidden>
+                        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                        <span>Guardando escuelas en base de datos local...</span>
                     </div>
                 </section>
             </div>
@@ -125,12 +133,14 @@ $segBasePath = '../';
     const form = document.getElementById('cross-form');
     const token = document.querySelector('meta[name="csrf-token"]').content;
     const controller = '../../controllers/escuelaController.php';
+    const syncButton = document.getElementById('sync-catalogs');
+    const syncStatus = document.getElementById('sync-status');
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character]));
     document.querySelectorAll('.drop-zone').forEach(zone => {
         const input = document.getElementById(zone.dataset.input);
         const update = () => {
             zone.classList.toggle('ready', input.files.length > 0);
-            zone.querySelector('.file-name').textContent = input.files[0]?.name || 'Seleccionar archivo Excel';
+            zone.querySelector('.file-name').textContent = input.files[0]?.name || (input.id === 'archivo_seg' ? 'Seleccionar CSV o Excel' : 'Seleccionar archivo Excel');
         };
         input.addEventListener('change', update);
         ['dragenter','dragover'].forEach(name => zone.addEventListener(name, event => {
@@ -147,6 +157,32 @@ $segBasePath = '../';
             input.files = files.files;
             update();
         });
+    });
+    syncButton.addEventListener('click', async () => {
+        const catalogo = document.getElementById('archivo_seg').files[0];
+        const oficializacion = document.getElementById('archivo_oficializacion').files[0];
+        if (!catalogo || !oficializacion) {
+            Swal.fire({icon:'warning',title:'Catálogos incompletos',text:'Carga el Catálogo SEG y la Oficialización 911 antes de sincronizar.',confirmButtonColor:'#6c1d24'});
+            return;
+        }
+        const body = new FormData();
+        body.append('accion', 'sincronizar_catalogos');
+        body.append('csrf', token);
+        body.append('catalogo_seg', catalogo);
+        body.append('oficializacion_911', oficializacion);
+        syncButton.disabled = true;
+        syncStatus.hidden = false;
+        try {
+            const response = await fetch(controller,{method:'POST',headers:{'X-CSRF-Token':token},body});
+            const data = await response.json();
+            if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible sincronizar los catálogos.');
+            Swal.fire({icon:'success',title:'Catálogos sincronizados',text:`Se guardaron ${data.total} escuelas en la base local.`,confirmButtonColor:'#6c1d24'});
+        } catch (error) {
+            Swal.fire({icon:'error',title:'Error de sincronización',text:error.message,confirmButtonColor:'#6c1d24'});
+        } finally {
+            syncButton.disabled = false;
+            syncStatus.hidden = true;
+        }
     });
     form.addEventListener('submit', event => {
         event.preventDefault();

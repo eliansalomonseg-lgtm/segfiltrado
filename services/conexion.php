@@ -3,9 +3,9 @@
 class Conexion
 {
     private const HOST = 'localhost';
-    private const BASE_DATOS = 'seg';
+    private const BASE_DATOS = 'escuelaseg';
     private const USUARIO = 'root';
-    private const CONTRASENA = '1234';
+    private const CONTRASENA = '';
     private static ?PDO $conexion = null;
 
     private function __construct()
