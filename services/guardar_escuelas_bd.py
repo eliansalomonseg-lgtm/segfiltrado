@@ -12,6 +12,9 @@ try:
     import pandas as pd
     import mysql.connector
 
+    TAMANO_LOTE = 500
+    QUERY_INSERTAR_ESCUELAS = "INSERT INTO escuelas (CCT, NOMBRECT, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL) VALUES (%s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE NOMBRECT=VALUES(NOMBRECT), NOMBREMUN=VALUES(NOMBREMUN), NOMBRELOC=VALUES(NOMBRELOC), STATUS=VALUES(STATUS), SUBNIVEL=VALUES(SUBNIVEL)"
+
     def normalizar(valor):
         if valor is None or pd.isna(valor):
             return ""
@@ -103,10 +106,8 @@ try:
         conexion = mysql.connector.connect(host="localhost", user="root", password="", database="seg")
         try:
             cursor = conexion.cursor()
-            cursor.executemany(
-                "INSERT INTO escuelas (CCT, NOMBRECT, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL) VALUES (%s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE NOMBRECT=VALUES(NOMBRECT), NOMBREMUN=VALUES(NOMBREMUN), NOMBRELOC=VALUES(NOMBRELOC), STATUS=VALUES(STATUS), SUBNIVEL=VALUES(SUBNIVEL)",
-                registros
-            )
+            for inicio in range(0, len(registros), TAMANO_LOTE):
+                cursor.executemany(QUERY_INSERTAR_ESCUELAS, registros[inicio:inicio + TAMANO_LOTE])
             conexion.commit()
             cursor.close()
             return len(registros)
