@@ -161,15 +161,15 @@ $segBasePath = '../';
     syncButton.addEventListener('click', async () => {
         const catalogo = document.getElementById('archivo_seg').files[0];
         const oficializacion = document.getElementById('archivo_oficializacion').files[0];
-        if (!catalogo || !oficializacion) {
-            Swal.fire({icon:'warning',title:'Catálogos incompletos',text:'Carga el Catálogo SEG y la Oficialización 911 antes de sincronizar.',confirmButtonColor:'#6c1d24'});
+        if (!catalogo && !oficializacion) {
+            Swal.fire({icon:'warning',title:'Sin catálogos',text:'Carga al menos un catálogo para sincronizar.',confirmButtonColor:'#6c1d24'});
             return;
         }
         const body = new FormData();
         body.append('accion', 'sincronizar_catalogos');
         body.append('csrf', token);
-        body.append('catalogo_seg', catalogo);
-        body.append('oficializacion_911', oficializacion);
+        if (catalogo) body.append('catalogo_seg', catalogo);
+        if (oficializacion) body.append('oficializacion_911', oficializacion);
         syncButton.disabled = true;
         syncStatus.hidden = false;
         try {
@@ -231,15 +231,21 @@ $segBasePath = '../';
         const tbody = document.getElementById('matches');
         tbody.innerHTML = data.resultados.map((registro, row) => {
             const options = registro.opciones.length ? registro.opciones.map((option, index) => `
-                <div class="option">
+                <div class="option ${option.vinculado ? 'done' : ''}">
                     <div class="option-data"><strong>${escapeHtml(option.cct)} · ${escapeHtml(option.nombre_escuela)}</strong><small>${escapeHtml(option.municipio)} · ${escapeHtml(option.localidad)} · ${escapeHtml(option.subnivel)} · STATUS ${escapeHtml(option.status)}</small></div>
                     <span class="score">${Number(option.similitud).toFixed(1)}%</span>
                     <button class="confirm" type="button" data-row="${row}" data-option="${index}">Confirmar Vínculo</button>
                 </div>
             `).join('') : '<span class="empty">Sin escuelas coincidentes en esta localidad</span>';
-            return `<tr><td><strong>${escapeHtml(registro.rpu)}</strong><span class="tag">${escapeHtml(registro.tarifa_cfe || 'Sin tarifa')}</span></td><td><strong>${escapeHtml(registro.nombre_cfe)}</strong><small>${escapeHtml(registro.direccion_cfe)}<br>${escapeHtml(registro.poblacion_cfe)}</small></td><td><div class="options">${options}</div></td></tr>`;
+            const linked = registro.vinculo_confirmado ? `<span class="tag">Vinculado: ${escapeHtml(registro.cct_vinculado)}${registro.nombre_escuela_vinculada ? ' - ' + escapeHtml(registro.nombre_escuela_vinculada) : ''}</span>` : '';
+            return `<tr><td><strong>${escapeHtml(registro.rpu)}</strong><span class="tag">${escapeHtml(registro.tarifa_cfe || 'Sin tarifa')}</span>${linked}</td><td><strong>${escapeHtml(registro.nombre_cfe)}</strong><small>${escapeHtml(registro.direccion_cfe)}<br>${escapeHtml(registro.poblacion_cfe)}</small></td><td><div class="options">${options}</div></td></tr>`;
         }).join('');
-        tbody.querySelectorAll('.confirm').forEach(button => button.addEventListener('click', () => {
+        tbody.querySelectorAll('.option.done .confirm').forEach(button => {
+            button.disabled = true;
+            button.textContent = 'Ya vinculado';
+            button.classList.add('saved');
+        });
+        tbody.querySelectorAll('.confirm:not(:disabled)').forEach(button => button.addEventListener('click', () => {
             confirmLink(data.resultados[Number(button.dataset.row)], Number(button.dataset.option), button);
         }));
         const summary = data.resumen;

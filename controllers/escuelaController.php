@@ -14,7 +14,7 @@ class EscuelaController
         $campos = ['archivo_seg', 'archivo_oficializacion', 'archivo_cfe_a', 'archivo_cfe_b'];
         foreach ($campos as $campo) {
             if (!isset($_FILES[$campo]) || $_FILES[$campo]['error'] !== UPLOAD_ERR_OK) {
-                $this->responder(['ok' => false, 'error' => 'Carga los cuatro archivos requeridos para la consolidación.'], 422);
+                $this->responder(['ok' => false, 'error' => 'Carga los cuatro archivos requeridos para la consolidacion.'], 422);
             }
             $extension = strtolower(pathinfo($_FILES[$campo]['name'], PATHINFO_EXTENSION));
             if (!in_array($extension, ['xlsx', 'xls'], true)) {
@@ -52,9 +52,10 @@ class EscuelaController
                     'ok' => false,
                     'error' => $detalle !== ''
                         ? 'No se pudo ejecutar el motor predictivo: ' . mb_substr($detalle, 0, 500)
-                        : 'No se encontró una instalación funcional de Python.'
+                        : 'No se encontro una instalacion funcional de Python.'
                 ], 500);
             }
+            $resultado = $this->marcarVinculosExistentes($resultado);
             $this->responder($resultado, !empty($resultado['ok']) ? 200 : 422);
         } catch (Throwable $e) {
             $this->responder(['ok' => false, 'error' => $e->getMessage()], 500);
@@ -71,33 +72,39 @@ class EscuelaController
     {
         $this->validarToken();
         $campos = ['catalogo_seg', 'oficializacion_911'];
+        $archivos = [];
         foreach ($campos as $campo) {
-            if (!isset($_FILES[$campo]) || $_FILES[$campo]['error'] !== UPLOAD_ERR_OK) {
-                $this->responder(['ok' => false, 'error' => 'Carga el Catálogo SEG y la Oficialización 911.'], 422);
+            if (isset($_FILES[$campo]) && $_FILES[$campo]['error'] === UPLOAD_ERR_OK) {
+                $archivos[] = $campo;
             }
         }
-        $extensionCatalogo = strtolower(pathinfo($_FILES['catalogo_seg']['name'], PATHINFO_EXTENSION));
-        $extensionOficializacion = strtolower(pathinfo($_FILES['oficializacion_911']['name'], PATHINFO_EXTENSION));
-        if (!in_array($extensionCatalogo, ['csv', 'xlsx', 'xls'], true) || !in_array($extensionOficializacion, ['xlsx', 'xls'], true)) {
-            $this->responder(['ok' => false, 'error' => 'El Catálogo SEG debe ser CSV o Excel y la Oficialización 911 debe ser Excel.'], 422);
+        if (!$archivos) {
+            $this->responder(['ok' => false, 'error' => 'Carga al menos un catalogo para sincronizar.'], 422);
+        }
+        foreach ($archivos as $campo) {
+            $extension = strtolower(pathinfo($_FILES[$campo]['name'], PATHINFO_EXTENSION));
+            $permitidas = $campo === 'catalogo_seg' ? ['csv', 'xlsx', 'xls'] : ['xlsx', 'xls'];
+            if (!in_array($extension, $permitidas, true)) {
+                $this->responder(['ok' => false, 'error' => 'El Catalogo SEG debe ser CSV o Excel y la Oficializacion 911 debe ser Excel.'], 422);
+            }
         }
         $rutas = [];
         try {
-            foreach ($campos as $campo) {
+            foreach ($archivos as $campo) {
                 $extension = strtolower(pathinfo($_FILES[$campo]['name'], PATHINFO_EXTENSION));
-                $ruta = sys_get_temp_dir() . DIRECTORY_SEPARATOR . bin2hex(random_bytes(16)) . '.' . $extension;
+                $ruta = sys_get_temp_dir() . DIRECTORY_SEPARATOR . $campo . '_' . bin2hex(random_bytes(16)) . '.' . $extension;
                 if (!move_uploaded_file($_FILES[$campo]['tmp_name'], $ruta)) {
-                    throw new RuntimeException('No fue posible almacenar temporalmente los catálogos.');
+                    throw new RuntimeException('No fue posible almacenar temporalmente los catalogos.');
                 }
                 $rutas[$campo] = $ruta;
             }
             $python = $this->localizarPython();
             $script = dirname(__DIR__) . '/services/guardar_escuelas_bd.py';
-            $comando = escapeshellarg($python)
-                . ' ' . escapeshellarg($script)
-                . ' ' . escapeshellarg($rutas['catalogo_seg'])
-                . ' ' . escapeshellarg($rutas['oficializacion_911'])
-                . ' 2>&1';
+            $comando = escapeshellarg($python) . ' ' . escapeshellarg($script);
+            foreach ($rutas as $ruta) {
+                $comando .= ' ' . escapeshellarg($ruta);
+            }
+            $comando .= ' 2>&1';
             $salida = shell_exec($comando);
             $lineas = is_string($salida)
                 ? array_values(array_filter(array_map('trim', preg_split('/\R/', $salida))))
@@ -110,7 +117,7 @@ class EscuelaController
                     'ok' => false,
                     'error' => $detalle !== ''
                         ? 'No se pudo sincronizar la base local: ' . mb_substr($detalle, 0, 500)
-                        : 'No se encontró una respuesta válida del sincronizador.'
+                        : 'No se encontro una respuesta valida del sincronizador.'
                 ], 500);
             }
             $this->responder($resultado, !empty($resultado['ok']) ? 200 : 422);
@@ -123,6 +130,47 @@ class EscuelaController
                 }
             }
         }
+    }
+
+    private function marcarVinculosExistentes(array $resultado): array
+    {
+        if (empty($resultado['ok']) || empty($resultado['resultados']) || !is_array($resultado['resultados'])) {
+            return $resultado;
+        }
+        $rpus = array_values(array_unique(array_filter(array_map(
+            static fn (array $registro): string => trim((string) ($registro['rpu'] ?? '')),
+            $resultado['resultados']
+        ))));
+        if (!$rpus) {
+            return $resultado;
+        }
+        $marcadores = implode(',', array_fill(0, count($rpus), '?'));
+        $consulta = Conexion::conectar()->prepare(
+            "SELECT er.RPU, er.CCT, e.NOMBRECT FROM escuelas_rpu er LEFT JOIN escuelas e ON e.CCT = er.CCT WHERE er.RPU IN ($marcadores)"
+        );
+        $consulta->execute($rpus);
+        $vinculos = [];
+        foreach ($consulta->fetchAll() as $fila) {
+            $vinculos[(string) $fila['RPU']] = [
+                'cct' => (string) $fila['CCT'],
+                'nombre_escuela' => $fila['NOMBRECT'] ?? null
+            ];
+        }
+        foreach ($resultado['resultados'] as &$registro) {
+            $rpu = (string) ($registro['rpu'] ?? '');
+            $vinculo = $vinculos[$rpu] ?? null;
+            $registro['vinculo_confirmado'] = $vinculo !== null;
+            $registro['cct_vinculado'] = $vinculo['cct'] ?? null;
+            $registro['nombre_escuela_vinculada'] = $vinculo['nombre_escuela'] ?? null;
+            if (!empty($registro['opciones']) && is_array($registro['opciones'])) {
+                foreach ($registro['opciones'] as &$opcion) {
+                    $opcion['vinculado'] = $vinculo !== null && (string) ($opcion['cct'] ?? '') === (string) $vinculo['cct'];
+                }
+                unset($opcion);
+            }
+        }
+        unset($registro);
+        return $resultado;
     }
 
     private function localizarPython(): string
@@ -158,7 +206,7 @@ class EscuelaController
             $tarifa = trim((string) ($_POST['tarifa_cfe'] ?? ''));
 
             if ($cct === '' || $rpu === '') {
-                throw new RuntimeException('Faltan los parámetros obligatorios CCT o RPU.');
+                throw new RuntimeException('Faltan los parametros obligatorios CCT o RPU.');
             }
 
             $consulta = $conexion->prepare(
@@ -174,7 +222,7 @@ class EscuelaController
                 'tarifa' => $tarifa !== '' ? $tarifa : null
             ]);
 
-            $this->responder(['ok' => true, 'mensaje' => 'Vínculo registrado con éxito en el padrón de escuelas_rpu.']);
+            $this->responder(['ok' => true, 'mensaje' => 'Vinculo registrado con exito en el padron de escuelas_rpu.']);
         } catch (Throwable $e) {
             $this->responder(['ok' => false, 'error' => 'Fallo de base de datos: ' . $e->getMessage()], 500);
         }
@@ -184,7 +232,7 @@ class EscuelaController
     {
         $token = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? $_POST['csrf'] ?? '';
         if (!hash_equals($_SESSION['seg_csrf'] ?? '', $token)) {
-            $this->responder(['ok' => false, 'error' => 'La sesión de seguridad no es válida.'], 419);
+            $this->responder(['ok' => false, 'error' => 'La sesion de seguridad no es valida.'], 419);
         }
     }
 
@@ -219,4 +267,4 @@ if ($accion === 'confirmar_vinculo') {
 
 http_response_code(400);
 header('Content-Type: application/json; charset=utf-8');
-echo json_encode(['ok' => false, 'error' => 'Acción no reconocida.'], JSON_UNESCAPED_UNICODE);
+echo json_encode(['ok' => false, 'error' => 'Accion no reconocida.'], JSON_UNESCAPED_UNICODE);

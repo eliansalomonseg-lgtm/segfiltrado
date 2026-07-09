@@ -26,7 +26,7 @@ try:
         return normalizar(valor).replace(" ", "")
 
     def normalizar_cabecera(valor):
-        texto = str(valor).replace("\ufeff", "").replace("ï»¿", "").strip()
+        texto = str(valor).replace("\ufeff", "").replace("ï»¿", "").replace("Ã¯Â»Â¿", "").strip()
         return normalizar_codigo(texto)
 
     def limpiar(valor):
@@ -54,7 +54,7 @@ try:
         requeridas = ["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "SUBNIVEL", "SOSTCONTROL"]
         faltantes = [columna for columna in requeridas if columna not in datos.columns]
         if faltantes:
-            raise ValueError(f"Faltan columnas Catálogo SEG: {', '.join(faltantes)}")
+            raise ValueError(f"Faltan columnas Catalogo SEG: {', '.join(faltantes)}")
         datos = datos[datos["SOSTCONTROL"].map(normalizar) == "PUBLICO"].copy()
         return datos[["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "SUBNIVEL"]]
 
@@ -67,11 +67,11 @@ try:
                 datos = preparar_columnas(pd.read_excel(ruta, header=indice, dtype=object))
                 break
         if datos is None:
-            raise ValueError("No se encontró la fila de cabeceras con CV_CCT en Oficialización 911.")
+            raise ValueError("No se encontro la fila de cabeceras con CV_CCT en Oficializacion 911.")
         requeridas = ["CVCCT", "NOMBRECT", "CNOMMUN", "CNOMLOC", "CONTROL"]
         faltantes = [columna for columna in requeridas if columna not in datos.columns]
         if faltantes:
-            raise ValueError(f"Faltan columnas Oficialización 911: {', '.join(faltantes)}")
+            raise ValueError(f"Faltan columnas Oficializacion 911: {', '.join(faltantes)}")
         datos = datos[datos["CONTROL"].map(normalizar) == "PUBLICO"].copy()
         salida = pd.DataFrame({
             "CCT": datos["CVCCT"],
@@ -83,8 +83,8 @@ try:
         })
         return salida
 
-    def preparar_registros(catalogo, oficializacion):
-        datos = pd.concat([catalogo, oficializacion], ignore_index=True)
+    def preparar_registros(conjuntos):
+        datos = pd.concat(conjuntos, ignore_index=True)
         datos["CCT"] = datos["CCT"].map(normalizar_codigo)
         datos = datos[datos["CCT"].notna() & (datos["CCT"] != "")]
         datos = datos.drop_duplicates(subset=["CCT"], keep="first")
@@ -114,12 +114,18 @@ try:
         finally:
             conexion.close()
 
-    if len(sys.argv) != 3:
-        raise ValueError("Se requieren Catálogo SEG y Oficialización 911.")
+    if len(sys.argv) < 2:
+        raise ValueError("Se requiere al menos un catalogo escolar.")
 
-    catalogo_seg = leer_catalogo_seg(sys.argv[1])
-    oficializacion = leer_oficializacion(sys.argv[2])
-    registros = preparar_registros(catalogo_seg, oficializacion)
+    conjuntos = []
+    for argumento in sys.argv[1:]:
+        ruta = Path(argumento)
+        nombre = ruta.name.lower()
+        if "oficial" in nombre or "911" in nombre:
+            conjuntos.append(leer_oficializacion(ruta))
+        else:
+            conjuntos.append(leer_catalogo_seg(ruta))
+    registros = preparar_registros(conjuntos)
     total = guardar(registros)
     print(json.dumps({"ok": True, "total": total}, ensure_ascii=False))
 
