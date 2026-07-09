@@ -78,9 +78,9 @@ try:
             normalizar(escuela["NOMBRECT"])
         ).ratio() * 100
         nivel_cfe = identificar_nivel(nombre_cfe)
-        nivel_seg = normalizar(escuela["NIVEL"])
-        nivel_coincide = nivel_cfe is not None and nivel_seg == nivel_cfe
-        prioridad = (10 if esta_activa(escuela["STATUS"]) else 0) + (25 if nivel_coincide else 0)
+        nivel_seg = normalizar(escuela["NIVEL"]).replace(" ", "")
+        nivel_coincide = nivel_cfe is not None and nivel_cfe in nivel_seg
+        prioridad = (10 if esta_activa(escuela["STATUS"]) else 0) + (40 if nivel_coincide else 0)
         return similitud, similitud + prioridad, nivel_coincide
 
     def procesar(ruta_seg, ruta_cfe):
@@ -104,6 +104,7 @@ try:
         resultados = []
         for _, medidor in cfe.iterrows():
             opciones = []
+            nivel_cfe = identificar_nivel(medidor["NOMBRE"])
             for escuela in indice_localidades.get(normalizar(medidor["POBLACION"]), []):
                 similitud, puntuacion, nivel_coincide = puntuar(medidor["NOMBRE"], escuela)
                 opciones.append({
@@ -118,11 +119,14 @@ try:
                     "puntaje_predictivo": round(puntuacion, 2),
                     "nivel_coincide": nivel_coincide
                 })
+            opciones_nivel = [opcion for opcion in opciones if opcion["nivel_coincide"]]
+            if nivel_cfe is not None and opciones_nivel:
+                opciones = opciones_nivel
             opciones.sort(
                 key=lambda opcion: (
-                    esta_activa(opcion["status"]),
                     opcion["puntaje_predictivo"],
-                    opcion["similitud"]
+                    opcion["similitud"],
+                    esta_activa(opcion["status"])
                 ),
                 reverse=True
             )

@@ -2,22 +2,38 @@
 
 class Conexion
 {
-    public static function conectar()
+    private const HOST = 'localhost';
+    private const BASE_DATOS = 'seg';
+    private const USUARIO = 'root';
+    private const CONTRASENA = '1234';
+    private static ?PDO $conexion = null;
+
+    private function __construct()
     {
-        $config = require __DIR__ . '/config.php';
+    }
+
+    public static function conectar(): PDO
+    {
+        if (self::$conexion instanceof PDO) {
+            return self::$conexion;
+        }
+
         try {
-            $dsn = "mysql:host={$config['host']};dbname={$config['database']};charset=utf8mb4";
-            return new PDO(
+            $dsn = sprintf('mysql:host=%s;dbname=%s;charset=utf8mb4', self::HOST, self::BASE_DATOS);
+            self::$conexion = new PDO(
                 $dsn,
-                $config['username'],
-                $config['password'],
+                self::USUARIO,
+                self::CONTRASENA,
                 [
                     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                    PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4"
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    PDO::ATTR_EMULATE_PREPARES => false
                 ]
             );
+
+            return self::$conexion;
         } catch (PDOException $e) {
-            die("Error de conexión: " . $e->getMessage());
+            throw new RuntimeException('No fue posible conectar con la base de datos.', 0, $e);
         }
     }
 }

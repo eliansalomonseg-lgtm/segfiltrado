@@ -30,17 +30,27 @@ class EscuelaController
                 }
                 $rutas[$campo] = $ruta;
             }
-            $python = getenv('PYTHON_BIN') ?: 'python';
+            $python = $this->localizarPython();
             $script = dirname(__DIR__) . '/services/procesar_archivos.py';
-            $comando = escapeshellcmd($python)
+            $comando = escapeshellarg($python)
                 . ' ' . escapeshellarg($script)
                 . ' ' . escapeshellarg($rutas['archivo_seg'])
                 . ' ' . escapeshellarg($rutas['archivo_cfe'])
                 . ' 2>&1';
             $salida = shell_exec($comando);
-            $resultado = is_string($salida) ? json_decode(trim($salida), true) : null;
+            $lineas = is_string($salida)
+                ? array_values(array_filter(array_map('trim', preg_split('/\R/', $salida))))
+                : [];
+            $json = $lineas ? end($lineas) : '';
+            $resultado = json_decode($json, true);
             if (!is_array($resultado)) {
-                $this->responder(['ok' => false, 'error' => 'El motor predictivo no devolvió un JSON válido.'], 500);
+                $detalle = trim(strip_tags((string) $salida));
+                $this->responder([
+                    'ok' => false,
+                    'error' => $detalle !== ''
+                        ? 'No se pudo ejecutar el motor predictivo: ' . mb_substr($detalle, 0, 500)
+                        : 'No se encontró una instalación funcional de Python.'
+                ], 500);
             }
             $this->responder($resultado, !empty($resultado['ok']) ? 200 : 422);
         } catch (Throwable $e) {
@@ -52,6 +62,27 @@ class EscuelaController
                 }
             }
         }
+    }
+
+    private function localizarPython(): string
+    {
+        $configurado = trim((string) getenv('PYTHON_BIN'));
+        if ($configurado !== '' && is_file($configurado)) {
+            return $configurado;
+        }
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            $localAppData = getenv('LOCALAPPDATA') ?: 'C:\\Users\\' . get_current_user() . '\\AppData\\Local';
+            $instalaciones = glob($localAppData . '\\Programs\\Python\\Python*\\python.exe') ?: [];
+            rsort($instalaciones, SORT_NATURAL);
+            foreach ($instalaciones as $instalacion) {
+                if (is_file($instalacion)) {
+                    return $instalacion;
+                }
+            }
+        }
+
+        return 'python';
     }
 
     public function confirmarVinculo(): void
