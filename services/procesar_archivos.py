@@ -4,10 +4,14 @@ import math
 import re
 import sys
 import unicodedata
+import warnings
 from difflib import SequenceMatcher
 from pathlib import Path
 
 import pandas as pd
+
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore")
 
 
 def normalizar(valor):
@@ -65,14 +69,26 @@ def puntuar(nombre_cfe, escuela):
 
 def procesar(ruta_seg, ruta_cfe):
     columnas_seg = ["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "SUBNIVEL"]
-    columnas_cfe = ["RPU", "NOMBRE", "DIRECCION", "POBLACION", "TARIFA"]
     seg = cargar_excel(ruta_seg, columnas_seg)
-    df_cfe = pd.read_excel(ruta_cfe, header=2)
-    df_cfe.columns = [normalizar(columna).replace(" ", "") for columna in df_cfe.columns]
-    faltantes_cfe = [columna for columna in columnas_cfe if columna not in df_cfe.columns]
-    if faltantes_cfe:
-        raise ValueError(f"Faltan columnas en {ruta_cfe.name}: {', '.join(faltantes_cfe)}")
-    cfe = df_cfe[columnas_cfe].copy()
+    try:
+        df_cfe = pd.read_excel(ruta_cfe, header=2)
+        columnas_requeridas = ["RPU", "NOMBRE", "DIRECCION", "POBLACION", "TARIFA"]
+        if not all(col in df_cfe.columns for col in columnas_requeridas):
+            df_raw = pd.read_excel(ruta_cfe, header=None)
+            for idx, row in df_raw.iterrows():
+                row_values = [str(x).strip().upper() for x in row.values]
+                if "RPU" in row_values and "POBLACION" in row_values:
+                    df_cfe = pd.read_excel(ruta_cfe, header=idx)
+                    break
+        df_cfe.columns = [str(c).strip() for c in df_cfe.columns]
+        faltantes = [col for col in columnas_requeridas if col not in df_cfe.columns]
+        if faltantes:
+            print(json.dumps({"ok": False, "error": f"Faltan columnas reales: {', '.join(faltantes)}"}))
+            sys.exit(1)
+    except Exception as e:
+        print(json.dumps({"ok": False, "error": f"Error al procesar el Excel: {str(e)}"}))
+        sys.exit(1)
+    cfe = df_cfe[columnas_requeridas].copy()
     cfe["RPU"] = cfe["RPU"].map(limpiar)
     cfe = cfe[cfe["RPU"].notna() & (cfe["RPU"] != "")]
     cfe = cfe.groupby("RPU", as_index=False, sort=True).agg({
