@@ -10,6 +10,7 @@ class EscuelaController
 {
     public function procesarArchivos(): void
     {
+        set_time_limit(0);
         $this->validarToken();
         $camposRequeridos = ['archivo_seg', 'archivo_oficializacion', 'archivo_cfe_a'];
         $campos = $camposRequeridos;
@@ -78,6 +79,7 @@ class EscuelaController
 
     public function sincronizarCatalogos(): void
     {
+        set_time_limit(0);
         $this->validarToken();
         $campos = ['catalogo_seg', 'oficializacion_911'];
         $archivos = [];

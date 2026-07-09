@@ -136,6 +136,14 @@ $segBasePath = '../';
     const syncButton = document.getElementById('sync-catalogs');
     const syncStatus = document.getElementById('sync-status');
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character]));
+    const parseServerJson = text => {
+        try {
+            return JSON.parse(text || '{"ok":false,"error":"El servidor no devolvio una respuesta."}');
+        } catch (error) {
+            const clean = String(text || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+            return {ok:false,error:clean || 'El servidor devolvio una respuesta no valida.'};
+        }
+    };
     document.querySelectorAll('.drop-zone').forEach(zone => {
         const input = document.getElementById(zone.dataset.input);
         const update = () => {
@@ -174,7 +182,7 @@ $segBasePath = '../';
         syncStatus.hidden = false;
         try {
             const response = await fetch(controller,{method:'POST',headers:{'X-CSRF-Token':token},body});
-            const data = await response.json();
+            const data = parseServerJson(await response.text());
             if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible sincronizar los catálogos.');
             Swal.fire({icon:'success',title:'Catálogos sincronizados',text:`Se guardaron ${data.total} escuelas en la base local.`,confirmButtonColor:'#6c1d24'});
         } catch (error) {
@@ -211,7 +219,7 @@ $segBasePath = '../';
         request.onload = () => {
             button.disabled = false;
             try {
-                const data = JSON.parse(request.responseText || '{"ok":false,"error":"El servidor no devolvió una respuesta."}');
+                const data = parseServerJson(request.responseText);
                 if (request.status < 200 || request.status >= 300 || !data.ok) throw new Error(data.error || 'No fue posible ejecutar el cruce.');
                 bar.style.width = '100%';
                 text.textContent = 'Cruce predictivo completado';
@@ -268,7 +276,7 @@ $segBasePath = '../';
         const body = new URLSearchParams({accion:'confirmar_vinculo',csrf:token,cct:option.cct,rpu:registro.rpu,nombre_recibo_cfe:registro.nombre_cfe || '',poblacion_cfe:registro.poblacion_cfe || '',tarifa_cfe:registro.tarifa_cfe || ''});
         try {
             const response = await fetch(controller,{method:'POST',headers:{'X-CSRF-Token':token},body});
-            const data = await response.json();
+            const data = parseServerJson(await response.text());
             if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible guardar el vínculo.');
             button.textContent = 'Vínculo confirmado';
             button.classList.add('saved');
@@ -287,7 +295,7 @@ $segBasePath = '../';
         const body = new URLSearchParams({accion:'eliminar_vinculo',csrf:token,cct:option.cct,rpu:registro.rpu});
         try {
             const response = await fetch(controller,{method:'POST',headers:{'X-CSRF-Token':token},body});
-            const data = await response.json();
+            const data = parseServerJson(await response.text());
             if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible quitar el vinculo.');
             option.vinculado = false;
             registro.vinculos_confirmados = (registro.vinculos_confirmados || []).filter(vinculo => vinculo.cct !== option.cct);
