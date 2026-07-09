@@ -35,9 +35,17 @@ class EscuelaController
                 . ' ' . escapeshellarg($script)
                 . ' ' . escapeshellarg($_FILES['archivo_mes_uno']['tmp_name'])
                 . ' ' . escapeshellarg($_FILES['archivo_mes_dos']['tmp_name'])
-                . ' ' . escapeshellarg($archivoEscuelas)
-                . ' 2>&1';
-            $salida = shell_exec($comando);
+                . ' ' . escapeshellarg($archivoEscuelas);
+            $salidaPrecarga = shell_exec($comando . ' --solo-precarga 2>&1');
+            $precarga = is_string($salidaPrecarga) ? json_decode(trim($salidaPrecarga), true) : null;
+            if (!is_array($precarga) || empty($precarga['ok'])) {
+                $this->responder([
+                    'ok' => false,
+                    'error' => $precarga['error'] ?? 'No fue posible leer los dos periodos CFE.'
+                ], 422);
+            }
+            $modelo->reemplazarPrecarga($precarga['precarga'] ?? []);
+            $salida = shell_exec($comando . ' 2>&1');
             $resultado = is_string($salida) ? json_decode(trim($salida), true) : null;
             if (!is_array($resultado)) {
                 $this->responder(['ok' => false, 'error' => 'El motor Python no devolvió una respuesta válida.'], 500);
@@ -45,7 +53,6 @@ class EscuelaController
             if (empty($resultado['ok'])) {
                 $this->responder($resultado, 422);
             }
-            $modelo->reemplazarPrecarga($resultado['precarga'] ?? []);
             unset($resultado['precarga']);
             $this->responder($resultado);
         } catch (Throwable $e) {

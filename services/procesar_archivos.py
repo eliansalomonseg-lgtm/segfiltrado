@@ -75,11 +75,19 @@ def registro_precarga(fila):
     }
 
 
-def procesar(mes_uno, mes_dos, archivo_escuelas):
-    cfe = pd.concat([
+def cargar_periodos(mes_uno, mes_dos):
+    return pd.concat([
         preparar_cfe(mes_uno, "A"),
         preparar_cfe(mes_dos, "B")
     ], ignore_index=True)
+
+
+def obtener_precarga(cfe):
+    return [registro_precarga(fila) for _, fila in cfe.iterrows()]
+
+
+def procesar(mes_uno, mes_dos, archivo_escuelas):
+    cfe = cargar_periodos(mes_uno, mes_dos)
     escuelas = cargar_escuelas(archivo_escuelas)
     escuelas["_LOCALIDAD"] = escuelas["NOMBRELOC"].map(normalizar)
     indice = {}
@@ -116,7 +124,7 @@ def procesar(mes_uno, mes_dos, archivo_escuelas):
     sugerencias.sort(key=lambda registro: registro["rpu"])
     return {
         "ok": True,
-        "precarga": [registro_precarga(fila) for _, fila in cfe.iterrows()],
+        "precarga": obtener_precarga(cfe),
         "resumen": {
             "registros_precarga": len(cfe),
             "rpu_unicos": int(cfe["RPU"].nunique()),
@@ -131,9 +139,15 @@ def main():
     parser.add_argument("mes_uno", type=Path)
     parser.add_argument("mes_dos", type=Path)
     parser.add_argument("escuelas", type=Path)
+    parser.add_argument("--solo-precarga", action="store_true")
     argumentos = parser.parse_args()
     try:
-        print(json.dumps(procesar(argumentos.mes_uno, argumentos.mes_dos, argumentos.escuelas), ensure_ascii=False))
+        if argumentos.solo_precarga:
+            cfe = cargar_periodos(argumentos.mes_uno, argumentos.mes_dos)
+            salida = {"ok": True, "precarga": obtener_precarga(cfe)}
+        else:
+            salida = procesar(argumentos.mes_uno, argumentos.mes_dos, argumentos.escuelas)
+        print(json.dumps(salida, ensure_ascii=False))
     except Exception as error:
         print(json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False))
         sys.exit(1)
