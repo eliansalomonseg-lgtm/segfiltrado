@@ -37,14 +37,25 @@ try:
             raise ValueError(f"Faltan columnas SEG: {', '.join(faltantes)}")
         return datos[columnas].copy()
 
-    def cargar_excel_oficializacion(ruta):
-        columnas_oficializacion = ["CV_CCT", "NOMBRECT", "C_NOM_MUN", "C_NOM_LOC", "TIPO"]
-        datos = pd.read_excel(ruta, header=5, dtype=object)
-        datos.columns = [str(columna).strip().upper() for columna in datos.columns]
-        faltantes = [columna for columna in columnas_oficializacion if columna not in datos.columns]
-        if faltantes:
-            raise ValueError(f"Faltan columnas Oficialización 911: {', '.join(faltantes)}")
-        datos = datos[columnas_oficializacion].rename(columns={
+    def cargar_excel_oficializacion(ruta_oficializacion):
+        try:
+            df_raw_ofic = pd.read_excel(ruta_oficializacion, header=None, dtype=object)
+            df_ofic = None
+            columnas_ofic_req = ["CV_CCT", "NOMBRECT", "C_NOM_MUN", "C_NOM_LOC", "TIPO"]
+            for idx, row in df_raw_ofic.iterrows():
+                row_clean = [str(x).strip().upper() for x in row.values]
+                if "CV_CCT" in row_clean and "NOMBRECT" in row_clean:
+                    df_ofic = pd.read_excel(ruta_oficializacion, header=idx, dtype=object)
+                    break
+            if df_ofic is None:
+                raise ValueError("No se encontró la fila de cabeceras en el archivo de Oficialización 911.")
+            df_ofic.columns = [str(c).strip() for c in df_ofic.columns]
+            faltantes_ofic = [col for col in columnas_ofic_req if col not in df_ofic.columns]
+            if faltantes_ofic:
+                raise ValueError(f"Faltan columnas Oficialización 911: {', '.join(faltantes_ofic)}")
+        except Exception as e:
+            raise ValueError(f"Error al procesar Oficialización: {str(e)}") from e
+        datos = df_ofic[columnas_ofic_req].rename(columns={
             "CV_CCT": "CCT",
             "C_NOM_MUN": "NOMBREMUN",
             "C_NOM_LOC": "NOMBRELOC",
