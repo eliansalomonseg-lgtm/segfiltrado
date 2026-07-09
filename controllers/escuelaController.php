@@ -11,9 +11,10 @@ class EscuelaController
     public function procesarArchivos(): void
     {
         $this->validarToken();
-        foreach (['archivo_seg', 'archivo_cfe'] as $campo) {
+        $campos = ['archivo_seg', 'archivo_oficializacion', 'archivo_cfe_a', 'archivo_cfe_b'];
+        foreach ($campos as $campo) {
             if (!isset($_FILES[$campo]) || $_FILES[$campo]['error'] !== UPLOAD_ERR_OK) {
-                $this->responder(['ok' => false, 'error' => 'Carga el catálogo SEG y el reporte CFE.'], 422);
+                $this->responder(['ok' => false, 'error' => 'Carga los cuatro archivos requeridos para la consolidación.'], 422);
             }
             $extension = strtolower(pathinfo($_FILES[$campo]['name'], PATHINFO_EXTENSION));
             if (!in_array($extension, ['xlsx', 'xls'], true)) {
@@ -22,7 +23,7 @@ class EscuelaController
         }
         $rutas = [];
         try {
-            foreach (['archivo_seg', 'archivo_cfe'] as $campo) {
+            foreach ($campos as $campo) {
                 $extension = strtolower(pathinfo($_FILES[$campo]['name'], PATHINFO_EXTENSION));
                 $ruta = sys_get_temp_dir() . DIRECTORY_SEPARATOR . bin2hex(random_bytes(16)) . '.' . $extension;
                 if (!move_uploaded_file($_FILES[$campo]['tmp_name'], $ruta)) {
@@ -35,7 +36,9 @@ class EscuelaController
             $comando = escapeshellarg($python)
                 . ' ' . escapeshellarg($script)
                 . ' ' . escapeshellarg($rutas['archivo_seg'])
-                . ' ' . escapeshellarg($rutas['archivo_cfe'])
+                . ' ' . escapeshellarg($rutas['archivo_oficializacion'])
+                . ' ' . escapeshellarg($rutas['archivo_cfe_a'])
+                . ' ' . escapeshellarg($rutas['archivo_cfe_b'])
                 . ' 2>&1';
             $salida = shell_exec($comando);
             $lineas = is_string($salida)

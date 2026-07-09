@@ -37,6 +37,22 @@ try:
             raise ValueError(f"Faltan columnas SEG: {', '.join(faltantes)}")
         return datos[columnas].copy()
 
+    def cargar_excel_oficializacion(ruta):
+        columnas = ["CVCCT", "NOMBRECT", "CNOMMUN", "CNOMLOC", "TIPO"]
+        datos = pd.read_excel(ruta, header=5, dtype=object)
+        datos.columns = [normalizar(columna).replace(" ", "") for columna in datos.columns]
+        faltantes = [columna for columna in columnas if columna not in datos.columns]
+        if faltantes:
+            raise ValueError(f"Faltan columnas Oficialización 911: {', '.join(faltantes)}")
+        datos = datos[columnas].rename(columns={
+            "CVCCT": "CCT",
+            "CNOMMUN": "NOMBREMUN",
+            "CNOMLOC": "NOMBRELOC",
+            "TIPO": "NIVEL"
+        })
+        datos["STATUS"] = "ACTIVO"
+        return datos[["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "NIVEL"]]
+
     def cargar_excel_cfe(ruta, columnas):
         datos = pd.read_excel(ruta, header=2, dtype=object)
         datos.columns = [normalizar(columna).replace(" ", "") for columna in datos.columns]
@@ -83,19 +99,22 @@ try:
         prioridad = (10 if esta_activa(escuela["STATUS"]) else 0) + (40 if nivel_coincide else 0)
         return similitud, similitud + prioridad, nivel_coincide
 
-    def procesar(ruta_seg, ruta_cfe):
+    def procesar(ruta_seg, ruta_oficializacion, ruta_cfe_a, ruta_cfe_b):
         columnas_seg = ["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "NIVEL"]
         columnas_cfe = ["RPU", "NOMBRE", "DIRECCION", "POBLACION", "TARIFA"]
-        seg = cargar_excel_seg(ruta_seg, columnas_seg)
-        cfe = cargar_excel_cfe(ruta_cfe, columnas_cfe)
+        catalogo_seg = cargar_excel_seg(ruta_seg, columnas_seg)
+        oficializacion = cargar_excel_oficializacion(ruta_oficializacion)
+        catalogo_seg["CCT"] = catalogo_seg["CCT"].map(lambda valor: normalizar(valor).replace(" ", ""))
+        oficializacion["CCT"] = oficializacion["CCT"].map(lambda valor: normalizar(valor).replace(" ", ""))
+        seg = pd.concat([catalogo_seg, oficializacion], ignore_index=True)
+        seg = seg[seg["CCT"].notna() & (seg["CCT"] != "")]
+        seg = seg.drop_duplicates(subset=["CCT"], keep="first")
+        cfe_a = cargar_excel_cfe(ruta_cfe_a, columnas_cfe)
+        cfe_b = cargar_excel_cfe(ruta_cfe_b, columnas_cfe)
+        cfe = pd.concat([cfe_a, cfe_b], ignore_index=True)
         cfe["RPU"] = cfe["RPU"].map(limpiar)
         cfe = cfe[cfe["RPU"].notna() & (cfe["RPU"] != "")]
-        cfe = cfe.groupby("RPU", as_index=False, sort=True).agg({
-            "NOMBRE": "last",
-            "DIRECCION": "last",
-            "POBLACION": "last",
-            "TARIFA": "last"
-        })
+        cfe = cfe.drop_duplicates(subset=["RPU"], keep="last").sort_values("RPU")
         indice_localidades = {}
         for _, escuela in seg.iterrows():
             localidad = normalizar(escuela["NOMBRELOC"])
@@ -142,16 +161,20 @@ try:
             "ok": True,
             "resumen": {
                 "registros_seg": len(seg),
+                "registros_catalogo_seg": len(catalogo_seg),
+                "registros_oficializacion": len(oficializacion),
                 "rpu_unicos": len(cfe),
+                "registros_cfe_a": len(cfe_a),
+                "registros_cfe_b": len(cfe_b),
                 "rpu_con_sugerencias": sum(bool(registro["opciones"]) for registro in resultados)
             },
             "resultados": resultados
         }
 
-    if len(sys.argv) != 3:
-        raise ValueError("Se requieren las rutas de los archivos SEG y CFE.")
+    if len(sys.argv) != 5:
+        raise ValueError("Se requieren Catálogo SEG, Oficialización 911 y dos periodos CFE.")
 
-    resultado = procesar(Path(sys.argv[1]), Path(sys.argv[2]))
+    resultado = procesar(Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]))
     print(json.dumps(resultado, ensure_ascii=False))
 
 except Exception as e:
