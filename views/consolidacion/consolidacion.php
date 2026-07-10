@@ -120,7 +120,7 @@ $segBasePath = '../';
         <div class="results-head">
             <div><span class="eyebrow">RESULTADOS</span><h2>RPUs únicos y escuelas sugeridas</h2></div>
             <div class="results-tools">
-                <button id="auto-link-safe" class="btn btn-success btn-sm" type="button">⚡ Auto-Vincular Casos Seguros (≥60%)</button>
+                <button id="auto-link-safe" class="btn btn-success btn-sm" type="button">⚡ Auto-Vincular Casos Seguros (≥50%)</button>
                 <input id="result-search" class="result-search" type="search" placeholder="Buscar RPU, CCT o escuela">
                 <div id="summary" class="summary"></div>
             </div>
@@ -300,7 +300,7 @@ $segBasePath = '../';
         (window.currentResults || []).forEach(registro => {
             (registro.opciones || []).forEach(option => {
                 const score = Number(option.similitud ?? option.score ?? 0);
-                if (score >= 60 && !option.vinculado && registro.rpu && option.cct) {
+                if (score >= 50 && !option.vinculado && registro.rpu && option.cct) {
                     selected.set(`${option.cct}|${registro.rpu}`, {
                         CCT: option.cct,
                         RPU: registro.rpu,
@@ -316,7 +316,7 @@ $segBasePath = '../';
     async function autoLinkSafeCases() {
         const vinculos = getSafeLinkCases();
         if (!vinculos.length) {
-            Swal.fire({icon:'info',title:'Sin casos seguros',text:'No hay sugerencias pendientes con score mayor o igual al 60%.',confirmButtonColor:'#6c1d24'});
+            Swal.fire({icon:'info',title:'Sin casos seguros',text:'No hay sugerencias pendientes con score mayor o igual al 50%.',confirmButtonColor:'#6c1d24'});
             return;
         }
         const decision = await Swal.fire({icon:'question',title:'Auto-vincular casos seguros',text:`Se insertarán ${vinculos.length} vínculos con alta certeza.`,showCancelButton:true,confirmButtonText:'Auto-vincular',cancelButtonText:'Cancelar',confirmButtonColor:'#198754',cancelButtonColor:'#212529'});
