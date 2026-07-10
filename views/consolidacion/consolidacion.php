@@ -120,6 +120,7 @@ $segBasePath = '../';
         <div class="results-head">
             <div><span class="eyebrow">RESULTADOS</span><h2>RPUs únicos y escuelas sugeridas</h2></div>
             <div class="results-tools">
+                <button id="auto-link-safe" class="btn btn-success btn-sm" type="button">⚡ Auto-Vincular Casos Seguros (≥69%)</button>
                 <input id="result-search" class="result-search" type="search" placeholder="Buscar RPU, CCT o escuela">
                 <div id="summary" class="summary"></div>
             </div>
@@ -140,6 +141,7 @@ $segBasePath = '../';
     const syncButton = document.getElementById('sync-catalogs');
     const syncStatus = document.getElementById('sync-status');
     const resultSearch = document.getElementById('result-search');
+    const autoLinkSafe = document.getElementById('auto-link-safe');
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character]));
     const parseServerJson = text => {
         try {
@@ -245,6 +247,7 @@ $segBasePath = '../';
             renderResults({resultados:window.currentResults,resumen:window.currentSummary}, false);
         }
     });
+    autoLinkSafe.addEventListener('click', autoLinkSafeCases);
     const normalizeSearch = value => String(value ?? '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     function resultMatchesSearch(registro, term) {
         if (!term) return true;
@@ -291,6 +294,59 @@ $segBasePath = '../';
         const results = document.getElementById('results');
         results.hidden = false;
         if (scroll) results.scrollIntoView({behavior:'smooth'});
+    }
+    function getSafeLinkCases() {
+        const selected = new Map();
+        (window.currentResults || []).forEach(registro => {
+            (registro.opciones || []).forEach(option => {
+                const score = Number(option.similitud ?? option.score ?? 0);
+                if (score >= 69 && !option.vinculado && registro.rpu && option.cct) {
+                    selected.set(`${option.cct}|${registro.rpu}`, {
+                        CCT: option.cct,
+                        RPU: registro.rpu,
+                        nombre_recibo_cfe: registro.nombre_cfe || '',
+                        poblacion_cfe: registro.poblacion_cfe || '',
+                        tarifa_cfe: registro.tarifa_cfe || ''
+                    });
+                }
+            });
+        });
+        return Array.from(selected.values());
+    }
+    async function autoLinkSafeCases() {
+        const vinculos = getSafeLinkCases();
+        if (!vinculos.length) {
+            Swal.fire({icon:'info',title:'Sin casos seguros',text:'No hay sugerencias pendientes con score mayor o igual al 69%.',confirmButtonColor:'#6c1d24'});
+            return;
+        }
+        const decision = await Swal.fire({icon:'question',title:'Auto-vincular casos seguros',text:`Se insertarán ${vinculos.length} vínculos con alta certeza.`,showCancelButton:true,confirmButtonText:'Auto-vincular',cancelButtonText:'Cancelar',confirmButtonColor:'#198754',cancelButtonColor:'#212529'});
+        if (!decision.isConfirmed) return;
+        autoLinkSafe.disabled = true;
+        const body = new URLSearchParams({accion:'auto_vincular_masivo',csrf:token,vinculos:JSON.stringify(vinculos)});
+        try {
+            const response = await fetch(controller,{method:'POST',headers:{'X-CSRF-Token':token},body});
+            const data = parseServerJson(await response.text());
+            if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible auto-vincular los casos seguros.');
+            const linkedKeys = new Set(vinculos.map(vinculo => `${vinculo.CCT}|${vinculo.RPU}`));
+            (window.currentResults || []).forEach(registro => {
+                registro.vinculos_confirmados = registro.vinculos_confirmados || [];
+                (registro.opciones || []).forEach(option => {
+                    if (linkedKeys.has(`${option.cct}|${registro.rpu}`)) {
+                        option.vinculado = true;
+                        if (!registro.vinculos_confirmados.some(vinculo => vinculo.cct === option.cct)) {
+                            registro.vinculos_confirmados.push({cct:option.cct,nombre_escuela:option.nombre_escuela});
+                        }
+                    }
+                });
+                registro.vinculo_confirmado = registro.vinculos_confirmados.length > 0;
+            });
+            renderResults({resultados:window.currentResults,resumen:window.currentSummary}, false);
+            Swal.fire({icon:'success',title:'Auto-vinculación completada',text:`Se han procesado e insertado automáticamente ${data.total} escuelas con alta certeza`,confirmButtonColor:'#198754'});
+        } catch (error) {
+            Swal.fire({icon:'error',title:'No se pudo auto-vincular',text:error.message,confirmButtonColor:'#6c1d24'});
+        } finally {
+            autoLinkSafe.disabled = false;
+        }
     }
     function optionFromSchool(escuela) {
         return {

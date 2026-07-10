@@ -260,6 +260,57 @@ class EscuelaController
         }
     }
 
+    public function autoVincularMasivo(): void
+    {
+        $this->validarToken();
+        try {
+            $vinculos = json_decode((string) ($_POST['vinculos'] ?? '[]'), true);
+            if (!is_array($vinculos) || !$vinculos) {
+                throw new RuntimeException('No se recibieron vinculos para procesar.');
+            }
+            $conexion = Conexion::conectar();
+            $this->prepararTablaVinculos($conexion);
+            $conexion->beginTransaction();
+            $consulta = $conexion->prepare(
+                'INSERT INTO escuelas_rpu (CCT, RPU, nombre_recibo_cfe, poblacion_cfe, tarifa_cfe)
+                 VALUES (?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE nombre_recibo_cfe = VALUES(nombre_recibo_cfe), poblacion_cfe = VALUES(poblacion_cfe), tarifa_cfe = VALUES(tarifa_cfe)'
+            );
+            $total = 0;
+            foreach ($vinculos as $vinculo) {
+                if (!is_array($vinculo)) {
+                    continue;
+                }
+                $cct = trim((string) ($vinculo['CCT'] ?? $vinculo['cct'] ?? ''));
+                $rpu = trim((string) ($vinculo['RPU'] ?? $vinculo['rpu'] ?? ''));
+                if ($cct === '' || $rpu === '') {
+                    continue;
+                }
+                $nombreRecibo = trim((string) ($vinculo['nombre_recibo_cfe'] ?? ''));
+                $poblacion = trim((string) ($vinculo['poblacion_cfe'] ?? ''));
+                $tarifa = trim((string) ($vinculo['tarifa_cfe'] ?? ''));
+                $consulta->execute([
+                    $cct,
+                    $rpu,
+                    $nombreRecibo !== '' ? $nombreRecibo : null,
+                    $poblacion !== '' ? $poblacion : null,
+                    $tarifa !== '' ? $tarifa : null
+                ]);
+                $total++;
+            }
+            if ($total === 0) {
+                throw new RuntimeException('No se encontraron vinculos validos para insertar.');
+            }
+            $conexion->commit();
+            $this->responder(['ok' => true, 'total' => $total, 'mensaje' => 'Auto-vinculacion masiva completada.']);
+        } catch (Throwable $e) {
+            if (isset($conexion) && $conexion instanceof PDO && $conexion->inTransaction()) {
+                $conexion->rollBack();
+            }
+            $this->responder(['ok' => false, 'error' => 'Fallo de auto-vinculacion: ' . $e->getMessage()], 500);
+        }
+    }
+
     public function buscarEscuelas(): void
     {
         $this->validarToken();
@@ -341,6 +392,10 @@ if ($accion === 'confirmar_vinculo') {
 
 if ($accion === 'eliminar_vinculo') {
     $controlador->eliminarVinculo();
+}
+
+if ($accion === 'auto_vincular_masivo') {
+    $controlador->autoVincularMasivo();
 }
 
 if ($accion === 'buscar_escuelas') {
