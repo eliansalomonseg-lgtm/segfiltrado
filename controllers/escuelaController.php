@@ -260,6 +260,30 @@ class EscuelaController
         }
     }
 
+    public function buscarEscuelas(): void
+    {
+        $this->validarToken();
+        try {
+            $termino = trim((string) ($_POST['q'] ?? ''));
+            if (mb_strlen($termino) < 2) {
+                $this->responder(['ok' => true, 'escuelas' => []]);
+            }
+            $conexion = Conexion::conectar();
+            $busqueda = '%' . str_replace(['%', '_'], ['\%', '\_'], $termino) . '%';
+            $consulta = $conexion->prepare(
+                "SELECT CCT, NOMBRECT, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL
+                 FROM escuelas
+                 WHERE CCT LIKE ? OR NOMBRECT LIKE ? OR NOMBREMUN LIKE ? OR NOMBRELOC LIKE ?
+                 ORDER BY CASE WHEN CCT = ? THEN 0 WHEN CCT LIKE ? THEN 1 ELSE 2 END, NOMBRECT
+                 LIMIT 25"
+            );
+            $consulta->execute([$busqueda, $busqueda, $busqueda, $busqueda, $termino, $termino . '%']);
+            $this->responder(['ok' => true, 'escuelas' => $consulta->fetchAll()]);
+        } catch (Throwable $e) {
+            $this->responder(['ok' => false, 'error' => 'Fallo de busqueda: ' . $e->getMessage()], 500);
+        }
+    }
+
     private function prepararTablaVinculos(PDO $conexion): void
     {
         $consulta = $conexion->query(
@@ -317,6 +341,10 @@ if ($accion === 'confirmar_vinculo') {
 
 if ($accion === 'eliminar_vinculo') {
     $controlador->eliminarVinculo();
+}
+
+if ($accion === 'buscar_escuelas') {
+    $controlador->buscarEscuelas();
 }
 
 http_response_code(400);

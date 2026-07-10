@@ -37,6 +37,7 @@ $segBasePath = '../';
         .btn-sync-catalogs:disabled{cursor:wait;opacity:.7}
         .sync-status{align-items:center;color:#6a5434;display:flex;font-size:11px;font-weight:700;gap:8px;justify-content:center;margin-top:12px}
         .mass-divider{align-items:center;color:var(--dorado);display:flex;font-size:20px;font-weight:800;justify-content:center}
+        .results-tools{align-items:center;display:flex;gap:10px;justify-content:flex-end}.result-search{border:1px solid #e1d8cb;border-radius:8px;font-size:12px;min-width:280px;padding:10px 12px}.manual-search{background:#212529;border:0;border-radius:7px;color:#fff;cursor:pointer;font-size:10px;font-weight:700;margin-top:10px;padding:8px 10px}.search-school-list{display:grid;gap:8px;margin-top:12px;max-height:360px;overflow:auto;text-align:left}.search-school-item{align-items:center;background:#faf8f5;border:1px solid #e5dfd7;border-radius:8px;display:grid;gap:10px;grid-template-columns:1fr auto;padding:10px}.search-school-item strong{display:block;font-size:12px}.search-school-item small{color:#6f7377;display:block;font-size:11px;margin-top:3px}.search-school-item button{background:var(--guinda);border:0;border-radius:7px;color:#fff;cursor:pointer;font-size:10px;font-weight:700;padding:8px 10px}
         @media(max-width:600px){.workflow{align-items:stretch;flex-direction:column}.workflow span{text-align:center}}
     </style>
 </head>
@@ -118,7 +119,10 @@ $segBasePath = '../';
     <section id="results" class="results-card" hidden>
         <div class="results-head">
             <div><span class="eyebrow">RESULTADOS</span><h2>RPUs únicos y escuelas sugeridas</h2></div>
-            <div id="summary" class="summary"></div>
+            <div class="results-tools">
+                <input id="result-search" class="result-search" type="search" placeholder="Buscar RPU, CCT o escuela">
+                <div id="summary" class="summary"></div>
+            </div>
         </div>
         <div class="table-wrap">
             <table>
@@ -135,6 +139,7 @@ $segBasePath = '../';
     const controller = '../../controllers/escuelaController.php';
     const syncButton = document.getElementById('sync-catalogs');
     const syncStatus = document.getElementById('sync-status');
+    const resultSearch = document.getElementById('result-search');
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character]));
     const parseServerJson = text => {
         try {
@@ -235,12 +240,28 @@ $segBasePath = '../';
         };
         request.send(new FormData(form));
     });
-    function renderResults(data) {
+    resultSearch.addEventListener('input', () => {
+        if (window.currentResults && window.currentSummary) {
+            renderResults({resultados:window.currentResults,resumen:window.currentSummary}, false);
+        }
+    });
+    const normalizeSearch = value => String(value ?? '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    function resultMatchesSearch(registro, term) {
+        if (!term) return true;
+        const fields = [registro.rpu, registro.nombre_cfe, registro.direccion_cfe, registro.poblacion_cfe, registro.tarifa_cfe];
+        (registro.vinculos_confirmados || []).forEach(vinculo => fields.push(vinculo.cct, vinculo.nombre_escuela));
+        (registro.opciones || []).forEach(option => fields.push(option.cct, option.nombre_escuela, option.municipio, option.localidad, option.subnivel, option.origen));
+        return normalizeSearch(fields.join(' ')).includes(term);
+    }
+    function renderResults(data, scroll = true) {
         window.currentResults = data.resultados;
         window.currentSummary = data.resumen;
         const tbody = document.getElementById('matches');
-        tbody.innerHTML = data.resultados.map((registro, row) => {
-            const options = registro.opciones.length ? registro.opciones.map((option, index) => `
+        const term = normalizeSearch(resultSearch.value);
+        const registros = data.resultados.map((registro, row) => ({registro,row})).filter(item => resultMatchesSearch(item.registro, term));
+        tbody.innerHTML = registros.length ? registros.map(({registro, row}) => {
+            const opciones = registro.opciones || [];
+            const options = opciones.length ? opciones.map((option, index) => `
                 <div class="option ${option.vinculado ? 'done' : ''}">
                     <div class="option-data"><strong>${escapeHtml(option.cct)} · ${escapeHtml(option.nombre_escuela)}</strong><small>${escapeHtml(option.municipio)} · ${escapeHtml(option.localidad)} · ${escapeHtml(option.subnivel)} · STATUS ${escapeHtml(option.status)}</small></div>
                     <span class="tag">${escapeHtml(option.origen || 'Sin origen')}</span>
@@ -249,8 +270,8 @@ $segBasePath = '../';
                 </div>
             `).join('') : '<span class="empty">Sin escuelas coincidentes en esta localidad</span>';
             const linked = registro.vinculos_confirmados?.length ? registro.vinculos_confirmados.map(vinculo => `<span class="tag">Vinculado: ${escapeHtml(vinculo.cct)}${vinculo.nombre_escuela ? ' - ' + escapeHtml(vinculo.nombre_escuela) : ''}</span>`).join('') : '';
-            return `<tr><td><strong>${escapeHtml(registro.rpu)}</strong><span class="tag">${escapeHtml(registro.tarifa_cfe || 'Sin tarifa')}</span>${linked}</td><td><strong>${escapeHtml(registro.nombre_cfe)}</strong><small>${escapeHtml(registro.direccion_cfe)}<br>${escapeHtml(registro.poblacion_cfe)}</small></td><td><div class="options">${options}</div></td></tr>`;
-        }).join('');
+            return `<tr><td><strong>${escapeHtml(registro.rpu)}</strong><span class="tag">${escapeHtml(registro.tarifa_cfe || 'Sin tarifa')}</span>${linked}<button class="manual-search" type="button" data-row="${row}">Buscar CCT para este RPU</button></td><td><strong>${escapeHtml(registro.nombre_cfe)}</strong><small>${escapeHtml(registro.direccion_cfe)}<br>${escapeHtml(registro.poblacion_cfe)}</small></td><td><div class="options">${options}</div></td></tr>`;
+        }).join('') : '<tr><td colspan="3"><span class="empty">Sin resultados para la busqueda actual</span></td></tr>';
         tbody.querySelectorAll('.option.done .confirm').forEach(button => {
             button.textContent = 'Quitar vinculo';
             button.classList.add('saved');
@@ -262,28 +283,117 @@ $segBasePath = '../';
         tbody.querySelectorAll('.confirm:not(.remove-link)').forEach(button => button.addEventListener('click', () => {
             confirmLink(data.resultados[Number(button.dataset.row)], Number(button.dataset.option), button);
         }));
+        tbody.querySelectorAll('.manual-search').forEach(button => button.addEventListener('click', () => {
+            openSchoolSearch(data.resultados[Number(button.dataset.row)]);
+        }));
         const summary = data.resumen;
-        document.getElementById('summary').innerHTML = `<strong>${summary.rpu_unicos}</strong> RPUs únicos · ${summary.rpu_con_sugerencias} con sugerencias`;
+        document.getElementById('summary').innerHTML = `<strong>${registros.length}</strong> de ${summary.rpu_unicos} RPUs · ${summary.rpu_con_sugerencias} con sugerencias`;
         const results = document.getElementById('results');
         results.hidden = false;
-        results.scrollIntoView({behavior:'smooth'});
+        if (scroll) results.scrollIntoView({behavior:'smooth'});
+    }
+    function optionFromSchool(escuela) {
+        return {
+            cct: escuela.CCT,
+            nombre_escuela: escuela.NOMBRECT,
+            municipio: escuela.NOMBREMUN || '',
+            localidad: escuela.NOMBRELOC || '',
+            subnivel: escuela.SUBNIVEL || '',
+            status: escuela.STATUS || '',
+            origen: 'Base local',
+            similitud: 100,
+            vinculado: false
+        };
+    }
+    async function searchSchools(term) {
+        const body = new URLSearchParams({accion:'buscar_escuelas',csrf:token,q:term});
+        const response = await fetch(controller,{method:'POST',headers:{'X-CSRF-Token':token},body});
+        const data = parseServerJson(await response.text());
+        if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible buscar escuelas.');
+        return data.escuelas || [];
+    }
+    async function openSchoolSearch(registro) {
+        let lastResults = [];
+        let selectedSchool = null;
+        const modal = await Swal.fire({
+            title:'Buscar escuela para vincular',
+            html:`<input id="school-search-input" class="swal2-input" placeholder="CCT, nombre, municipio o localidad"><div id="school-search-list" class="search-school-list"><span class="empty">Escribe al menos 2 caracteres.</span></div>`,
+            showConfirmButton:false,
+            showCancelButton:true,
+            cancelButtonText:'Cerrar',
+            cancelButtonColor:'#212529',
+            didOpen: () => {
+                const input = document.getElementById('school-search-input');
+                const list = document.getElementById('school-search-list');
+                let timer = null;
+                const renderList = escuelas => {
+                    lastResults = escuelas;
+                    list.innerHTML = escuelas.length ? escuelas.map((escuela, index) => `
+                        <div class="search-school-item">
+                            <div><strong>${escapeHtml(escuela.CCT)} · ${escapeHtml(escuela.NOMBRECT)}</strong><small>${escapeHtml(escuela.NOMBREMUN)} · ${escapeHtml(escuela.NOMBRELOC)} · ${escapeHtml(escuela.SUBNIVEL)} · STATUS ${escapeHtml(escuela.STATUS)}</small></div>
+                            <button type="button" data-school="${index}">Vincular</button>
+                        </div>
+                    `).join('') : '<span class="empty">Sin escuelas encontradas.</span>';
+                };
+                input.addEventListener('input', () => {
+                    clearTimeout(timer);
+                    const term = input.value.trim();
+                    if (term.length < 2) {
+                        list.innerHTML = '<span class="empty">Escribe al menos 2 caracteres.</span>';
+                        return;
+                    }
+                    list.innerHTML = '<span class="empty">Buscando...</span>';
+                    timer = setTimeout(async () => {
+                        try {
+                            renderList(await searchSchools(term));
+                        } catch (error) {
+                            list.innerHTML = `<span class="empty">${escapeHtml(error.message)}</span>`;
+                        }
+                    }, 280);
+                });
+                list.addEventListener('click', event => {
+                    const button = event.target.closest('button[data-school]');
+                    if (!button) return;
+                    const escuela = lastResults[Number(button.dataset.school)];
+                    if (escuela) {
+                        selectedSchool = escuela;
+                        Swal.close();
+                    }
+                });
+                input.focus();
+            }
+        });
+        if (selectedSchool) {
+            await confirmSelectedOption(registro, optionFromSchool(selectedSchool), null);
+        }
     }
     async function confirmLink(registro, optionIndex, button) {
         const option = registro.opciones[optionIndex];
+        await confirmSelectedOption(registro, option, button);
+    }
+    async function confirmSelectedOption(registro, option, button) {
         const decision = await Swal.fire({icon:'question',title:'Confirmar vínculo',html:`<b>${escapeHtml(registro.rpu)}</b><br>${escapeHtml(option.cct)} · ${escapeHtml(option.nombre_escuela)}`,showCancelButton:true,confirmButtonText:'Confirmar Vínculo',cancelButtonText:'Cancelar',confirmButtonColor:'#6c1d24',cancelButtonColor:'#212529'});
         if (!decision.isConfirmed) return;
-        button.disabled = true;
+        if (button) button.disabled = true;
         const body = new URLSearchParams({accion:'confirmar_vinculo',csrf:token,cct:option.cct,rpu:registro.rpu,nombre_recibo_cfe:registro.nombre_cfe || '',poblacion_cfe:registro.poblacion_cfe || '',tarifa_cfe:registro.tarifa_cfe || ''});
         try {
             const response = await fetch(controller,{method:'POST',headers:{'X-CSRF-Token':token},body});
             const data = parseServerJson(await response.text());
             if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible guardar el vínculo.');
-            button.textContent = 'Vínculo confirmado';
-            button.classList.add('saved');
-            button.closest('.option').classList.add('done');
+            option.vinculado = true;
+            registro.opciones = registro.opciones || [];
+            if (!registro.opciones.some(item => item.cct === option.cct)) {
+                registro.opciones.unshift(option);
+            }
+            registro.vinculos_confirmados = registro.vinculos_confirmados || [];
+            if (!registro.vinculos_confirmados.some(vinculo => vinculo.cct === option.cct)) {
+                registro.vinculos_confirmados.push({cct:option.cct,nombre_escuela:option.nombre_escuela});
+            }
+            registro.vinculo_confirmado = true;
+            renderResults({resultados:window.currentResults,resumen:window.currentSummary}, false);
             Swal.fire({icon:'success',title:'Vínculo guardado',text:data.mensaje,confirmButtonColor:'#6c1d24'});
         } catch (error) {
-            button.disabled = false;
+            if (button) button.disabled = false;
             Swal.fire({icon:'error',title:'No se guardó',text:error.message,confirmButtonColor:'#6c1d24'});
         }
     }
