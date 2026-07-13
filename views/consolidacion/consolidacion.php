@@ -38,7 +38,7 @@ $segBasePath = '../';
         .btn-sync-catalogs:disabled{cursor:wait;opacity:.7}
         .sync-status{align-items:center;color:#6a5434;display:flex;font-size:11px;font-weight:700;gap:8px;justify-content:center;margin-top:12px}
         .mass-divider{align-items:center;color:var(--dorado);display:flex;font-size:20px;font-weight:800;justify-content:center}
-        .results-tools{align-items:center;display:flex;gap:10px;justify-content:flex-end}.result-search{border:1px solid #e1d8cb;border-radius:8px;font-size:12px;min-width:280px;padding:10px 12px}.manual-search{background:#212529;border:0;border-radius:7px;color:#fff;cursor:pointer;font-size:10px;font-weight:700;margin-top:10px;padding:8px 10px}.search-school-list{display:grid;gap:8px;margin-top:12px;max-height:360px;overflow:auto;text-align:left}.search-school-item{align-items:center;background:#faf8f5;border:1px solid #e5dfd7;border-radius:8px;display:grid;gap:10px;grid-template-columns:1fr auto auto;padding:10px}.search-school-item strong{display:block;font-size:12px}.search-school-item small{color:#6f7377;display:block;font-size:11px;margin-top:3px}.search-school-item button{background:var(--guinda);border:0;border-radius:7px;color:#fff;cursor:pointer;font-size:10px;font-weight:700;padding:8px 10px}.tag.address{background:#6f5838}
+        .results-tools{align-items:center;display:flex;gap:10px;justify-content:flex-end}.result-search{border:1px solid #e1d8cb;border-radius:8px;font-size:12px;min-width:280px;padding:10px 12px}.manual-search{background:#212529;border:0;border-radius:7px;color:#fff;cursor:pointer;font-size:10px;font-weight:700;margin-top:10px;padding:8px 10px}.school-search-panel{display:grid;gap:8px;grid-template-columns:1fr 1fr;margin-top:8px}.school-search-panel .swal2-input,.school-search-panel .swal2-select{box-sizing:border-box;font-size:12px;height:42px;margin:0;width:100%}.search-school-list{display:grid;gap:8px;margin-top:12px;max-height:360px;overflow:auto;text-align:left}.search-school-item{align-items:center;background:#faf8f5;border:1px solid #e5dfd7;border-radius:8px;display:grid;gap:10px;grid-template-columns:1fr auto auto;padding:10px}.search-school-item strong{display:block;font-size:12px}.search-school-item small{color:#6f7377;display:block;font-size:11px;margin-top:3px}.search-school-item button{background:var(--guinda);border:0;border-radius:7px;color:#fff;cursor:pointer;font-size:10px;font-weight:700;padding:8px 10px}.tag.address{background:#6f5838}
         .seg-navbar{background:linear-gradient(105deg,#54151c 0%,#761f29 72%,#8f6f3f 100%);border-bottom:1px solid #ffffff18;height:78px;padding:0 32px;z-index:20}.seg-brand{align-items:center;display:flex;gap:13px}.seg-brand-mark{align-items:center;background:#ffffff12;border:1px solid #d7bd83;border-radius:12px;box-shadow:inset 0 0 0 1px #ffffff14;color:#f4dca8;display:flex;font-size:13px;font-weight:900;height:42px;justify-content:center;letter-spacing:.5px;width:42px}.seg-brand-copy{display:grid}.seg-brand-copy strong{font-size:16px;letter-spacing:.2px}.seg-brand-copy small{color:#f2e8d8;font-size:11px;opacity:.82}.seg-navbar-actions{align-items:center;background:#ffffff12;border:1px solid #ffffff18;border-radius:999px;display:flex;gap:9px;padding:8px 10px}.seg-status-dot{background:#35c46b;border-radius:50%;box-shadow:0 0 0 4px #35c46b22;display:block;height:8px;width:8px}.seg-badge{background:#f1d9a6;border-radius:999px;color:#3a2a17;font-size:11px;font-weight:800;padding:8px 13px}.seg-sidebar{background:linear-gradient(180deg,#761f29 0%,#5d1820 58%,#3d1016 100%);border-right:1px solid #d7bd8340;box-shadow:10px 0 32px #3010141f;padding:22px 14px 18px;top:78px;width:248px}.seg-sidebar-head{border-bottom:1px solid #ffffff14;margin:0 5px 14px;padding:6px 8px 18px}.seg-sidebar-title{color:#d7bd83;font-size:10px;letter-spacing:2.2px;margin:0 0 11px}.seg-sidebar-head strong{color:#fff;display:block;font-size:15px;line-height:1.25}.seg-sidebar-head small{color:#ffffffa8;display:block;font-size:11px;margin-top:5px}.seg-menu{display:grid;gap:8px}.seg-menu a,.seg-sidebar a{align-items:center;border:1px solid transparent;border-radius:12px;color:#ffffffe0;display:grid;font-size:13px;gap:11px;grid-template-columns:34px 1fr;margin:0;padding:11px 10px;text-decoration:none;transition:.18s}.seg-menu a:hover,.seg-sidebar a:hover,.seg-menu a.active,.seg-sidebar a.active{background:#ffffff12;border-color:#d7bd8370;color:#fff;transform:translateX(3px)}.seg-menu a.active,.seg-sidebar a.active{box-shadow:inset 3px 0 0 #d7bd83}.seg-menu-icon{align-items:center;background:#ffffff12;border:1px solid #ffffff1f;border-radius:10px;color:#f1d9a6;display:flex;font-size:10px;font-weight:900;height:34px;justify-content:center;width:34px}.seg-menu a.active .seg-menu-icon{background:#d7bd83;color:#3a2a17}.seg-menu strong{display:block;font-size:13px}.seg-menu small{color:#ffffff98;display:block;font-size:10px;margin-top:2px}.seg-sidebar-foot{background:#ffffff0d;border:1px solid #ffffff14;border-radius:12px;bottom:18px;color:#ffffffa8;left:14px;padding:12px;position:absolute;right:14px}.seg-sidebar-foot span{display:block;font-size:10px}.seg-sidebar-foot strong{color:#f1d9a6;display:block;font-size:12px;margin-top:3px}.workspace{margin-left:248px;padding-top:112px}@media(max-width:850px){.seg-sidebar{display:none}.workspace{margin-left:0}.seg-navbar{height:72px;padding:0 18px}.seg-navbar-actions{display:none}}
         @media(max-width:600px){.workflow{align-items:stretch;flex-direction:column}.workflow span{text-align:center}}
     </style>
@@ -417,15 +417,15 @@ $segBasePath = '../';
             direccion_escuela: escuela.DOMICILIO || '',
             municipio: escuela.NOMBREMUN || '',
             localidad: escuela.NOMBRELOC || '',
-            subnivel: escuela.SUBNIVEL || '',
+            subnivel: escuela.SUBNIVEL || escuela.NIVEL || '',
             status: escuela.STATUS || '',
-            origen: 'Base local',
+            origen: escuela.ORIGEN || 'Base local',
             similitud: 100,
             vinculado: false
         };
     }
-    async function searchSchools(term) {
-        const body = new URLSearchParams({accion:'buscar_escuelas',csrf:token,q:term});
+    async function searchSchools(filters) {
+        const body = new URLSearchParams({accion:'buscar_escuelas',csrf:token,q:filters.q || '',nivel:filters.nivel || '',poblacion:filters.poblacion || '',origen:filters.origen || ''});
         const response = await fetch(controller,{method:'POST',headers:{'X-CSRF-Token':token},body});
         const data = parseServerJson(await response.text());
         if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible buscar escuelas.');
@@ -436,41 +436,52 @@ $segBasePath = '../';
         let selectedSchool = null;
         const modal = await Swal.fire({
             title:'Buscar escuela para vincular',
-            html:`<input id="school-search-input" class="swal2-input" placeholder="CCT, nombre, municipio o localidad"><div id="school-search-list" class="search-school-list"><span class="empty">Escribe al menos 2 caracteres.</span></div>`,
+            html:`<div class="school-search-panel"><input id="school-search-input" class="swal2-input" placeholder="CCT, nombre, HOMO, zona o sector"><select id="school-level-input" class="swal2-select"><option value="">Todos los niveles</option><option value="PREESCOLAR">Preescolar</option><option value="PRIMARIA">Primaria</option><option value="SECUNDARIA">Secundaria</option><option value="TELESECUNDARIA">Telesecundaria</option></select><input id="school-location-input" class="swal2-input" placeholder="Poblacion, localidad, municipio o comunidad"><select id="school-source-input" class="swal2-select"><option value="">SEG y Oficializacion</option><option value="Catalogo SEG">Catalogo SEG</option><option value="Oficializacion">Oficializacion</option></select></div><div id="school-search-list" class="search-school-list"><span class="empty">Busca por nivel, poblacion/comunidad o texto de la escuela.</span></div>`,
             showConfirmButton:false,
             showCancelButton:true,
             cancelButtonText:'Cerrar',
             cancelButtonColor:'#212529',
             didOpen: () => {
                 const input = document.getElementById('school-search-input');
+                const level = document.getElementById('school-level-input');
+                const location = document.getElementById('school-location-input');
+                const source = document.getElementById('school-source-input');
                 const list = document.getElementById('school-search-list');
                 let timer = null;
                 const renderList = escuelas => {
                     lastResults = escuelas;
                     list.innerHTML = escuelas.length ? escuelas.map((escuela, index) => `
                         <div class="search-school-item">
-                            <div><strong>${escapeHtml(escuela.CCT)} · ${escapeHtml(escuela.NOMBRECT)}</strong><small>${escapeHtml(escuela.NOMBREMUN)} · ${escapeHtml(escuela.NOMBRELOC)} · ${escapeHtml(escuela.SUBNIVEL)} · STATUS ${escapeHtml(escuela.STATUS)}</small></div>
+                            <div><strong>${escapeHtml(escuela.CCT)} - ${escapeHtml(escuela.NOMBRECT)}</strong><small>${escapeHtml(escuela.NOMBREMUN)} - ${escapeHtml(escuela.NOMBRELOC)} - ${escapeHtml(escuela.NIVEL || escuela.SUBNIVEL)} - ${escapeHtml(escuela.HOMO || 'Sin HOMO')} - STATUS ${escapeHtml(escuela.STATUS)}</small><small>${escapeHtml(escuela.TURNO || 'Sin turno')} - Zona ${escapeHtml(escuela.ZONA || escuela.CCT_ZONA || 'N/D')} - ${escapeHtml(escuela.ORIGEN || 'Base local')}</small></div>
                             <span class="tag address">${escapeHtml(escuela.DOMICILIO || 'Sin direccion oficial')}</span>
                             <button type="button" data-school="${index}">Vincular</button>
                         </div>
                     `).join('') : '<span class="empty">Sin escuelas encontradas.</span>';
                 };
-                input.addEventListener('input', () => {
+                const runSearch = () => {
                     clearTimeout(timer);
-                    const term = input.value.trim();
-                    if (term.length < 2) {
-                        list.innerHTML = '<span class="empty">Escribe al menos 2 caracteres.</span>';
+                    const filters = {q:input.value.trim(),nivel:level.value,poblacion:location.value.trim(),origen:source.value};
+                    if (filters.q.length < 2 && filters.poblacion.length < 2 && !filters.nivel && !filters.origen) {
+                        list.innerHTML = '<span class="empty">Busca por nivel, poblacion/comunidad o texto de la escuela.</span>';
                         return;
                     }
                     list.innerHTML = '<span class="empty">Buscando...</span>';
                     timer = setTimeout(async () => {
                         try {
-                            renderList(await searchSchools(term));
+                            renderList(await searchSchools(filters));
                         } catch (error) {
                             list.innerHTML = `<span class="empty">${escapeHtml(error.message)}</span>`;
                         }
                     }, 280);
-                });
+                };
+                input.addEventListener('input', runSearch);
+                location.addEventListener('input', runSearch);
+                level.addEventListener('change', runSearch);
+                source.addEventListener('change', runSearch);
+                if (registro.poblacion_cfe) {
+                    location.value = registro.poblacion_cfe;
+                    runSearch();
+                }
                 list.addEventListener('click', event => {
                     const button = event.target.closest('button[data-school]');
                     if (!button) return;

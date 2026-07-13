@@ -320,20 +320,44 @@ class EscuelaController
         $this->validarToken();
         try {
             $termino = trim((string) ($_POST['q'] ?? ''));
-            if (mb_strlen($termino) < 2) {
+            $nivel = trim((string) ($_POST['nivel'] ?? ''));
+            $poblacion = trim((string) ($_POST['poblacion'] ?? ''));
+            $origen = trim((string) ($_POST['origen'] ?? ''));
+            if (mb_strlen($termino) < 2 && $nivel === '' && mb_strlen($poblacion) < 2 && $origen === '') {
                 $this->responder(['ok' => true, 'escuelas' => []]);
             }
             $conexion = Conexion::conectar();
             $this->prepararTablaEscuelas($conexion);
-            $busqueda = '%' . str_replace(['%', '_'], ['\%', '\_'], $termino) . '%';
+            $condiciones = [];
+            $parametros = [];
+            if (mb_strlen($termino) >= 2) {
+                $busqueda = '%' . str_replace(['%', '_'], ['\%', '\_'], $termino) . '%';
+                $condiciones[] = '(CCT LIKE :busqueda OR NOMBRECT LIKE :busqueda OR DOMICILIO LIKE :busqueda OR NOMBREMUN LIKE :busqueda OR NOMBRELOC LIKE :busqueda OR HOMO LIKE :busqueda OR ZONA LIKE :busqueda OR SECTOR LIKE :busqueda)';
+                $parametros['busqueda'] = $busqueda;
+            }
+            if ($nivel !== '') {
+                $condiciones[] = '(NIVEL LIKE :nivel OR SUBNIVEL LIKE :nivel)';
+                $parametros['nivel'] = '%' . str_replace(['%', '_'], ['\%', '\_'], $nivel) . '%';
+            }
+            if (mb_strlen($poblacion) >= 2) {
+                $condiciones[] = '(NOMBRELOC LIKE :poblacion OR NOMBREMUN LIKE :poblacion OR COLONIA LIKE :poblacion OR NOMBRECOL LIKE :poblacion)';
+                $parametros['poblacion'] = '%' . str_replace(['%', '_'], ['\%', '\_'], $poblacion) . '%';
+            }
+            if ($origen !== '') {
+                $condiciones[] = 'ORIGEN LIKE :origen';
+                $parametros['origen'] = '%' . str_replace(['%', '_'], ['\%', '\_'], $origen) . '%';
+            }
+            $where = $condiciones ? 'WHERE ' . implode(' AND ', $condiciones) : '';
             $consulta = $conexion->prepare(
-                "SELECT CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL
+                "SELECT CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL, NIVEL, HOMO, TURNO, ZONA, SECTOR, ORIGEN, CONTROL, SOST_CONTROL, C_NOM_VIALIDAD, N_EXTNUM
                  FROM escuelas
-                 WHERE CCT LIKE ? OR NOMBRECT LIKE ? OR DOMICILIO LIKE ? OR NOMBREMUN LIKE ? OR NOMBRELOC LIKE ?
-                 ORDER BY CASE WHEN CCT = ? THEN 0 WHEN CCT LIKE ? THEN 1 ELSE 2 END, NOMBRECT
-                 LIMIT 25"
+                 $where
+                 ORDER BY CASE WHEN CCT = :termino_exacto THEN 0 WHEN CCT LIKE :termino_inicio THEN 1 ELSE 2 END, NOMBREMUN, NOMBRELOC, NOMBRECT
+                 LIMIT 50"
             );
-            $consulta->execute([$busqueda, $busqueda, $busqueda, $busqueda, $busqueda, $termino, $termino . '%']);
+            $parametros['termino_exacto'] = $termino;
+            $parametros['termino_inicio'] = $termino . '%';
+            $consulta->execute($parametros);
             $this->responder(['ok' => true, 'escuelas' => $consulta->fetchAll()]);
         } catch (Throwable $e) {
             $this->responder(['ok' => false, 'error' => 'Fallo de busqueda: ' . $e->getMessage()], 500);
@@ -450,11 +474,91 @@ class EscuelaController
 
     private function prepararTablaEscuelas(PDO $conexion): void
     {
-        $consulta = $conexion->query(
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'escuelas' AND COLUMN_NAME = 'DOMICILIO'"
-        );
-        if ((int) $consulta->fetchColumn() === 0) {
-            $conexion->exec('ALTER TABLE escuelas ADD COLUMN DOMICILIO VARCHAR(255) NULL AFTER NOMBRECT');
+        $columnas = [
+            'DOMICILIO' => 'VARCHAR(255) NULL',
+            'NIVEL' => 'VARCHAR(100) NULL',
+            'HOMO' => 'VARCHAR(30) NULL',
+            'TURNO' => 'VARCHAR(100) NULL',
+            'ZONA' => 'VARCHAR(50) NULL',
+            'SECTOR' => 'VARCHAR(50) NULL',
+            'ORIGEN' => 'VARCHAR(80) NULL',
+            'TIPOCT' => 'VARCHAR(255) NULL',
+            'TURNO_CV' => 'VARCHAR(255) NULL',
+            'TURNO2' => 'VARCHAR(255) NULL',
+            'TURNO2_DES' => 'VARCHAR(255) NULL',
+            'STATUS_DES' => 'VARCHAR(255) NULL',
+            'MPIO' => 'VARCHAR(255) NULL',
+            'LOC' => 'VARCHAR(255) NULL',
+            'AMBITO' => 'VARCHAR(255) NULL',
+            'COLONIA' => 'VARCHAR(255) NULL',
+            'NOMBRECOL' => 'VARCHAR(255) NULL',
+            'ENTRECALLE' => 'VARCHAR(255) NULL',
+            'YCALLE' => 'VARCHAR(255) NULL',
+            'CALLEPOST' => 'VARCHAR(255) NULL',
+            'CODPOST' => 'VARCHAR(255) NULL',
+            'LATITUD' => 'VARCHAR(255) NULL',
+            'LONGITUD' => 'VARCHAR(255) NULL',
+            'CV_INMUEBLE' => 'VARCHAR(255) NULL',
+            'MARGINACION' => 'VARCHAR(255) NULL',
+            'CCT_ZONA' => 'VARCHAR(255) NULL',
+            'CCT_SECTOR' => 'VARCHAR(255) NULL',
+            'SERREG' => 'VARCHAR(255) NULL',
+            'CCT_SERREG' => 'VARCHAR(255) NULL',
+            'TIPO' => 'VARCHAR(255) NULL',
+            'SERVICIO' => 'VARCHAR(255) NULL',
+            'SERVICIO_DES' => 'VARCHAR(255) NULL',
+            'CV_CARACT' => 'VARCHAR(255) NULL',
+            'CARACTERISTICA' => 'VARCHAR(255) NULL',
+            'SOST_CONTROL' => 'VARCHAR(255) NULL',
+            'SOSTENIMIENTO' => 'VARCHAR(255) NULL',
+            'SOSTENIMIENTO_DES' => 'VARCHAR(255) NULL',
+            'NOM_DIR' => 'VARCHAR(255) NULL',
+            'APELLIDO1' => 'VARCHAR(255) NULL',
+            'APELLIDO2' => 'VARCHAR(255) NULL',
+            'CURP' => 'VARCHAR(255) NULL',
+            'RFC' => 'VARCHAR(255) NULL',
+            'TELEFONO1' => 'VARCHAR(255) NULL',
+            'CELULAR1' => 'VARCHAR(255) NULL',
+            'CORREOELE' => 'VARCHAR(255) NULL',
+            'PAGINAWEB' => 'VARCHAR(255) NULL',
+            'ADM_DES' => 'VARCHAR(255) NULL',
+            'NOR_DES' => 'VARCHAR(255) NULL',
+            'OPERAT_DES' => 'VARCHAR(255) NULL',
+            'FECHAFUNDA' => 'VARCHAR(255) NULL',
+            'FECHAALTA' => 'VARCHAR(255) NULL',
+            'FECHACLAUS' => 'VARCHAR(255) NULL',
+            'FECHAREAPE' => 'VARCHAR(255) NULL',
+            'FECHAACTUA' => 'VARCHAR(255) NULL',
+            'CLAVE_ALTERNA' => 'VARCHAR(255) NULL',
+            'CV_TURNO' => 'VARCHAR(255) NULL',
+            'CV_MUN' => 'VARCHAR(255) NULL',
+            'CV_LOC' => 'VARCHAR(255) NULL',
+            'C_NOM_VIALIDAD' => 'VARCHAR(255) NULL',
+            'N_EXTNUM' => 'VARCHAR(255) NULL',
+            'CONTROL' => 'VARCHAR(255) NULL',
+            'SUBCONTROL' => 'VARCHAR(255) NULL',
+            'C_CARACTERIZAN2' => 'VARCHAR(255) NULL',
+            'JEFSEC' => 'VARCHAR(255) NULL',
+            'SERVREG' => 'VARCHAR(255) NULL',
+            'REGION' => 'VARCHAR(255) NULL',
+            'CV_ESTATUS_CAPTURA' => 'VARCHAR(255) NULL',
+            'HOMBRE' => 'VARCHAR(255) NULL',
+            'MUJER' => 'VARCHAR(255) NULL',
+            'TOTAL' => 'VARCHAR(255) NULL',
+            'GRUPOS' => 'VARCHAR(255) NULL',
+            'LENGUA' => 'VARCHAR(255) NULL',
+            'DATOS_SEG_JSON' => 'LONGTEXT NULL',
+            'DATOS_OFICIALIZACION_JSON' => 'LONGTEXT NULL'
+        ];
+        $existentes = [];
+        $consulta = $conexion->query("SHOW COLUMNS FROM escuelas");
+        foreach ($consulta->fetchAll() as $fila) {
+            $existentes[strtoupper((string) $fila['Field'])] = true;
+        }
+        foreach ($columnas as $columna => $definicion) {
+            if (!isset($existentes[$columna])) {
+                $conexion->exec('ALTER TABLE escuelas ADD COLUMN `' . $columna . '` ' . $definicion);
+            }
         }
     }
 
