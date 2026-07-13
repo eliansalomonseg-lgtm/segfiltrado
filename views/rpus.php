@@ -50,6 +50,7 @@ if (empty($_SESSION['seg_csrf'])) {
             <div>
                 <span class="eyebrow">REVISION PRIORITARIA</span>
                 <h2>RPUs sugeridos por los ultimos meses cargados</h2>
+                <p class="section-note">Incluye RPUs sin vinculo y tambien medidores ya vinculados que presentan importes, consumos o alertas fuera de patron.</p>
             </div>
             <button id="reload-risk-rpus" class="btn-seg compact-action" type="button"><i class="bi bi-arrow-clockwise me-2"></i>Actualizar</button>
         </div>
@@ -172,13 +173,17 @@ function cfePanel(cfe) {
 }
 
 function schoolPanel(escuela, vinculado) {
+    const turnoZona = [escuela.turno ? `<b>Turno:</b> ${escapeHtml(escuela.turno)}` : '', escuela.zona ? `<b>Zona:</b> ${escapeHtml(escuela.zona)}` : '', escuela.sector ? `<b>Sector:</b> ${escapeHtml(escuela.sector)}` : ''].filter(Boolean).join(' - ');
+    const homoFuente = [escuela.homo ? `<b>HOMO:</b> ${escapeHtml(escuela.homo)}` : '', escuela.fuente ? `<b>Fuente:</b> ${escapeHtml(escuela.fuente)}` : ''].filter(Boolean).join(' - ');
     return `<div class="compare-panel school-panel">
         <span class="compare-label">ESCUELA OFICIAL</span>
         <strong>${escapeHtml(escuela.cct || 'Sin CCT')} - ${escapeHtml(escuela.nombre || 'Escuela sin nombre')}</strong>
         <small><b>Domicilio:</b> ${escapeHtml(escuela.domicilio || 'Sin domicilio')}</small>
         <small><b>Localidad:</b> ${escapeHtml(escuela.localidad || 'Sin localidad')} - <b>Municipio:</b> ${escapeHtml(escuela.municipio || 'Sin municipio')}</small>
         <small><b>Nivel educativo:</b> ${escapeHtml(escuela.nivel || 'Sin nivel')}</small>
-        <small><b>Subnivel:</b> ${escapeHtml(escuela.subnivel || 'Sin subnivel')} - <b>Fuente:</b> ${escapeHtml(escuela.fuente || 'Catalogo local')}</small>
+        <small><b>Subnivel:</b> ${escapeHtml(escuela.subnivel || 'Sin subnivel')}</small>
+        ${turnoZona ? `<small>${turnoZona}</small>` : ''}
+        ${homoFuente ? `<small>${homoFuente}</small>` : ''}
         <span class="status-pill ${vinculado ? 'status-ok' : 'status-warn'}">${escapeHtml(escuela.origen || (vinculado ? 'Vinculo confirmado' : 'Sugerencia'))} - ${escapeHtml(escuela.score || 0)}%</span>
     </div>`;
 }
@@ -258,20 +263,25 @@ function renderRiskRpus(data) {
         ? `Analisis sobre periodos: ${periods.join(', ')}. Se muestran los ${rows.length} RPUs con mayor riesgo.`
         : 'Todavia no hay reportes CFE guardados para sugerir RPUs.';
     riskList.innerHTML = rows.length
-        ? rows.map((row) => `<button class="risk-rpu-item" type="button" data-rpu="${escapeHtml(row.rpu)}">
+        ? rows.map((row) => {
+            const linked = Boolean(row.cct);
+            return `<button class="risk-rpu-item ${linked ? 'is-linked' : 'is-unlinked'}" type="button" data-rpu="${escapeHtml(row.rpu)}">
             <span class="risk-score">${escapeHtml(row.score)}</span>
             <span>
                 <strong>${escapeHtml(row.rpu)} - ${escapeHtml(row.nombre || 'Sin nombre CFE')}</strong>
-                <small>${escapeHtml(row.motivo)} - ${escapeHtml(row.periodo)} - ${money.format(row.total || 0)} - ${number.format(row.consumo || 0)} kWh</small>
-                <small>${row.cct ? `Vinculado a ${escapeHtml(row.cct)} - ${escapeHtml(row.escuela || '')}` : 'Sin vinculo confirmado'}</small>
+                <small><b>CFE:</b> ${escapeHtml(row.poblacion || 'Sin poblacion')} - Tarifa ${escapeHtml(row.tarifa || 'N/D')} - ${escapeHtml(row.periodo)}</small>
+                <small><b>Riesgo:</b> ${escapeHtml(row.motivo)} - ${money.format(row.total || 0)} - ${number.format(row.consumo || 0)} kWh</small>
+                <small>${linked ? `<b>Escuela:</b> ${escapeHtml(row.cct)} - ${escapeHtml(row.escuela || '')} - ${escapeHtml(row.nivel || row.subnivel || 'Sin nivel')} - ${escapeHtml(row.localidad || '')}` : '<b>Escuela:</b> sin vinculo confirmado'}</small>
             </span>
+            <em class="${linked ? 'risk-linked' : 'risk-unlinked'}">${linked ? 'Vinculado' : 'Sin vinculo'}</em>
             <i class="bi bi-chevron-right"></i>
-        </button>`).join('')
+        </button>`;
+        }).join('')
         : '<div class="empty-state"><i class="bi bi-check2-circle"></i><strong>Sin RPUs criticos</strong><span>No se encontraron casos prioritarios en los ultimos periodos.</span></div>';
 }
 
 async function loadRiskRpus() {
-    riskPeriods.textContent = 'Calculando RPUs con alertas recientes, importes altos y falta de vinculo...';
+    riskPeriods.textContent = 'Calculando RPUs sin vinculo y RPUs vinculados con alertas recientes, importes altos o consumo fuera de patron...';
     const body = new URLSearchParams({accion: 'sugerir_rpus_malos', csrf: token});
     const response = await fetch('../controllers/rpuController.php', {method: 'POST', body});
     const data = await response.json();

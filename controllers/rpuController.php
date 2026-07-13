@@ -30,7 +30,7 @@ class RpuController
             }
 
             $consulta = $conexion->prepare(
-                'SELECT cc.RPU, cc.nombre_cfe, cc.poblacion_cfe, cc.tarifa_cfe, cc.total, cc.consumo, cc.severidad, cc.alertas, cr.anio, cr.mes, er.CCT, e.NOMBRECT
+                'SELECT cc.RPU, cc.nombre_cfe, cc.poblacion_cfe, cc.tarifa_cfe, cc.total, cc.consumo, cc.severidad, cc.alertas, cr.anio, cr.mes, er.CCT, e.NOMBRECT, e.NIVEL, e.SUBNIVEL, e.NOMBRELOC, e.NOMBREMUN
                  FROM cfe_consumos cc
                  INNER JOIN cfe_reportes cr ON cr.id = cc.reporte_id
                  LEFT JOIN escuelas_rpu er ON er.RPU = cc.RPU
@@ -50,6 +50,10 @@ class RpuController
                         'tarifa' => (string) ($fila['tarifa_cfe'] ?? ''),
                         'cct' => $fila['CCT'] ?? null,
                         'escuela' => $fila['NOMBRECT'] ?? null,
+                        'nivel' => $fila['NIVEL'] ?? null,
+                        'subnivel' => $fila['SUBNIVEL'] ?? null,
+                        'localidad' => $fila['NOMBRELOC'] ?? null,
+                        'municipio' => $fila['NOMBREMUN'] ?? null,
                         'filas' => []
                     ];
                 }
@@ -63,6 +67,10 @@ class RpuController
                 if (!$agrupados[$rpu]['cct'] && $fila['CCT']) {
                     $agrupados[$rpu]['cct'] = $fila['CCT'];
                     $agrupados[$rpu]['escuela'] = $fila['NOMBRECT'] ?? null;
+                    $agrupados[$rpu]['nivel'] = $fila['NIVEL'] ?? null;
+                    $agrupados[$rpu]['subnivel'] = $fila['SUBNIVEL'] ?? null;
+                    $agrupados[$rpu]['localidad'] = $fila['NOMBRELOC'] ?? null;
+                    $agrupados[$rpu]['municipio'] = $fila['NOMBREMUN'] ?? null;
                 }
             }
 
@@ -76,7 +84,9 @@ class RpuController
                 $subioTotal = $anterior ? (float) $ultima['total'] - (float) $anterior['total'] : 0;
                 $score = ($maxSeveridad * 10) + ($alertas * 8);
                 if (!$grupo['cct']) {
-                    $score += 20;
+                    $score += 8;
+                } elseif ((int) $ultima['severidad'] >= 4 || $alertas >= 2) {
+                    $score += 14;
                 }
                 if ($subioTotal > 0) {
                     $score += 15;
@@ -97,6 +107,10 @@ class RpuController
                     'tarifa' => $grupo['tarifa'],
                     'cct' => $grupo['cct'],
                     'escuela' => $grupo['escuela'],
+                    'nivel' => $grupo['nivel'],
+                    'subnivel' => $grupo['subnivel'],
+                    'localidad' => $grupo['localidad'],
+                    'municipio' => $grupo['municipio'],
                     'periodo' => $ultima['periodo'],
                     'total' => (float) $ultima['total'],
                     'consumo' => (float) $ultima['consumo'],
@@ -196,6 +210,7 @@ class RpuController
 
     private function prepararTablas(PDO $conexion): void
     {
+        $this->prepararTablaEscuelas($conexion);
         $conexion->exec(
             "CREATE TABLE IF NOT EXISTS cfe_reportes (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -241,6 +256,28 @@ class RpuController
         );
     }
 
+    private function prepararTablaEscuelas(PDO $conexion): void
+    {
+        $columnas = [
+            'NIVEL' => 'VARCHAR(100) NULL',
+            'HOMO' => 'VARCHAR(30) NULL',
+            'TURNO' => 'VARCHAR(100) NULL',
+            'ZONA' => 'VARCHAR(50) NULL',
+            'SECTOR' => 'VARCHAR(50) NULL',
+            'ORIGEN' => 'VARCHAR(80) NULL'
+        ];
+        $existentes = [];
+        $consulta = $conexion->query('SHOW COLUMNS FROM escuelas');
+        foreach ($consulta->fetchAll() as $fila) {
+            $existentes[strtoupper((string) $fila['Field'])] = true;
+        }
+        foreach ($columnas as $columna => $definicion) {
+            if (!isset($existentes[$columna])) {
+                $conexion->exec("ALTER TABLE escuelas ADD COLUMN {$columna} {$definicion}");
+            }
+        }
+    }
+
     private function historial(PDO $conexion, string $rpu): array
     {
         $consulta = $conexion->prepare(
@@ -257,7 +294,7 @@ class RpuController
     private function vinculos(PDO $conexion, string $rpu): array
     {
         $consulta = $conexion->prepare(
-            'SELECT er.RPU, er.CCT, er.nombre_recibo_cfe, er.poblacion_cfe, er.tarifa_cfe, e.NOMBRECT, e.DOMICILIO, e.NOMBREMUN, e.NOMBRELOC, e.STATUS, e.SUBNIVEL
+            'SELECT er.RPU, er.CCT, er.nombre_recibo_cfe, er.poblacion_cfe, er.tarifa_cfe, e.NOMBRECT, e.DOMICILIO, e.NOMBREMUN, e.NOMBRELOC, e.STATUS, e.SUBNIVEL, e.NIVEL, e.HOMO, e.TURNO, e.ZONA, e.SECTOR, e.ORIGEN
              FROM escuelas_rpu er
              LEFT JOIN escuelas e ON e.CCT = er.CCT
              WHERE er.RPU = ?
@@ -293,7 +330,7 @@ class RpuController
             return [];
         }
         $consulta = $conexion->prepare(
-            'SELECT CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL
+            'SELECT CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL, NIVEL, HOMO, TURNO, ZONA, SECTOR, ORIGEN
              FROM escuelas
              WHERE ' . implode(' OR ', $condiciones) . '
              LIMIT 250'
@@ -313,11 +350,11 @@ class RpuController
     private function sugerenciasHistoricas(PDO $conexion, string $rpu): array
     {
         $consulta = $conexion->prepare(
-            'SELECT cc.CCT, e.NOMBRECT, e.DOMICILIO, e.NOMBREMUN, e.NOMBRELOC, e.STATUS, e.SUBNIVEL, COUNT(*) apariciones
+            'SELECT cc.CCT, e.NOMBRECT, e.DOMICILIO, e.NOMBREMUN, e.NOMBRELOC, e.STATUS, e.SUBNIVEL, e.NIVEL, e.HOMO, e.TURNO, e.ZONA, e.SECTOR, e.ORIGEN, COUNT(*) apariciones
              FROM cfe_consumos cc
              INNER JOIN escuelas e ON e.CCT = cc.CCT
              WHERE cc.RPU = ? AND cc.CCT IS NOT NULL
-             GROUP BY cc.CCT, e.NOMBRECT, e.DOMICILIO, e.NOMBREMUN, e.NOMBRELOC, e.STATUS, e.SUBNIVEL
+             GROUP BY cc.CCT, e.NOMBRECT, e.DOMICILIO, e.NOMBREMUN, e.NOMBRELOC, e.STATUS, e.SUBNIVEL, e.NIVEL, e.HOMO, e.TURNO, e.ZONA, e.SECTOR, e.ORIGEN
              ORDER BY apariciones DESC
              LIMIT 6'
         );
@@ -337,8 +374,12 @@ class RpuController
             'municipio' => (string) ($fila['NOMBREMUN'] ?? ''),
             'localidad' => (string) ($fila['NOMBRELOC'] ?? ''),
             'status' => (string) ($fila['STATUS'] ?? ''),
-            'nivel' => $this->nivelEducativo((string) ($fila['SUBNIVEL'] ?? '')),
+            'nivel' => (string) ($fila['NIVEL'] ?? '') !== '' ? (string) $fila['NIVEL'] : $this->nivelEducativo((string) ($fila['SUBNIVEL'] ?? '')),
             'subnivel' => (string) ($fila['SUBNIVEL'] ?? ''),
+            'homo' => (string) ($fila['HOMO'] ?? ''),
+            'turno' => (string) ($fila['TURNO'] ?? ''),
+            'zona' => (string) ($fila['ZONA'] ?? ''),
+            'sector' => (string) ($fila['SECTOR'] ?? ''),
             'fuente' => (string) ($fila['ORIGEN'] ?? 'Catalogo local SEG/Oficializacion'),
             'score' => $score,
             'origen' => $origen
@@ -385,6 +426,8 @@ class RpuController
         $motivos = [];
         if (!$vinculado) {
             $motivos[] = 'sin vinculo';
+        } elseif ($maxSeveridad >= 4 || $alertas >= 2) {
+            $motivos[] = 'vinculado con alerta';
         }
         if ($maxSeveridad >= 7) {
             $motivos[] = 'severidad alta';

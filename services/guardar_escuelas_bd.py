@@ -13,8 +13,16 @@ try:
     import mysql.connector
 
     TAMANO_LOTE = 500
-    QUERY_INSERTAR_ESCUELAS = "INSERT INTO escuelas (CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL) VALUES (%s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE NOMBRECT=VALUES(NOMBRECT), DOMICILIO=VALUES(DOMICILIO), NOMBREMUN=VALUES(NOMBREMUN), NOMBRELOC=VALUES(NOMBRELOC), STATUS=VALUES(STATUS), SUBNIVEL=VALUES(SUBNIVEL)"
+    QUERY_INSERTAR_ESCUELAS = "INSERT INTO escuelas (CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL, NIVEL, HOMO, TURNO, ZONA, SECTOR, ORIGEN) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE NOMBRECT=VALUES(NOMBRECT), DOMICILIO=VALUES(DOMICILIO), NOMBREMUN=VALUES(NOMBREMUN), NOMBRELOC=VALUES(NOMBRELOC), STATUS=VALUES(STATUS), SUBNIVEL=VALUES(SUBNIVEL), NIVEL=VALUES(NIVEL), HOMO=VALUES(HOMO), TURNO=VALUES(TURNO), ZONA=VALUES(ZONA), SECTOR=VALUES(SECTOR), ORIGEN=VALUES(ORIGEN)"
     COLUMNAS_DIRECCION = ["DOMICILIO", "DOMICILIOCT", "DOMICILIOCCT", "DOMICILIODELCT", "DIRECCION", "DIRECCIONCT", "UBICACION", "CALLE"]
+    COLUMNAS_EXTRA = {
+        "NIVEL": "VARCHAR(100) NULL",
+        "HOMO": "VARCHAR(30) NULL",
+        "TURNO": "VARCHAR(100) NULL",
+        "ZONA": "VARCHAR(50) NULL",
+        "SECTOR": "VARCHAR(50) NULL",
+        "ORIGEN": "VARCHAR(80) NULL",
+    }
 
     def normalizar(valor):
         if valor is None or pd.isna(valor):
@@ -48,6 +56,20 @@ try:
                 return datos[columna]
         return None
 
+    def serie(datos, columnas, valor=None):
+        for columna in columnas:
+            if columna in datos.columns:
+                return datos[columna]
+        return pd.Series([valor] * len(datos), index=datos.index)
+
+    def direccion_oficializacion(datos):
+        directa = columna_direccion(datos)
+        if directa is not None:
+            return directa
+        vialidad = serie(datos, ["CNOMVIALIDAD"], "")
+        numero = serie(datos, ["NEXTNUM"], "")
+        return (vialidad.fillna("").astype(str).str.strip() + " " + numero.fillna("").astype(str).str.strip()).str.strip()
+
     def leer_catalogo_seg(ruta):
         ruta = Path(ruta)
         if ruta.suffix.lower() == ".csv":
@@ -65,8 +87,14 @@ try:
         datos = datos[datos["SOSTCONTROL"].map(normalizar) == "PUBLICO"].copy()
         direccion = columna_direccion(datos)
         datos["DOMICILIO"] = direccion if direccion is not None else None
+        datos["NIVEL"] = serie(datos, ["NIVEL"])
+        datos["HOMO"] = serie(datos, ["HOMO"])
+        datos["ORIGEN"] = "Catalogo SEG"
+        datos["TURNO"] = serie(datos, ["TURNODES", "TURNO"])
+        datos["ZONA"] = serie(datos, ["CCTZONA", "ZONA"])
+        datos["SECTOR"] = serie(datos, ["CCTSECTOR", "SECTOR"])
         datos["_PRIORIDAD_ORIGEN"] = 0
-        return datos[["CCT", "NOMBRECT", "DOMICILIO", "NOMBREMUN", "NOMBRELOC", "STATUS", "SUBNIVEL", "_PRIORIDAD_ORIGEN"]]
+        return datos[["CCT", "NOMBRECT", "DOMICILIO", "NOMBREMUN", "NOMBRELOC", "STATUS", "SUBNIVEL", "NIVEL", "HOMO", "TURNO", "ZONA", "SECTOR", "ORIGEN", "_PRIORIDAD_ORIGEN"]]
 
     def leer_oficializacion(ruta):
         crudos = pd.read_excel(ruta, header=None, dtype=object)
@@ -83,7 +111,7 @@ try:
         if faltantes:
             raise ValueError(f"Faltan columnas Oficializacion 911: {', '.join(faltantes)}")
         datos = datos[datos["CONTROL"].map(normalizar) == "PUBLICO"].copy()
-        direccion = columna_direccion(datos)
+        direccion = direccion_oficializacion(datos)
         salida = pd.DataFrame({
             "CCT": datos["CVCCT"],
             "NOMBRECT": datos["NOMBRECT"],
@@ -92,6 +120,12 @@ try:
             "NOMBRELOC": datos["CNOMLOC"],
             "STATUS": datos["STATUS"] if "STATUS" in datos.columns else "ACTIVO",
             "SUBNIVEL": datos["SUBNIVEL"] if "SUBNIVEL" in datos.columns else datos["TIPO"] if "TIPO" in datos.columns else datos["HOMO"] if "HOMO" in datos.columns else None,
+            "NIVEL": serie(datos, ["NIVEL"]),
+            "HOMO": serie(datos, ["HOMO"]),
+            "TURNO": serie(datos, ["TURNO"]),
+            "ZONA": serie(datos, ["ZONA"]),
+            "SECTOR": serie(datos, ["JEFSEC", "SECTOR"]),
+            "ORIGEN": "Oficializacion 911",
             "_PRIORIDAD_ORIGEN": 1,
         })
         return salida
@@ -111,8 +145,21 @@ try:
                 limpiar(fila["NOMBRELOC"]),
                 limpiar(fila["STATUS"]),
                 limpiar(fila["SUBNIVEL"]),
+                limpiar(fila["NIVEL"]),
+                limpiar(fila["HOMO"]),
+                limpiar(fila["TURNO"]),
+                limpiar(fila["ZONA"]),
+                limpiar(fila["SECTOR"]),
+                limpiar(fila["ORIGEN"]),
             ))
         return registros
+
+    def preparar_tabla(cursor):
+        cursor.execute("SHOW COLUMNS FROM escuelas")
+        existentes = {fila[0].upper() for fila in cursor.fetchall()}
+        for columna, definicion in COLUMNAS_EXTRA.items():
+            if columna not in existentes:
+                cursor.execute(f"ALTER TABLE escuelas ADD COLUMN {columna} {definicion}")
 
     def guardar(registros):
         if not registros:
@@ -120,6 +167,7 @@ try:
         conexion = mysql.connector.connect(host="localhost", user="root", password="", database="seg")
         try:
             cursor = conexion.cursor()
+            preparar_tabla(cursor)
             for inicio in range(0, len(registros), TAMANO_LOTE):
                 cursor.executemany(QUERY_INSERTAR_ESCUELAS, registros[inicio:inicio + TAMANO_LOTE])
             conexion.commit()
