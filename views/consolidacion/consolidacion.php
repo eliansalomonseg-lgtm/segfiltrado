@@ -18,6 +18,8 @@ $segBasePath = '../';
     <meta name="csrf-token" content="<?= htmlspecialchars($_SESSION['seg_csrf'], ENT_QUOTES, 'UTF-8') ?>">
     <title>Consolidación Predictiva | SEG Guerrero</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="../../assets/css/seg-executive.css" rel="stylesheet">
     <style>
         :root{--guinda:#6c1d24;--dorado:#bfa276;--oscuro:#212529;--fondo:#f5f2ed}*{box-sizing:border-box}body{background:var(--fondo);color:var(--oscuro);font-family:Arial,sans-serif;margin:0}.seg-navbar{align-items:center;background:var(--guinda);box-shadow:0 7px 22px #0002;color:#fff;display:flex;height:72px;justify-content:space-between;left:0;padding:0 28px;position:fixed;right:0;top:0;z-index:10}.seg-brand{color:#fff;display:grid;text-decoration:none}.seg-brand strong{font-size:18px}.seg-brand small{font-size:11px;opacity:.75}.seg-badge{background:var(--dorado);border-radius:20px;color:#302719;font-size:12px;font-weight:700;padding:9px 14px}.seg-sidebar{background:var(--guinda);border-right:2px solid var(--dorado);bottom:0;left:0;padding:30px 14px;position:fixed;top:72px;width:230px;z-index:9}.seg-sidebar-title{color:var(--dorado);display:block;font-size:11px;font-weight:800;letter-spacing:2px;margin:0 14px 22px}.seg-sidebar a{border-radius:8px;color:#fff;display:block;font-size:14px;margin-bottom:8px;padding:14px;text-decoration:none;transition:.2s}.seg-sidebar a:hover,.seg-sidebar a.active{background:var(--dorado);color:#332719;transform:translateX(2px)}.workspace{margin-left:230px;padding:106px 28px 38px}.heading{align-items:end;display:flex;justify-content:space-between;margin-bottom:22px}.eyebrow{color:var(--guinda);font-size:10px;font-weight:800;letter-spacing:2px}.heading h1{font-size:27px;margin:6px 0}.heading p{color:#73777b;font-size:13px;margin:0}.alert-gold{background:#bfa2762b;border:1px solid var(--dorado);border-radius:9px;color:#6a5434;font-size:11px;padding:10px 13px}.upload-card,.results-card{background:#fff;border:1px solid #e5dfd7;border-radius:14px;box-shadow:0 10px 30px #0000000d;padding:24px}.drop-grid{align-items:center;display:grid;grid-template-columns:1fr 38px 1fr}.drop-zone{align-items:center;background:#fcfbf9;border:2px dashed var(--dorado);border-radius:13px;cursor:pointer;display:flex;flex-direction:column;justify-content:center;min-height:210px;padding:26px;text-align:center;transition:.2s}.drop-zone:hover,.drop-zone.dragging,.drop-zone.ready{background:#bfa27618;box-shadow:inset 0 0 0 1px var(--dorado);transform:translateY(-2px)}.drop-zone input{display:none}.file-icon{align-items:center;background:var(--guinda);border-radius:11px;color:#fff;display:flex;font-size:12px;font-weight:800;height:52px;justify-content:center;margin-bottom:14px;width:52px}.file-icon.seg{background:var(--oscuro);color:var(--dorado)}.drop-zone strong{font-size:15px}.drop-zone small{color:#85898d;font-size:11px;margin-top:7px}.file-name{background:#eeeae4;border-radius:20px;color:#65696d;font-size:10px;font-style:normal;font-weight:700;margin-top:13px;max-width:90%;overflow:hidden;padding:6px 10px;text-overflow:ellipsis;white-space:nowrap}.cross{align-items:center;background:var(--guinda);border:5px solid #fff;border-radius:50%;color:var(--dorado);display:flex;font-size:18px;height:38px;justify-content:center;position:relative;width:38px;z-index:2}.btn-seg{background:var(--guinda);border:0;border-radius:8px;box-shadow:0 7px 15px #6c1d2433;color:#fff;cursor:pointer;display:block;font-size:13px;font-weight:700;margin:20px auto 0;padding:13px 22px}.btn-seg:disabled{cursor:wait;opacity:.6}.progress-box{margin:20px auto 0;max-width:560px}.progress-track{background:#e9e5df;border-radius:20px;height:9px;overflow:hidden}.progress-bar{background:linear-gradient(90deg,var(--guinda),var(--dorado));height:100%;transition:width .25s;width:0}.progress-text{color:#73777b;display:block;font-size:11px;margin-top:8px;text-align:center}.results-card{margin-top:22px}.results-head{align-items:center;display:flex;justify-content:space-between;margin-bottom:16px}.results-head h2{font-size:20px;margin:5px 0 0}.summary{color:#6f7377;font-size:11px}.summary strong{color:var(--guinda);font-size:18px}.table-wrap{overflow:auto}table{border-collapse:collapse;font-size:12px;width:100%}th{background:#f1ede7;color:#686c70;font-size:10px;letter-spacing:.5px;padding:11px;text-align:left;text-transform:uppercase}td{border-bottom:1px solid #ece7e0;padding:12px 11px;vertical-align:top}td strong,td small{display:block}td small{color:#7c8084;margin-top:3px}.options{display:grid;gap:7px;min-width:430px}.option{align-items:center;background:#faf8f5;border:1px solid #e5dfd7;border-radius:8px;display:grid;gap:9px;grid-template-columns:1fr auto auto auto auto;padding:9px}.option.done{background:#e7f4eb;border-color:#4a8b60}.option-data small{line-height:1.35}.score{background:#bfa2762c;border-radius:15px;color:#6f5838;font-size:10px;font-weight:800;padding:5px 7px}.confirm{background:var(--guinda);border:0;border-radius:7px;color:#fff;cursor:pointer;font-size:10px;font-weight:700;padding:8px 10px}.confirm.saved{background:#347a51}.empty{color:#8a5c60;font-style:italic}.tag{background:var(--oscuro);border-radius:12px;color:#fff;display:inline-block;font-size:9px;margin-top:6px;padding:4px 7px}@media(max-width:850px){.seg-sidebar{display:none}.workspace{margin-left:0;padding:96px 14px 30px}.seg-badge{display:none}.drop-grid{gap:10px;grid-template-columns:1fr}.cross{margin:-19px auto}.heading{align-items:start;flex-direction:column;gap:12px}.options{min-width:360px}}
         body{background:radial-gradient(circle at 85% 10%,#bfa27622,transparent 28%),var(--fondo)}
@@ -59,6 +61,23 @@ $segBasePath = '../';
         <span>2. Revisar sugerencias</span>
         <span>3. Confirmar vínculos</span>
     </div>
+    <section class="quick-actions" aria-label="Metricas rapidas">
+        <article class="quick-card">
+            <span class="quick-icon"><i class="bi bi-building-check"></i></span>
+            <div><strong id="metric-schools">0</strong><span>Total Escuelas Publicas</span></div>
+            <small>Catalogos</small>
+        </article>
+        <article class="quick-card">
+            <span class="quick-icon"><i class="bi bi-graph-up-arrow"></i></span>
+            <div><strong id="metric-progress">0%</strong><span>Porcentaje de Avance</span></div>
+            <small>Vinculos</small>
+        </article>
+        <article class="quick-card">
+            <span class="quick-icon"><i class="bi bi-exclamation-triangle"></i></span>
+            <div><strong id="metric-alerts">0</strong><span>Casos con Alerta</span></div>
+            <small>Revision</small>
+        </article>
+    </section>
     <form id="cross-form" class="upload-card" enctype="multipart/form-data">
         <input type="hidden" name="accion" value="procesar_archivos">
         <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['seg_csrf'], ENT_QUOTES, 'UTF-8') ?>">
@@ -126,6 +145,11 @@ $segBasePath = '../';
                 <input id="result-search" class="result-search" type="search" placeholder="Buscar RPU, CCT o escuela">
                 <div id="summary" class="summary"></div>
             </div>
+        </div>
+        <div class="module-tabs" aria-label="Estados de coincidencias">
+            <button class="active" type="button">Pendientes</button>
+            <button type="button">Auto-Vinculados</button>
+            <button type="button">Conflictos</button>
         </div>
         <div class="table-wrap">
             <table>
@@ -275,16 +299,33 @@ $segBasePath = '../';
         (registro.opciones || []).forEach(option => fields.push(option.cct, option.nombre_escuela, option.direccion_escuela, option.municipio, option.localidad, option.subnivel, option.origen));
         return normalizeSearch(fields.join(' ')).includes(term);
     }
+    function scoreClass(option) {
+        const score = Number(option.similitud ?? option.score ?? 0);
+        if (score >= 69) return 'score-high';
+        if (score >= 50) return 'score-manual';
+        return 'score-low';
+    }
+    function updateQuickMetrics(data) {
+        const resultados = data.resultados || [];
+        const total = Number(data.resumen?.registros_seg || data.resumen?.registros_catalogo_seg || 0);
+        const vinculados = resultados.filter(registro => registro.vinculo_confirmado || (registro.vinculos_confirmados || []).length).length;
+        const avance = resultados.length ? Math.round(vinculados / resultados.length * 100) : 0;
+        const alertas = resultados.filter(registro => !(registro.opciones || []).some(option => Number(option.similitud ?? option.score ?? 0) >= 69)).length;
+        document.getElementById('metric-schools').textContent = total.toLocaleString('es-MX');
+        document.getElementById('metric-progress').textContent = `${avance}%`;
+        document.getElementById('metric-alerts').textContent = alertas.toLocaleString('es-MX');
+    }
     function renderResults(data, scroll = true) {
         window.currentResults = data.resultados;
         window.currentSummary = data.resumen;
+        updateQuickMetrics(data);
         const tbody = document.getElementById('matches');
         const term = normalizeSearch(resultSearch.value);
         const registros = data.resultados.map((registro, row) => ({registro,row})).filter(item => resultMatchesSearch(item.registro, term));
         tbody.innerHTML = registros.length ? registros.map(({registro, row}) => {
             const opciones = registro.opciones || [];
             const options = opciones.length ? opciones.map((option, index) => `
-                <div class="option ${option.vinculado ? 'done' : ''}">
+                <div class="option ${option.vinculado ? 'done' : ''} ${scoreClass(option)}">
                     <div class="option-data"><strong>${escapeHtml(option.cct)} · ${escapeHtml(option.nombre_escuela)}</strong><small>${escapeHtml(option.municipio)} · ${escapeHtml(option.localidad)} · ${escapeHtml(option.subnivel)} · STATUS ${escapeHtml(option.status)}</small></div>
                     <span class="tag address">${escapeHtml(option.direccion_escuela || 'Sin direccion oficial')}</span>
                     <span class="tag">${escapeHtml(option.origen || 'Sin origen')}</span>
