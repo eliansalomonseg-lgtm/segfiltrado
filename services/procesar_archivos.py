@@ -28,6 +28,7 @@ try:
         "DSM": ("SECUNDARIA", "Secundaria General"),
         "DSN": ("SECUNDARIA", "Secundaria General"),
     }
+    COLUMNAS_DIRECCION = ["DOMICILIO", "DOMICILIOCT", "DOMICILIOCCT", "DOMICILIODELCT", "DIRECCION", "DIRECCIONCT", "UBICACION", "CALLE"]
 
     def normalizar(valor):
         if valor is None or pd.isna(valor):
@@ -49,6 +50,12 @@ try:
     def preparar_columnas(datos):
         datos.columns = [normalizar_codigo(columna) for columna in datos.columns]
         return datos
+
+    def columna_direccion(datos):
+        for columna in COLUMNAS_DIRECCION:
+            if columna in datos.columns:
+                return datos[columna]
+        return None
 
     def filtrar_publico(datos, columna, origen):
         if columna not in datos.columns:
@@ -78,6 +85,8 @@ try:
             raise ValueError(f"Faltan columnas SEG: {', '.join(faltantes)}")
         datos = filtrar_publico(datos, "SOSTCONTROL", "SEG")
         datos = aplicar_homo(datos)
+        direccion = columna_direccion(datos)
+        datos["DOMICILIO"] = direccion if direccion is not None else None
         datos["ORIGEN"] = "Catalogo SEG"
         return datos[columnas].copy()
 
@@ -101,14 +110,16 @@ try:
 
         datos = filtrar_publico(datos, "CONTROL", "Oficializacion 911")
         datos = aplicar_homo(datos)
+        direccion = columna_direccion(datos)
         datos = datos[columnas_requeridas + ["NIVEL", "SUBNIVEL", "ADMINISTRATIVO"]].rename(columns={
             "CVCCT": "CCT",
             "CNOMMUN": "NOMBREMUN",
             "CNOMLOC": "NOMBRELOC",
         })
+        datos["DOMICILIO"] = direccion if direccion is not None else None
         datos["STATUS"] = "ACTIVO"
         datos["ORIGEN"] = "Oficializacion 911"
-        return datos[["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "NIVEL", "SUBNIVEL", "HOMO", "ADMINISTRATIVO", "ORIGEN"]].copy()
+        return datos[["CCT", "NOMBRECT", "DOMICILIO", "NOMBREMUN", "NOMBRELOC", "STATUS", "NIVEL", "SUBNIVEL", "HOMO", "ADMINISTRATIVO", "ORIGEN"]].copy()
 
     def cargar_excel_cfe(ruta, columnas):
         datos = preparar_columnas(pd.read_excel(ruta, header=2, dtype=object))
@@ -170,7 +181,7 @@ try:
         return similitud, similitud + prioridad, nivel_coincide
 
     def procesar(ruta_seg, ruta_oficializacion, ruta_cfe_a, ruta_cfe_b=None):
-        columnas_seg = ["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "NIVEL", "SUBNIVEL", "HOMO", "ADMINISTRATIVO", "ORIGEN"]
+        columnas_seg = ["CCT", "NOMBRECT", "DOMICILIO", "NOMBREMUN", "NOMBRELOC", "STATUS", "NIVEL", "SUBNIVEL", "HOMO", "ADMINISTRATIVO", "ORIGEN"]
         columnas_cfe = ["RPU", "NOMBRE", "DIRECCION", "POBLACION", "TARIFA"]
         catalogo_seg = cargar_excel_seg(ruta_seg, columnas_seg)
         oficializacion = cargar_excel_oficializacion(ruta_oficializacion)
@@ -199,6 +210,7 @@ try:
                 opciones.append({
                     "cct": limpiar(escuela["CCT"]),
                     "nombre_escuela": limpiar(escuela["NOMBRECT"]),
+                    "direccion_escuela": limpiar(escuela["DOMICILIO"]),
                     "municipio": limpiar(escuela["NOMBREMUN"]),
                     "localidad": limpiar(escuela["NOMBRELOC"]),
                     "status": limpiar(escuela["STATUS"]),

@@ -13,7 +13,8 @@ try:
     import mysql.connector
 
     TAMANO_LOTE = 500
-    QUERY_INSERTAR_ESCUELAS = "INSERT INTO escuelas (CCT, NOMBRECT, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL) VALUES (%s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE NOMBRECT=VALUES(NOMBRECT), NOMBREMUN=VALUES(NOMBREMUN), NOMBRELOC=VALUES(NOMBRELOC), STATUS=VALUES(STATUS), SUBNIVEL=VALUES(SUBNIVEL)"
+    QUERY_INSERTAR_ESCUELAS = "INSERT INTO escuelas (CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL) VALUES (%s, %s, %s, %s, %s, %s, %s) ON DUPLICATE KEY UPDATE NOMBRECT=VALUES(NOMBRECT), DOMICILIO=VALUES(DOMICILIO), NOMBREMUN=VALUES(NOMBREMUN), NOMBRELOC=VALUES(NOMBRELOC), STATUS=VALUES(STATUS), SUBNIVEL=VALUES(SUBNIVEL)"
+    COLUMNAS_DIRECCION = ["DOMICILIO", "DOMICILIOCT", "DOMICILIOCCT", "DOMICILIODELCT", "DIRECCION", "DIRECCIONCT", "UBICACION", "CALLE"]
 
     def normalizar(valor):
         if valor is None or pd.isna(valor):
@@ -41,6 +42,12 @@ try:
         datos.columns = [normalizar_cabecera(columna) for columna in datos.columns]
         return datos
 
+    def columna_direccion(datos):
+        for columna in COLUMNAS_DIRECCION:
+            if columna in datos.columns:
+                return datos[columna]
+        return None
+
     def leer_catalogo_seg(ruta):
         ruta = Path(ruta)
         if ruta.suffix.lower() == ".csv":
@@ -56,8 +63,10 @@ try:
         if faltantes:
             raise ValueError(f"Faltan columnas Catalogo SEG: {', '.join(faltantes)}")
         datos = datos[datos["SOSTCONTROL"].map(normalizar) == "PUBLICO"].copy()
+        direccion = columna_direccion(datos)
+        datos["DOMICILIO"] = direccion if direccion is not None else None
         datos["_PRIORIDAD_ORIGEN"] = 0
-        return datos[["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "SUBNIVEL", "_PRIORIDAD_ORIGEN"]]
+        return datos[["CCT", "NOMBRECT", "DOMICILIO", "NOMBREMUN", "NOMBRELOC", "STATUS", "SUBNIVEL", "_PRIORIDAD_ORIGEN"]]
 
     def leer_oficializacion(ruta):
         crudos = pd.read_excel(ruta, header=None, dtype=object)
@@ -74,9 +83,11 @@ try:
         if faltantes:
             raise ValueError(f"Faltan columnas Oficializacion 911: {', '.join(faltantes)}")
         datos = datos[datos["CONTROL"].map(normalizar) == "PUBLICO"].copy()
+        direccion = columna_direccion(datos)
         salida = pd.DataFrame({
             "CCT": datos["CVCCT"],
             "NOMBRECT": datos["NOMBRECT"],
+            "DOMICILIO": direccion if direccion is not None else None,
             "NOMBREMUN": datos["CNOMMUN"],
             "NOMBRELOC": datos["CNOMLOC"],
             "STATUS": datos["STATUS"] if "STATUS" in datos.columns else "ACTIVO",
@@ -95,6 +106,7 @@ try:
             registros.append((
                 limpiar(fila["CCT"]),
                 limpiar(fila["NOMBRECT"]),
+                limpiar(fila["DOMICILIO"]),
                 limpiar(fila["NOMBREMUN"]),
                 limpiar(fila["NOMBRELOC"]),
                 limpiar(fila["STATUS"]),

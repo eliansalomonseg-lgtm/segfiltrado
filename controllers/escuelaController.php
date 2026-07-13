@@ -108,6 +108,7 @@ class EscuelaController
                 }
                 $rutas[$campo] = $ruta;
             }
+            $this->prepararTablaEscuelas(Conexion::conectar());
             $python = $this->localizarPython();
             $script = dirname(__DIR__) . '/services/guardar_escuelas_bd.py';
             $comando = escapeshellarg($python) . ' ' . escapeshellarg($script);
@@ -155,15 +156,18 @@ class EscuelaController
             return $resultado;
         }
         $marcadores = implode(',', array_fill(0, count($rpus), '?'));
-        $consulta = Conexion::conectar()->prepare(
-            "SELECT er.RPU, er.CCT, e.NOMBRECT FROM escuelas_rpu er LEFT JOIN escuelas e ON e.CCT = er.CCT WHERE er.RPU IN ($marcadores) ORDER BY er.RPU, er.id"
+        $conexion = Conexion::conectar();
+        $this->prepararTablaEscuelas($conexion);
+        $consulta = $conexion->prepare(
+            "SELECT er.RPU, er.CCT, e.NOMBRECT, e.DOMICILIO FROM escuelas_rpu er LEFT JOIN escuelas e ON e.CCT = er.CCT WHERE er.RPU IN ($marcadores) ORDER BY er.RPU, er.id"
         );
         $consulta->execute($rpus);
         $vinculos = [];
         foreach ($consulta->fetchAll() as $fila) {
             $vinculos[(string) $fila['RPU']][] = [
                 'cct' => (string) $fila['CCT'],
-                'nombre_escuela' => $fila['NOMBRECT'] ?? null
+                'nombre_escuela' => $fila['NOMBRECT'] ?? null,
+                'direccion_escuela' => $fila['DOMICILIO'] ?? null
             ];
         }
         foreach ($resultado['resultados'] as &$registro) {
@@ -320,15 +324,16 @@ class EscuelaController
                 $this->responder(['ok' => true, 'escuelas' => []]);
             }
             $conexion = Conexion::conectar();
+            $this->prepararTablaEscuelas($conexion);
             $busqueda = '%' . str_replace(['%', '_'], ['\%', '\_'], $termino) . '%';
             $consulta = $conexion->prepare(
-                "SELECT CCT, NOMBRECT, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL
+                "SELECT CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL
                  FROM escuelas
-                 WHERE CCT LIKE ? OR NOMBRECT LIKE ? OR NOMBREMUN LIKE ? OR NOMBRELOC LIKE ?
+                 WHERE CCT LIKE ? OR NOMBRECT LIKE ? OR DOMICILIO LIKE ? OR NOMBREMUN LIKE ? OR NOMBRELOC LIKE ?
                  ORDER BY CASE WHEN CCT = ? THEN 0 WHEN CCT LIKE ? THEN 1 ELSE 2 END, NOMBRECT
                  LIMIT 25"
             );
-            $consulta->execute([$busqueda, $busqueda, $busqueda, $busqueda, $termino, $termino . '%']);
+            $consulta->execute([$busqueda, $busqueda, $busqueda, $busqueda, $busqueda, $termino, $termino . '%']);
             $this->responder(['ok' => true, 'escuelas' => $consulta->fetchAll()]);
         } catch (Throwable $e) {
             $this->responder(['ok' => false, 'error' => 'Fallo de busqueda: ' . $e->getMessage()], 500);
@@ -350,6 +355,16 @@ class EscuelaController
         );
         if ((int) $consulta->fetchColumn() === 0) {
             $conexion->exec('ALTER TABLE escuelas_rpu ADD UNIQUE KEY `uniq_escuela_rpu` (`CCT`, `RPU`)');
+        }
+    }
+
+    private function prepararTablaEscuelas(PDO $conexion): void
+    {
+        $consulta = $conexion->query(
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'escuelas' AND COLUMN_NAME = 'DOMICILIO'"
+        );
+        if ((int) $consulta->fetchColumn() === 0) {
+            $conexion->exec('ALTER TABLE escuelas ADD COLUMN DOMICILIO VARCHAR(255) NULL AFTER NOMBRECT');
         }
     }
 
