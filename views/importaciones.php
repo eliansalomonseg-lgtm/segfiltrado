@@ -82,6 +82,7 @@ foreach ($tablas as $tabla) {
     <section class="results-card">
         <div class="results-head">
             <div><span class="eyebrow">TABLAS</span><h2>Resumen de importaciones</h2></div>
+            <span class="alert-gold"><?= count($resumen) ?> tablas monitoreadas</span>
         </div>
         <div class="table-wrap">
             <table>
