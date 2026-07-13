@@ -2,10 +2,16 @@
 
 declare(strict_types=1);
 
+session_start();
+
 require_once dirname(__DIR__) . '/services/conexion.php';
 
 $segBasePath = '';
 $conexion = Conexion::conectar();
+
+if (empty($_SESSION['seg_csrf'])) {
+    $_SESSION['seg_csrf'] = bin2hex(random_bytes(24));
+}
 
 function valorFiltro(string $clave): string
 {
@@ -72,9 +78,14 @@ $tarifas = opciones($conexion, "SELECT DISTINCT tarifa_cfe FROM escuelas_rpu WHE
 $subniveles = opciones($conexion, "SELECT DISTINCT SUBNIVEL FROM escuelas WHERE SUBNIVEL IS NOT NULL AND SUBNIVEL <> '' ORDER BY SUBNIVEL");
 $estatus = opciones($conexion, "SELECT DISTINCT STATUS FROM escuelas WHERE STATUS IS NOT NULL AND STATUS <> '' ORDER BY STATUS");
 $consulta = $conexion->prepare(
-    "SELECT er.id, er.RPU, er.CCT, er.nombre_recibo_cfe, er.poblacion_cfe, er.tarifa_cfe, e.NOMBRECT, e.DOMICILIO, e.NOMBREMUN, e.NOMBRELOC, e.STATUS, e.SUBNIVEL
+    "SELECT er.id, er.RPU, er.CCT, er.nombre_recibo_cfe, er.poblacion_cfe, er.tarifa_cfe, e.NOMBRECT, e.DOMICILIO, e.NOMBREMUN, e.NOMBRELOC, e.STATUS, e.SUBNIVEL, conteo.total_rpu
      FROM escuelas_rpu er
      LEFT JOIN escuelas e ON e.CCT = er.CCT
+     LEFT JOIN (
+         SELECT RPU, COUNT(*) total_rpu
+         FROM escuelas_rpu
+         GROUP BY RPU
+     ) conteo ON conteo.RPU = er.RPU
      $where
      ORDER BY er.id DESC
      LIMIT :limite OFFSET :offset"
@@ -140,9 +151,17 @@ $queryBase = $_GET;
                 <span class="eyebrow">CONTROL</span>
                 <h2>Padron de vinculos confirmados</h2>
             </div>
-            <span class="alert-gold"><?= number_format($totalFiltrado) ?> registros encontrados</span>
+            <form class="export-form" method="post" action="../controllers/escuelaController.php">
+                <input type="hidden" name="accion" value="exportar_vinculos">
+                <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['seg_csrf'], ENT_QUOTES, 'UTF-8') ?>">
+                <input type="hidden" name="q" value="<?= htmlspecialchars($busqueda, ENT_QUOTES, 'UTF-8') ?>">
+                <input type="hidden" name="tarifa" value="<?= htmlspecialchars($tarifa, ENT_QUOTES, 'UTF-8') ?>">
+                <input type="hidden" name="subnivel" value="<?= htmlspecialchars($subnivel, ENT_QUOTES, 'UTF-8') ?>">
+                <input type="hidden" name="status" value="<?= htmlspecialchars($status, ENT_QUOTES, 'UTF-8') ?>">
+                <button class="btn-seg compact-action" type="submit"><i class="bi bi-download me-2"></i>Exportar <?= number_format($totalFiltrado) ?></button>
+            </form>
         </div>
-        <form class="import-filters" method="get">
+        <form class="import-filters" method="get" data-auto-filter>
             <label class="search-field">
                 <i class="bi bi-search"></i>
                 <input type="search" name="q" value="<?= htmlspecialchars($busqueda, ENT_QUOTES, 'UTF-8') ?>" placeholder="Buscar por RPU, CCT, escuela, domicilio o poblacion CFE">
@@ -165,7 +184,7 @@ $queryBase = $_GET;
                     <option value="<?= htmlspecialchars((string) $opcion, ENT_QUOTES, 'UTF-8') ?>" <?= $status === (string) $opcion ? 'selected' : '' ?>>STATUS <?= htmlspecialchars((string) $opcion, ENT_QUOTES, 'UTF-8') ?></option>
                 <?php endforeach; ?>
             </select>
-            <button class="btn-seg compact-action" type="submit"><i class="bi bi-funnel me-2"></i>Filtrar</button>
+            <span class="filter-state"><i class="bi bi-funnel"></i> Filtro automatico</span>
             <a class="clear-link" href="importaciones.php">Limpiar</a>
         </form>
         <div class="table-wrap">
@@ -177,13 +196,14 @@ $queryBase = $_GET;
                         <th>Ubicacion</th>
                         <th>Recibo CFE</th>
                         <th>Tarifa</th>
+                        <th>Conteo</th>
                         <th>Estado</th>
                     </tr>
                 </thead>
                 <tbody>
                 <?php if (!$vinculos): ?>
                     <tr>
-                        <td colspan="6" class="empty-state">
+                        <td colspan="7" class="empty-state">
                             <i class="bi bi-search"></i>
                             <strong>No se encontraron vinculos</strong>
                             <span>Ajusta los filtros para ampliar la busqueda.</span>
@@ -198,17 +218,18 @@ $queryBase = $_GET;
                         </td>
                         <td>
                             <strong><?= htmlspecialchars((string) ($vinculo['NOMBRECT'] ?: 'Escuela sin catalogo'), ENT_QUOTES, 'UTF-8') ?></strong>
-                            <small><?= htmlspecialchars((string) $vinculo['CCT'], ENT_QUOTES, 'UTF-8') ?> · <?= htmlspecialchars((string) ($vinculo['SUBNIVEL'] ?: 'Sin subnivel'), ENT_QUOTES, 'UTF-8') ?></small>
+                            <small><?= htmlspecialchars((string) $vinculo['CCT'], ENT_QUOTES, 'UTF-8') ?> &middot; <?= htmlspecialchars((string) ($vinculo['SUBNIVEL'] ?: 'Sin subnivel'), ENT_QUOTES, 'UTF-8') ?></small>
                         </td>
                         <td>
                             <strong><?= htmlspecialchars((string) ($vinculo['NOMBRELOC'] ?: 'Sin localidad'), ENT_QUOTES, 'UTF-8') ?></strong>
-                            <small><?= htmlspecialchars((string) ($vinculo['DOMICILIO'] ?: 'Sin domicilio'), ENT_QUOTES, 'UTF-8') ?> · <?= htmlspecialchars((string) ($vinculo['NOMBREMUN'] ?: 'Sin municipio'), ENT_QUOTES, 'UTF-8') ?></small>
+                            <small><?= htmlspecialchars((string) ($vinculo['DOMICILIO'] ?: 'Sin domicilio'), ENT_QUOTES, 'UTF-8') ?> &middot; <?= htmlspecialchars((string) ($vinculo['NOMBREMUN'] ?: 'Sin municipio'), ENT_QUOTES, 'UTF-8') ?></small>
                         </td>
                         <td>
                             <strong><?= htmlspecialchars((string) ($vinculo['nombre_recibo_cfe'] ?: 'Sin nombre CFE'), ENT_QUOTES, 'UTF-8') ?></strong>
                             <small><?= htmlspecialchars((string) ($vinculo['poblacion_cfe'] ?: 'Sin poblacion CFE'), ENT_QUOTES, 'UTF-8') ?></small>
                         </td>
                         <td><span class="status-pill"><?= htmlspecialchars((string) ($vinculo['tarifa_cfe'] ?: 'N/D'), ENT_QUOTES, 'UTF-8') ?></span></td>
+                        <td><span class="status-pill <?= (int) ($vinculo['total_rpu'] ?? 0) > 1 ? 'status-warn' : 'status-ok' ?>"><?= number_format((int) ($vinculo['total_rpu'] ?? 0)) ?> CCT</span></td>
                         <td><span class="status-pill status-ok">STATUS <?= htmlspecialchars((string) ($vinculo['STATUS'] ?: 'N/D'), ENT_QUOTES, 'UTF-8') ?></span></td>
                     </tr>
                 <?php endforeach; ?>
@@ -226,5 +247,24 @@ $queryBase = $_GET;
         </div>
     </section>
 </main>
+<script>
+const autoFilter = document.querySelector('[data-auto-filter]');
+if (autoFilter) {
+    const search = autoFilter.querySelector('input[type="search"]');
+    const selects = autoFilter.querySelectorAll('select');
+    let timer = null;
+    const submitFilters = () => autoFilter.requestSubmit();
+
+    selects.forEach((select) => select.addEventListener('change', submitFilters));
+    search.addEventListener('input', () => {
+        clearTimeout(timer);
+        const value = search.value.trim();
+        if (value.length === 1) {
+            return;
+        }
+        timer = setTimeout(submitFilters, 450);
+    });
+}
+</script>
 </body>
 </html>

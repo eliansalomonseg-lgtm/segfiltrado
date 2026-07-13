@@ -346,12 +346,47 @@ class EscuelaController
         try {
             $conexion = Conexion::conectar();
             $this->prepararTablaEscuelas($conexion);
-            $consulta = $conexion->query(
-                "SELECT er.RPU, er.CCT, e.NOMBRECT, e.DOMICILIO, e.NOMBREMUN, e.NOMBRELOC, e.STATUS, e.SUBNIVEL, er.nombre_recibo_cfe, er.poblacion_cfe, er.tarifa_cfe
+            $busqueda = trim((string) ($_POST['q'] ?? ''));
+            $tarifa = trim((string) ($_POST['tarifa'] ?? ''));
+            $subnivel = trim((string) ($_POST['subnivel'] ?? ''));
+            $status = trim((string) ($_POST['status'] ?? ''));
+            $condiciones = [];
+            $parametros = [];
+
+            if ($busqueda !== '') {
+                $condiciones[] = '(er.RPU LIKE :busqueda OR er.CCT LIKE :busqueda OR er.nombre_recibo_cfe LIKE :busqueda OR er.poblacion_cfe LIKE :busqueda OR e.NOMBRECT LIKE :busqueda OR e.NOMBREMUN LIKE :busqueda OR e.NOMBRELOC LIKE :busqueda OR e.DOMICILIO LIKE :busqueda)';
+                $parametros['busqueda'] = '%' . $busqueda . '%';
+            }
+
+            if ($tarifa !== '') {
+                $condiciones[] = 'er.tarifa_cfe = :tarifa';
+                $parametros['tarifa'] = $tarifa;
+            }
+
+            if ($subnivel !== '') {
+                $condiciones[] = 'e.SUBNIVEL = :subnivel';
+                $parametros['subnivel'] = $subnivel;
+            }
+
+            if ($status !== '') {
+                $condiciones[] = 'e.STATUS = :status';
+                $parametros['status'] = $status;
+            }
+
+            $where = $condiciones ? 'WHERE ' . implode(' AND ', $condiciones) : '';
+            $consulta = $conexion->prepare(
+                "SELECT er.RPU, er.CCT, e.NOMBRECT, e.DOMICILIO, e.NOMBREMUN, e.NOMBRELOC, e.STATUS, e.SUBNIVEL, er.nombre_recibo_cfe, er.poblacion_cfe, er.tarifa_cfe, conteo.total_rpu
                  FROM escuelas_rpu er
                  LEFT JOIN escuelas e ON e.CCT = er.CCT
+                 LEFT JOIN (
+                     SELECT RPU, COUNT(*) total_rpu
+                     FROM escuelas_rpu
+                     GROUP BY RPU
+                 ) conteo ON conteo.RPU = er.RPU
+                 $where
                  ORDER BY er.RPU, er.CCT"
             );
+            $consulta->execute($parametros);
             $archivo = 'vinculos_escuelas_rpu_' . date('Ymd_His') . '.csv';
             http_response_code(200);
             header('Content-Type: text/csv; charset=utf-8');
@@ -366,7 +401,8 @@ class EscuelaController
                 'MUNICIPIO_ESCUELA',
                 'LOCALIDAD_ESCUELA',
                 'STATUS',
-                'SUBNIVEL',
+                'NIVEL_ESCOLAR',
+                'TOTAL_ESCUELAS_POR_RPU',
                 'NOMBRE_RECIBO_CFE',
                 'POBLACION_CFE',
                 'TARIFA_CFE'
@@ -381,6 +417,7 @@ class EscuelaController
                     $fila['NOMBRELOC'] ?? '',
                     $fila['STATUS'] ?? '',
                     $fila['SUBNIVEL'] ?? '',
+                    $fila['total_rpu'] ?? '',
                     $fila['nombre_recibo_cfe'] ?? '',
                     $fila['poblacion_cfe'] ?? '',
                     $fila['tarifa_cfe'] ?? ''
