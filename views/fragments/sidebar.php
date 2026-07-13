@@ -24,6 +24,11 @@ $logoPath = $segBasePath . '../assets/img/logoSeg.png';
             <span>Importaciones</span>
             <small>Tablas cargadas</small>
         </a>
+        <a class="<?= $paginaActual === 'ajustes.php' ? 'active' : '' ?>" href="<?= htmlspecialchars($segBasePath . 'ajustes.php', ENT_QUOTES, 'UTF-8') ?>">
+            <i class="bi bi-exclamation-diamond"></i>
+            <span>Ajustes CFE</span>
+            <small>Cobros atipicos</small>
+        </a>
     </nav>
     <div class="seg-sidebar-foot">
         <span>Secretaria de Educacion Guerrero</span>

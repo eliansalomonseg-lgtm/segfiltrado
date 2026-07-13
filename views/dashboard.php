@@ -65,6 +65,7 @@ $avance = $totalEscuelas > 0 ? min(100, round($totalVinculos / $totalEscuelas * 
                 <div><b>1</b><span><strong>Sincroniza catalogos</strong><small>Carga SEG y Oficializacion para poblar escuelas.</small></span></div>
                 <div><b>2</b><span><strong>Procesa reportes CFE</strong><small>Analiza uno o dos periodos de recibos.</small></span></div>
                 <div><b>3</b><span><strong>Confirma vinculos</strong><small>Guarda coincidencias seguras o revisadas.</small></span></div>
+                <div><b>4</b><span><strong>Audita ajustes</strong><small>Detecta cobros no bimestrales y cargos atipicos.</small></span></div>
             </div>
         </article>
         <article class="panel-card">
@@ -74,6 +75,7 @@ $avance = $totalEscuelas > 0 ? min(100, round($totalVinculos / $totalEscuelas * 
             <div class="module-list">
                 <a href="consolidacion/consolidacion.php"><i class="bi bi-lightning-charge"></i><span><strong>Consolidacion Masiva</strong><small>Cruce predictivo y vinculacion.</small></span></a>
                 <a href="importaciones.php"><i class="bi bi-table"></i><span><strong>Importaciones</strong><small>Resumen de tablas locales.</small></span></a>
+                <a href="ajustes.php"><i class="bi bi-exclamation-diamond"></i><span><strong>Ajustes CFE</strong><small>Auditoria de cobros y periodos.</small></span></a>
             </div>
         </article>
     </section>
