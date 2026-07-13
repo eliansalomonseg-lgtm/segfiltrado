@@ -10,6 +10,9 @@ import pandas as pd
 
 sys.stdout.reconfigure(encoding="utf-8")
 
+TARIFAS_MENSUALES = {"03", "68", "78"}
+TARIFAS_BIMESTRALES = {"01", "02", "1A", "1B", "1C", "1E"}
+
 
 def normalizar(valor):
     if valor is None or pd.isna(valor):
@@ -90,8 +93,10 @@ def periodo_esperado(tarifa, modo):
         return "mensual", 25, 35
     if modo == "bimestral":
         return "bimestral", 50, 75
-    if tarifa_normalizada in {"68", "78", "GDMTH", "GDMTO", "DIST", "DIT"}:
+    if tarifa_normalizada in TARIFAS_MENSUALES:
         return "mensual", 25, 35
+    if tarifa_normalizada in TARIFAS_BIMESTRALES:
+        return "bimestral", 50, 75
     return "bimestral", 50, 75
 
 

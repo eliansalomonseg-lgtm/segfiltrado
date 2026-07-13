@@ -31,9 +31,9 @@ if (empty($_SESSION['seg_csrf'])) {
         <div>
             <span class="eyebrow">AUDITORIA CFE</span>
             <h1>Ajustes y cobros atipicos</h1>
-            <p>Sube un reporte mensual CFE para detectar periodos no bimestrales, cargos, diferencias y cobros sin consumo.</p>
+            <p>Sube un reporte CFE para detectar periodos fuera de regla, cargos, diferencias y cobros sin consumo.</p>
         </div>
-        <span class="alert-gold">Regla bimestral: 50 a 75 dias</span>
+        <span class="alert-gold">01, 02, 1A, 1B, 1C, 1E bimestral | 03, 68, 78 mensual</span>
     </section>
 
     <section class="results-card adjustment-uploader">
@@ -43,7 +43,7 @@ if (empty($_SESSION['seg_csrf'])) {
             <label class="adjustment-drop">
                 <input type="file" name="reporte_cfe" accept=".xlsx,.xls" required>
                 <span><i class="bi bi-file-earmark-spreadsheet"></i></span>
-                <strong id="adjustment-file-name">Selecciona reporte CFE mensual</strong>
+                <strong id="adjustment-file-name">Selecciona reporte CFE</strong>
                 <small>Ejemplo: 2025-04_M061_Reporte.xlsx</small>
             </label>
             <div class="period-controls">
@@ -62,7 +62,7 @@ if (empty($_SESSION['seg_csrf'])) {
                 <label>
                     <span>Periodo</span>
                     <select name="modo_periodo" required>
-                        <option value="automatico">Automatico por tarifa</option>
+                        <option value="automatico">Automatico segun tarifa</option>
                         <option value="mensual">Todo mensual</option>
                         <option value="bimestral">Todo bimestral</option>
                     </select>
@@ -196,7 +196,7 @@ form.addEventListener('submit', async (event) => {
 });
 
 form.reporte_cfe.addEventListener('change', () => {
-    fileName.textContent = form.reporte_cfe.files[0]?.name || 'Selecciona reporte CFE mensual';
+    fileName.textContent = form.reporte_cfe.files[0]?.name || 'Selecciona reporte CFE';
 });
 
 download.addEventListener('click', () => {
