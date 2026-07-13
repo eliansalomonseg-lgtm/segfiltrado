@@ -274,8 +274,9 @@ class RpuController
         $parametros = [];
         $condiciones = [];
         if ($poblacion !== '') {
-            $parametros['poblacion'] = '%' . $poblacion . '%';
-            $condiciones[] = '(NOMBRELOC LIKE :poblacion OR NOMBREMUN LIKE :poblacion)';
+            $parametros['poblacion_loc'] = '%' . $poblacion . '%';
+            $parametros['poblacion_mun'] = '%' . $poblacion . '%';
+            $condiciones[] = '(NOMBRELOC LIKE :poblacion_loc OR NOMBREMUN LIKE :poblacion_mun)';
         }
         foreach (array_slice(array_filter(preg_split('/\s+/', $nombre) ?: [], fn ($p): bool => strlen($p) >= 4), 0, 3) as $i => $palabra) {
             $parametros['p' . $i] = '%' . $palabra . '%';
