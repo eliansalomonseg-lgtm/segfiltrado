@@ -8,6 +8,116 @@ require_once dirname(__DIR__) . '/services/conexion.php';
 
 class RpuController
 {
+    public function sugerirMalos(): void
+    {
+        $this->validarToken();
+        try {
+            $conexion = Conexion::conectar();
+            $this->prepararTablas($conexion);
+            $periodos = $conexion->query(
+                'SELECT DISTINCT anio, mes FROM cfe_reportes ORDER BY anio DESC, mes DESC LIMIT 4'
+            )->fetchAll();
+            if (!$periodos) {
+                $this->responder(['ok' => true, 'periodos' => [], 'rpus' => []]);
+            }
+
+            $condiciones = [];
+            $parametros = [];
+            foreach ($periodos as $periodo) {
+                $condiciones[] = '(cr.anio = ? AND cr.mes = ?)';
+                $parametros[] = (int) $periodo['anio'];
+                $parametros[] = (int) $periodo['mes'];
+            }
+
+            $consulta = $conexion->prepare(
+                'SELECT cc.RPU, cc.nombre_cfe, cc.poblacion_cfe, cc.tarifa_cfe, cc.total, cc.consumo, cc.severidad, cc.alertas, cr.anio, cr.mes, er.CCT, e.NOMBRECT
+                 FROM cfe_consumos cc
+                 INNER JOIN cfe_reportes cr ON cr.id = cc.reporte_id
+                 LEFT JOIN escuelas_rpu er ON er.RPU = cc.RPU
+                 LEFT JOIN escuelas e ON e.CCT = er.CCT
+                 WHERE ' . implode(' OR ', $condiciones) . '
+                 ORDER BY cc.RPU, cr.anio DESC, cr.mes DESC, cc.id DESC'
+            );
+            $consulta->execute($parametros);
+            $agrupados = [];
+            foreach ($consulta->fetchAll() as $fila) {
+                $rpu = (string) $fila['RPU'];
+                if (!isset($agrupados[$rpu])) {
+                    $agrupados[$rpu] = [
+                        'rpu' => $rpu,
+                        'nombre' => (string) ($fila['nombre_cfe'] ?? ''),
+                        'poblacion' => (string) ($fila['poblacion_cfe'] ?? ''),
+                        'tarifa' => (string) ($fila['tarifa_cfe'] ?? ''),
+                        'cct' => $fila['CCT'] ?? null,
+                        'escuela' => $fila['NOMBRECT'] ?? null,
+                        'filas' => []
+                    ];
+                }
+                $agrupados[$rpu]['filas'][] = [
+                    'periodo' => sprintf('%04d-%02d', (int) $fila['anio'], (int) $fila['mes']),
+                    'total' => (float) $fila['total'],
+                    'consumo' => (float) $fila['consumo'],
+                    'severidad' => (int) $fila['severidad'],
+                    'alertas' => trim((string) ($fila['alertas'] ?? ''))
+                ];
+                if (!$agrupados[$rpu]['cct'] && $fila['CCT']) {
+                    $agrupados[$rpu]['cct'] = $fila['CCT'];
+                    $agrupados[$rpu]['escuela'] = $fila['NOMBRECT'] ?? null;
+                }
+            }
+
+            $rpus = [];
+            foreach ($agrupados as $grupo) {
+                $filas = $grupo['filas'];
+                $ultima = $filas[0] ?? ['total' => 0, 'consumo' => 0, 'severidad' => 0, 'alertas' => '', 'periodo' => ''];
+                $anterior = $filas[1] ?? null;
+                $alertas = count(array_filter($filas, fn (array $fila): bool => $fila['severidad'] >= 4 || $fila['alertas'] !== ''));
+                $maxSeveridad = max(array_column($filas, 'severidad') ?: [0]);
+                $subioTotal = $anterior ? (float) $ultima['total'] - (float) $anterior['total'] : 0;
+                $score = ($maxSeveridad * 10) + ($alertas * 8);
+                if (!$grupo['cct']) {
+                    $score += 20;
+                }
+                if ($subioTotal > 0) {
+                    $score += 15;
+                }
+                if ((float) $ultima['total'] >= 20000) {
+                    $score += 12;
+                }
+                if ((int) $ultima['severidad'] >= 4) {
+                    $score += 10;
+                }
+                if ($score < 25) {
+                    continue;
+                }
+                $rpus[] = [
+                    'rpu' => $grupo['rpu'],
+                    'nombre' => $grupo['nombre'],
+                    'poblacion' => $grupo['poblacion'],
+                    'tarifa' => $grupo['tarifa'],
+                    'cct' => $grupo['cct'],
+                    'escuela' => $grupo['escuela'],
+                    'periodo' => $ultima['periodo'],
+                    'total' => (float) $ultima['total'],
+                    'consumo' => (float) $ultima['consumo'],
+                    'alertas' => $alertas,
+                    'max_severidad' => $maxSeveridad,
+                    'diferencia_total' => $subioTotal,
+                    'score' => min(100, $score),
+                    'motivo' => $this->motivoRiesgo($grupo['cct'] !== null, $alertas, $maxSeveridad, $subioTotal, (float) $ultima['total'])
+                ];
+            }
+            usort($rpus, fn (array $a, array $b): int => $b['score'] <=> $a['score']);
+            $this->responder([
+                'ok' => true,
+                'periodos' => array_map(fn (array $periodo): string => sprintf('%04d-%02d', (int) $periodo['anio'], (int) $periodo['mes']), $periodos),
+                'rpus' => array_slice($rpus, 0, 30)
+            ]);
+        } catch (Throwable $e) {
+            $this->responder(['ok' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
     public function buscar(): void
     {
         $this->validarToken();
@@ -260,6 +370,30 @@ class RpuController
         ];
     }
 
+    private function motivoRiesgo(bool $vinculado, int $alertas, int $maxSeveridad, float $subioTotal, float $total): string
+    {
+        $motivos = [];
+        if (!$vinculado) {
+            $motivos[] = 'sin vinculo';
+        }
+        if ($maxSeveridad >= 7) {
+            $motivos[] = 'severidad alta';
+        } elseif ($maxSeveridad >= 4) {
+            $motivos[] = 'alerta recurrente';
+        }
+        if ($alertas >= 2) {
+            $motivos[] = $alertas . ' meses con alerta';
+        }
+        if ($subioTotal > 0) {
+            $motivos[] = 'subio el pago';
+        }
+        if ($total >= 20000) {
+            $motivos[] = 'importe alto';
+        }
+        return $motivos ? implode(', ', $motivos) : 'revision recomendada';
+    }
+
+
     private function mapa(?array $escuela): array
     {
         if (!$escuela) {
@@ -313,6 +447,10 @@ $accion = $_POST['accion'] ?? '';
 
 if ($accion === 'buscar_rpu') {
     $controlador->buscar();
+}
+
+if ($accion === 'sugerir_rpus_malos') {
+    $controlador->sugerirMalos();
 }
 
 if ($accion === 'vincular_rpu') {

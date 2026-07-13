@@ -825,6 +825,10 @@ body {
     margin-bottom: 14px;
 }
 
+.rpu-risk-card {
+    margin-bottom: 14px;
+}
+
 .rpu-search-form {
     display: grid;
     gap: 10px;
@@ -902,6 +906,66 @@ body {
     min-height: 220px;
     overflow-x: auto;
     padding: 14px 4px 4px;
+}
+
+.risk-rpu-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.risk-rpu-item {
+    align-items: center;
+    background: #fbfcfd;
+    border: 1px solid var(--seg-border);
+    border-radius: 14px;
+    color: var(--seg-text);
+    display: grid;
+    gap: 12px;
+    grid-template-columns: 42px 1fr 20px;
+    padding: 11px 12px;
+    text-align: left;
+    transition: .18s ease;
+    width: 100%;
+}
+
+.risk-rpu-item:hover {
+    border-color: rgba(106, 27, 41, .28);
+    box-shadow: 0 8px 18px rgba(66, 16, 26, .06);
+    transform: translateY(-1px);
+}
+
+.risk-score {
+    align-items: center;
+    background: rgba(245, 158, 11, .14);
+    border: 1px solid rgba(245, 158, 11, .24);
+    border-radius: 12px;
+    color: #92400e;
+    display: flex;
+    font-size: 13px;
+    font-weight: 900;
+    height: 42px;
+    justify-content: center;
+    width: 42px;
+}
+
+.risk-rpu-item strong {
+    color: var(--seg-text);
+    display: block;
+    font-size: 13px;
+    line-height: 1.25;
+}
+
+.risk-rpu-item small {
+    color: var(--seg-muted);
+    display: block;
+    font-size: 11px;
+    line-height: 1.25;
+    margin-top: 3px;
+}
+
+.risk-rpu-item i {
+    color: var(--seg-guinda);
 }
 
 .rpu-bar {

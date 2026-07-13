@@ -45,6 +45,18 @@ if (empty($_SESSION['seg_csrf'])) {
         <div id="rpu-status" class="adjustment-status">Captura un RPU para revisar su expediente.</div>
     </section>
 
+    <section class="results-card rpu-risk-card">
+        <div class="results-head">
+            <div>
+                <span class="eyebrow">REVISION PRIORITARIA</span>
+                <h2>RPUs sugeridos por los ultimos meses cargados</h2>
+            </div>
+            <button id="reload-risk-rpus" class="btn-seg compact-action" type="button"><i class="bi bi-arrow-clockwise me-2"></i>Actualizar</button>
+        </div>
+        <div id="risk-rpu-periods" class="adjustment-status">Buscando periodos cargados...</div>
+        <div id="risk-rpu-list" class="risk-rpu-list"></div>
+    </section>
+
     <section id="rpu-summary" class="quick-actions" hidden>
         <article class="quick-card">
             <span class="quick-icon"><i class="bi bi-receipt"></i></span>
@@ -128,6 +140,9 @@ const map = document.getElementById('rpu-map');
 const mapLink = document.getElementById('rpu-map-link');
 const chart = document.getElementById('rpu-chart');
 const historyBody = document.getElementById('rpu-history-body');
+const riskList = document.getElementById('risk-rpu-list');
+const riskPeriods = document.getElementById('risk-rpu-periods');
+const reloadRisk = document.getElementById('reload-risk-rpus');
 let currentRpu = '';
 
 const money = new Intl.NumberFormat('es-MX', {style: 'currency', currency: 'MXN'});
@@ -218,6 +233,36 @@ function render(data) {
     historyZone.hidden = false;
 }
 
+function renderRiskRpus(data) {
+    const periods = data.periodos || [];
+    const rows = data.rpus || [];
+    riskPeriods.textContent = periods.length
+        ? `Analisis sobre periodos: ${periods.join(', ')}. Se muestran los ${rows.length} RPUs con mayor riesgo.`
+        : 'Todavia no hay reportes CFE guardados para sugerir RPUs.';
+    riskList.innerHTML = rows.length
+        ? rows.map((row) => `<button class="risk-rpu-item" type="button" data-rpu="${escapeHtml(row.rpu)}">
+            <span class="risk-score">${escapeHtml(row.score)}</span>
+            <span>
+                <strong>${escapeHtml(row.rpu)} - ${escapeHtml(row.nombre || 'Sin nombre CFE')}</strong>
+                <small>${escapeHtml(row.motivo)} - ${escapeHtml(row.periodo)} - ${money.format(row.total || 0)} - ${number.format(row.consumo || 0)} kWh</small>
+                <small>${row.cct ? `Vinculado a ${escapeHtml(row.cct)} - ${escapeHtml(row.escuela || '')}` : 'Sin vinculo confirmado'}</small>
+            </span>
+            <i class="bi bi-chevron-right"></i>
+        </button>`).join('')
+        : '<div class="empty-state"><i class="bi bi-check2-circle"></i><strong>Sin RPUs criticos</strong><span>No se encontraron casos prioritarios en los ultimos periodos.</span></div>';
+}
+
+async function loadRiskRpus() {
+    riskPeriods.textContent = 'Calculando RPUs con alertas recientes, importes altos y falta de vinculo...';
+    const body = new URLSearchParams({accion: 'sugerir_rpus_malos', csrf: token});
+    const response = await fetch('../controllers/rpuController.php', {method: 'POST', body});
+    const data = await response.json();
+    if (!data.ok) {
+        throw new Error(data.error || 'No fue posible calcular sugerencias.');
+    }
+    renderRiskRpus(data);
+}
+
 async function searchRpu(rpu) {
     currentRpu = rpu;
     statusBox.textContent = 'Consultando vinculos, historial y sugerencias...';
@@ -259,6 +304,31 @@ suggestionsBox.addEventListener('click', async (event) => {
         statusBox.textContent = error.message;
         button.disabled = false;
     }
+});
+
+riskList.addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-rpu]');
+    if (!button) {
+        return;
+    }
+    form.rpu.value = button.dataset.rpu;
+    try {
+        await searchRpu(button.dataset.rpu);
+    } catch (error) {
+        statusBox.textContent = error.message;
+    }
+});
+
+reloadRisk.addEventListener('click', async () => {
+    try {
+        await loadRiskRpus();
+    } catch (error) {
+        riskPeriods.textContent = error.message;
+    }
+});
+
+loadRiskRpus().catch((error) => {
+    riskPeriods.textContent = error.message;
 });
 </script>
 </body>
