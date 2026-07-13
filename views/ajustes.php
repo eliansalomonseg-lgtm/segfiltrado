@@ -100,6 +100,21 @@ if (empty($_SESSION['seg_csrf'])) {
             <div><strong data-summary="importe_total">0</strong><span>Importe total</span></div>
             <small>Facturado</small>
         </article>
+        <article class="quick-card">
+            <span class="quick-icon"><i class="bi bi-building-check"></i></span>
+            <div><strong data-summary="rpu_con_vinculo">0</strong><span>RPU vinculados</span></div>
+            <small>Escuelas</small>
+        </article>
+        <article class="quick-card">
+            <span class="quick-icon"><i class="bi bi-stars"></i></span>
+            <div><strong data-summary="rpu_sugeridos_por_historial">0</strong><span>Sugeridos por historial</span></div>
+            <small>Sin vinculo</small>
+        </article>
+        <article class="quick-card">
+            <span class="quick-icon"><i class="bi bi-graph-down-arrow"></i></span>
+            <div><strong data-summary="rpu_mejorando">0</strong><span>RPU mejorando</span></div>
+            <small>Vs anterior</small>
+        </article>
     </section>
 
     <section class="results-card" id="adjustment-results" hidden>
@@ -117,6 +132,7 @@ if (empty($_SESSION['seg_csrf'])) {
                         <th>RPU</th>
                         <th>Recibo</th>
                         <th>Periodo</th>
+                        <th>Escuela</th>
                         <th>Consumo</th>
                         <th>Total</th>
                         <th>Ajustes</th>
@@ -158,12 +174,23 @@ function render(data) {
     fileLabel.textContent = `${data.archivo || 'Reporte'} ${data.mes_reporte ? ' - ' + data.mes_reporte : ''} - ${data.modo_periodo || 'automatico'}`;
     body.innerHTML = currentRows.filter((row) => row.alertas.length > 0).slice(0, 200).map((row) => {
         const level = row.severidad >= 7 ? 'status-warn' : row.severidad >= 4 ? '' : 'status-ok';
+        const linked = row.escuelas_vinculadas?.[0];
+        const suggested = row.sugerencias_escuela?.[0];
+        const school = linked
+            ? `<strong>${escapeHtml(linked.cct)} - ${escapeHtml(linked.nombre)}</strong><small>Vinculo confirmado</small>`
+            : suggested
+                ? `<strong>${escapeHtml(suggested.cct)} - ${escapeHtml(suggested.nombre)}</strong><small>Sugerida por historial (${escapeHtml(suggested.apariciones)} apariciones)</small>`
+                : '<strong>Sin vinculo</strong><small>Sin sugerencia previa</small>';
+        const trend = row.tendencia
+            ? `${row.tendencia.diferencia_total <= 0 ? 'Bajo' : 'Subio'} ${money.format(Math.abs(row.tendencia.diferencia_total || 0))} vs ${escapeHtml(row.tendencia.periodo_anterior)}`
+            : 'Sin historial previo';
         return `<tr>
             <td><strong>${escapeHtml(row.rpu)}</strong><small>${escapeHtml(row.tarifa || 'Sin tarifa')}</small></td>
             <td><strong>${escapeHtml(row.nombre)}</strong><small>${escapeHtml(row.poblacion)}</small></td>
             <td><strong>${escapeHtml(row.desde)} / ${escapeHtml(row.hasta)}</strong><small>${escapeHtml(row.tipo_periodo || '')} - ${escapeHtml(row.dias)} dias</small></td>
+            <td>${school}</td>
             <td><strong>${number.format(row.consumo || 0)}</strong><small>kWh</small></td>
-            <td><strong>${money.format(row.total || 0)}</strong><small>Diferencia ${money.format(row.diferencia || 0)}</small></td>
+            <td><strong>${money.format(row.total || 0)}</strong><small>${escapeHtml(trend)}<br>Diferencia ${money.format(row.diferencia || 0)}</small></td>
             <td><strong>${money.format(row.cargos_depositos || 0)}</strong><small>Creditos ${money.format(row.creditos_redondeos || 0)}</small></td>
             <td><span class="status-pill ${level}">Sev. ${escapeHtml(row.severidad)}</span><small>${escapeHtml(row.alertas.join(' | '))}</small></td>
         </tr>`;
@@ -188,7 +215,7 @@ form.addEventListener('submit', async (event) => {
         if (!json.ok) {
             throw new Error(json.error || 'No fue posible analizar el reporte.');
         }
-        statusBox.textContent = `Analisis completado: ${number.format(json.resumen.con_alerta)} registros con alerta.`;
+        statusBox.textContent = `Analisis completado y guardado: ${number.format(json.resumen.con_alerta)} registros con alerta, reporte #${json.reporte_id}.`;
         render(json);
     } catch (error) {
         statusBox.textContent = error.message;
@@ -200,9 +227,31 @@ form.reporte_cfe.addEventListener('change', () => {
 });
 
 download.addEventListener('click', () => {
-    const headers = ['RPU','NOMBRE','POBLACION','TARIFA','TIPO_PERIODO','DESDE','HASTA','DIAS','CONSUMO','ENERGIA','DAP','CARGOS_DEPOSITOS','CREDITOS_REDONDEOS','TOTAL','DIFERENCIA','SEVERIDAD','ALERTAS'];
+    const headers = ['RPU','NOMBRE','POBLACION','TARIFA','CCT_VINCULADO','ESCUELA_VINCULADA','CCT_SUGERIDO','ESCUELA_SUGERIDA','PERIODO_ANTERIOR','DIFERENCIA_TOTAL_ANTERIOR','TIPO_PERIODO','DESDE','HASTA','DIAS','CONSUMO','ENERGIA','DAP','CARGOS_DEPOSITOS','CREDITOS_REDONDEOS','TOTAL','DIFERENCIA','SEVERIDAD','ALERTAS'];
     const rows = currentRows.filter((row) => row.alertas.length > 0).map((row) => [
-        row.rpu, row.nombre, row.poblacion, row.tarifa, row.tipo_periodo, row.desde, row.hasta, row.dias, row.consumo, row.energia, row.dap, row.cargos_depositos, row.creditos_redondeos, row.total, row.diferencia, row.severidad, row.alertas.join(' | ')
+        row.rpu,
+        row.nombre,
+        row.poblacion,
+        row.tarifa,
+        row.escuelas_vinculadas?.[0]?.cct || '',
+        row.escuelas_vinculadas?.[0]?.nombre || '',
+        row.sugerencias_escuela?.[0]?.cct || '',
+        row.sugerencias_escuela?.[0]?.nombre || '',
+        row.tendencia?.periodo_anterior || '',
+        row.tendencia?.diferencia_total || '',
+        row.tipo_periodo,
+        row.desde,
+        row.hasta,
+        row.dias,
+        row.consumo,
+        row.energia,
+        row.dap,
+        row.cargos_depositos,
+        row.creditos_redondeos,
+        row.total,
+        row.diferencia,
+        row.severidad,
+        row.alertas.join(' | ')
     ]);
     const csv = [headers, ...rows].map((row) => row.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob(['\ufeff' + csv], {type: 'text/csv;charset=utf-8;'});

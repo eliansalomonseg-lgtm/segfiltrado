@@ -208,7 +208,7 @@ def analizar(ruta, anio=None, mes=None, modo_periodo="automatico"):
             "periodo_bimestral": periodo_correcto,
             "importe_total": round(sum(item["total"] for item in registros), 2)
         },
-        "registros": registros[:500]
+        "registros": registros
     }
 
 

@@ -33,3 +33,46 @@ CREATE TABLE IF NOT EXISTS `escuelas_rpu` (
   UNIQUE KEY `uniq_escuela_rpu` (`CCT`, `RPU`),
   FOREIGN KEY (`CCT`) REFERENCES `escuelas`(`CCT`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `cfe_reportes` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `archivo` VARCHAR(255) NOT NULL,
+  `anio` INT NOT NULL,
+  `mes` INT NOT NULL,
+  `modo_periodo` VARCHAR(20) NOT NULL,
+  `total_registros` INT NOT NULL DEFAULT 0,
+  `con_alerta` INT NOT NULL DEFAULT 0,
+  `severos` INT NOT NULL DEFAULT 0,
+  `periodo_correcto` INT NOT NULL DEFAULT 0,
+  `importe_total` DECIMAL(14,2) NOT NULL DEFAULT 0,
+  `creado_en` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_cfe_reportes_periodo` (`anio`, `mes`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `cfe_consumos` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `reporte_id` INT NOT NULL,
+  `RPU` VARCHAR(20) NOT NULL,
+  `CCT` VARCHAR(50) NULL,
+  `nombre_cfe` VARCHAR(255) NULL,
+  `poblacion_cfe` VARCHAR(255) NULL,
+  `tarifa_cfe` VARCHAR(10) NULL,
+  `tipo_periodo` VARCHAR(20) NULL,
+  `desde` DATE NULL,
+  `hasta` DATE NULL,
+  `dias` INT NULL,
+  `consumo` DECIMAL(14,2) NOT NULL DEFAULT 0,
+  `energia` DECIMAL(14,2) NOT NULL DEFAULT 0,
+  `dap` DECIMAL(14,2) NOT NULL DEFAULT 0,
+  `cargos_depositos` DECIMAL(14,2) NOT NULL DEFAULT 0,
+  `creditos_redondeos` DECIMAL(14,2) NOT NULL DEFAULT 0,
+  `total` DECIMAL(14,2) NOT NULL DEFAULT 0,
+  `diferencia` DECIMAL(14,2) NOT NULL DEFAULT 0,
+  `severidad` INT NOT NULL DEFAULT 0,
+  `alertas` TEXT NULL,
+  INDEX `idx_cfe_consumos_rpu` (`RPU`),
+  INDEX `idx_cfe_consumos_cct` (`CCT`),
+  INDEX `idx_cfe_consumos_reporte` (`reporte_id`),
+  FOREIGN KEY (`reporte_id`) REFERENCES `cfe_reportes`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`CCT`) REFERENCES `escuelas`(`CCT`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
