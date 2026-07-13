@@ -41,7 +41,7 @@ try:
         "ORIGEN": "VARCHAR(80) NULL",
     }
     for columna in COLUMNAS_DETALLE:
-        COLUMNAS_EXTRA[columna] = "LONGTEXT NULL" if columna.endswith("_JSON") else "VARCHAR(255) NULL"
+        COLUMNAS_EXTRA[columna] = "LONGTEXT NULL" if columna.endswith("_JSON") else "TEXT NULL"
 
     def normalizar(valor):
         if valor is None or pd.isna(valor):
@@ -246,10 +246,12 @@ try:
 
     def preparar_tabla(cursor):
         cursor.execute("SHOW COLUMNS FROM escuelas")
-        existentes = {fila[0].upper() for fila in cursor.fetchall()}
+        existentes = {fila[0].upper(): str(fila[1]).lower() for fila in cursor.fetchall()}
         for columna, definicion in COLUMNAS_EXTRA.items():
             if columna not in existentes:
                 cursor.execute(f"ALTER TABLE escuelas ADD COLUMN `{columna}` {definicion}")
+            elif columna in COLUMNAS_DETALLE and existentes[columna].startswith("varchar"):
+                cursor.execute(f"ALTER TABLE escuelas MODIFY COLUMN `{columna}` {definicion}")
 
     def guardar(registros):
         if not registros:
