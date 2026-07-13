@@ -162,27 +162,44 @@ function setSummary(resumen) {
         : `${resumen.diferencia_total <= 0 ? 'Bajo' : 'Subio'} ${money.format(Math.abs(resumen.diferencia_total))}`;
 }
 
-function schoolCard(escuela, vinculado) {
-    return `<div class="rpu-school-main">
-        <span class="quick-icon"><i class="bi bi-building"></i></span>
-        <div>
-            <strong>${escapeHtml(escuela.cct || 'Sin CCT')} - ${escapeHtml(escuela.nombre || 'Escuela sin nombre')}</strong>
-            <small>${escapeHtml(escuela.domicilio || 'Sin domicilio')} &middot; ${escapeHtml(escuela.localidad || 'Sin localidad')} &middot; ${escapeHtml(escuela.municipio || 'Sin municipio')}</small>
-            <span class="status-pill ${vinculado ? 'status-ok' : 'status-warn'}">${escapeHtml(escuela.origen || (vinculado ? 'Vinculo confirmado' : 'Sugerencia'))} &middot; ${escapeHtml(escuela.score || 0)}%</span>
-        </div>
+function cfePanel(cfe) {
+    return `<div class="compare-panel cfe-panel">
+        <span class="compare-label">RECIBO CFE</span>
+        <strong>${escapeHtml(cfe.rpu || currentRpu)} - ${escapeHtml(cfe.nombre || 'Sin nombre CFE')}</strong>
+        <small><b>Poblacion CFE:</b> ${escapeHtml(cfe.poblacion || 'Sin poblacion')}</small>
+        <small><b>Tarifa:</b> ${escapeHtml(cfe.tarifa || 'Sin tarifa')} ${cfe.periodo ? `- <b>Periodo:</b> ${escapeHtml(cfe.periodo)}` : ''}</small>
+    </div>`;
+}
+
+function schoolPanel(escuela, vinculado) {
+    return `<div class="compare-panel school-panel">
+        <span class="compare-label">ESCUELA OFICIAL</span>
+        <strong>${escapeHtml(escuela.cct || 'Sin CCT')} - ${escapeHtml(escuela.nombre || 'Escuela sin nombre')}</strong>
+        <small><b>Domicilio:</b> ${escapeHtml(escuela.domicilio || 'Sin domicilio')}</small>
+        <small><b>Localidad:</b> ${escapeHtml(escuela.localidad || 'Sin localidad')} - <b>Municipio:</b> ${escapeHtml(escuela.municipio || 'Sin municipio')}</small>
+        <small><b>Nivel:</b> ${escapeHtml(escuela.subnivel || 'Sin nivel')} - <b>Fuente:</b> ${escapeHtml(escuela.fuente || 'Catalogo local')}</small>
+        <span class="status-pill ${vinculado ? 'status-ok' : 'status-warn'}">${escapeHtml(escuela.origen || (vinculado ? 'Vinculo confirmado' : 'Sugerencia'))} - ${escapeHtml(escuela.score || 0)}%</span>
+    </div>`;
+}
+
+function comparisonCard(cfe, escuela, vinculado) {
+    return `<div class="rpu-comparison">
+        ${cfePanel(cfe || {})}
+        ${schoolPanel(escuela || {}, vinculado)}
     </div>`;
 }
 
 function renderSchool(data) {
     const linked = data.vinculos?.[0];
     const suggestions = data.sugerencias || [];
+    const cfe = data.cfe || {};
     linkState.textContent = linked ? 'Vinculado' : suggestions.length ? 'Sugerencia disponible' : 'Sin vinculo';
     schoolBox.innerHTML = linked
-        ? schoolCard(linked, true)
-        : '<div class="empty-state"><i class="bi bi-link-45deg"></i><strong>RPU sin vinculo confirmado</strong><span>Revisa las sugerencias para localizar la escuela.</span></div>';
+        ? comparisonCard(cfe, linked, true)
+        : `${cfePanel(cfe)}<div class="empty-state"><i class="bi bi-link-45deg"></i><strong>RPU sin vinculo confirmado</strong><span>Compara la poblacion CFE contra localidad y municipio de las sugerencias antes de vincular.</span></div>`;
     suggestionsBox.innerHTML = suggestions.length && !linked
         ? `<h3>Sugerencias para vincular</h3>${suggestions.map((item) => `<div class="rpu-suggestion">
-            ${schoolCard(item, false)}
+            ${comparisonCard(cfe, item, false)}
             <button class="btn-seg compact-action" type="button" data-cct="${escapeHtml(item.cct)}">Vincular</button>
         </div>`).join('')}`
         : '';

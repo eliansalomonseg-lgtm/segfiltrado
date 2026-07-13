@@ -140,6 +140,13 @@ class RpuController
                 'rpu' => $rpu,
                 'encontrado' => $historial !== [] || $vinculos !== [],
                 'ultimo' => $ultimo,
+                'cfe' => [
+                    'rpu' => $rpu,
+                    'nombre' => $ultimo['nombre_cfe'] ?? ($vinculos[0]['nombre_recibo_cfe'] ?? ''),
+                    'poblacion' => $ultimo['poblacion_cfe'] ?? ($vinculos[0]['poblacion_cfe'] ?? ''),
+                    'tarifa' => $ultimo['tarifa_cfe'] ?? ($vinculos[0]['tarifa_cfe'] ?? ''),
+                    'periodo' => $ultimo ? sprintf('%04d-%02d', (int) $ultimo['anio'], (int) $ultimo['mes']) : ''
+                ],
                 'vinculos' => $vinculos,
                 'sugerencias' => $sugerencias,
                 'historial' => array_reverse($historial),
@@ -331,6 +338,7 @@ class RpuController
             'localidad' => (string) ($fila['NOMBRELOC'] ?? ''),
             'status' => (string) ($fila['STATUS'] ?? ''),
             'subnivel' => (string) ($fila['SUBNIVEL'] ?? ''),
+            'fuente' => (string) ($fila['ORIGEN'] ?? 'Catalogo local SEG/Oficializacion'),
             'score' => $score,
             'origen' => $origen
         ];
