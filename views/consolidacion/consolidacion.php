@@ -121,6 +121,7 @@ $segBasePath = '../';
             <div><span class="eyebrow">RESULTADOS</span><h2>RPUs únicos y escuelas sugeridas</h2></div>
             <div class="results-tools">
                 <button id="auto-link-safe" class="btn btn-success btn-sm" type="button">⚡ Auto-Vincular Casos Seguros (≥50%)</button>
+                <button id="export-links" class="btn btn-outline-dark btn-sm" type="button">Exportar vinculos</button>
                 <input id="result-search" class="result-search" type="search" placeholder="Buscar RPU, CCT o escuela">
                 <div id="summary" class="summary"></div>
             </div>
@@ -142,6 +143,7 @@ $segBasePath = '../';
     const syncStatus = document.getElementById('sync-status');
     const resultSearch = document.getElementById('result-search');
     const autoLinkSafe = document.getElementById('auto-link-safe');
+    const exportLinks = document.getElementById('export-links');
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character]));
     const parseServerJson = text => {
         try {
@@ -248,6 +250,22 @@ $segBasePath = '../';
         }
     });
     autoLinkSafe.addEventListener('click', autoLinkSafeCases);
+    exportLinks.addEventListener('click', () => {
+        const exportForm = document.createElement('form');
+        exportForm.method = 'POST';
+        exportForm.action = controller;
+        exportForm.style.display = 'none';
+        [['accion','exportar_vinculos'],['csrf',token]].forEach(([name, value]) => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = name;
+            input.value = value;
+            exportForm.appendChild(input);
+        });
+        document.body.appendChild(exportForm);
+        exportForm.submit();
+        exportForm.remove();
+    });
     const normalizeSearch = value => String(value ?? '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     function resultMatchesSearch(registro, term) {
         if (!term) return true;

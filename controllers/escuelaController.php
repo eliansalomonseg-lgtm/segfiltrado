@@ -340,6 +340,59 @@ class EscuelaController
         }
     }
 
+    public function exportarVinculos(): void
+    {
+        $this->validarToken();
+        try {
+            $conexion = Conexion::conectar();
+            $this->prepararTablaEscuelas($conexion);
+            $consulta = $conexion->query(
+                "SELECT er.RPU, er.CCT, e.NOMBRECT, e.DOMICILIO, e.NOMBREMUN, e.NOMBRELOC, e.STATUS, e.SUBNIVEL, er.nombre_recibo_cfe, er.poblacion_cfe, er.tarifa_cfe
+                 FROM escuelas_rpu er
+                 LEFT JOIN escuelas e ON e.CCT = er.CCT
+                 ORDER BY er.RPU, er.CCT"
+            );
+            $archivo = 'vinculos_escuelas_rpu_' . date('Ymd_His') . '.csv';
+            http_response_code(200);
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename="' . $archivo . '"');
+            echo "\xEF\xBB\xBF";
+            $salida = fopen('php://output', 'wb');
+            fputcsv($salida, [
+                'RPU',
+                'CCT',
+                'NOMBRE_ESCUELA_OFICIAL',
+                'DOMICILIO_ESCUELA_OFICIAL',
+                'MUNICIPIO_ESCUELA',
+                'LOCALIDAD_ESCUELA',
+                'STATUS',
+                'SUBNIVEL',
+                'NOMBRE_RECIBO_CFE',
+                'POBLACION_CFE',
+                'TARIFA_CFE'
+            ]);
+            foreach ($consulta->fetchAll() as $fila) {
+                fputcsv($salida, [
+                    $fila['RPU'] ?? '',
+                    $fila['CCT'] ?? '',
+                    $fila['NOMBRECT'] ?? '',
+                    $fila['DOMICILIO'] ?? '',
+                    $fila['NOMBREMUN'] ?? '',
+                    $fila['NOMBRELOC'] ?? '',
+                    $fila['STATUS'] ?? '',
+                    $fila['SUBNIVEL'] ?? '',
+                    $fila['nombre_recibo_cfe'] ?? '',
+                    $fila['poblacion_cfe'] ?? '',
+                    $fila['tarifa_cfe'] ?? ''
+                ]);
+            }
+            fclose($salida);
+            exit;
+        } catch (Throwable $e) {
+            $this->responder(['ok' => false, 'error' => 'Fallo al exportar vinculos: ' . $e->getMessage()], 500);
+        }
+    }
+
     private function prepararTablaVinculos(PDO $conexion): void
     {
         $consulta = $conexion->query(
@@ -415,6 +468,10 @@ if ($accion === 'auto_vincular_masivo') {
 
 if ($accion === 'buscar_escuelas') {
     $controlador->buscarEscuelas();
+}
+
+if ($accion === 'exportar_vinculos') {
+    $controlador->exportarVinculos();
 }
 
 http_response_code(400);
