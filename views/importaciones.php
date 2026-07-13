@@ -60,7 +60,7 @@ foreach ($tablas as $tabla) {
             <h1>Importaciones</h1>
             <p>Consulta las tablas locales que alimentan la consolidacion de la base seg.</p>
         </div>
-        <span class="alert-gold">Datos locales sincronizados</span>
+        <span class="alert-gold">Datos sincronizados</span>
     </section>
     <section class="quick-actions">
         <article class="quick-card">

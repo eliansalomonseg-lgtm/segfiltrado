@@ -100,15 +100,15 @@ body {
 
 .seg-logo-box {
     align-items: center;
-    background: rgba(255, 255, 255, .10);
-    border: 1px solid rgba(255, 255, 255, .14);
+    background: #fff;
+    border: 1px solid rgba(191, 162, 118, .42);
     border-radius: 16px;
     color: #fff;
     display: grid;
     gap: 9px;
     justify-items: center;
     margin-bottom: 16px;
-    min-height: 92px;
+    min-height: 82px;
     padding: 12px;
     text-decoration: none;
 }
@@ -125,7 +125,7 @@ body {
 }
 
 .seg-logo-box span {
-    color: rgba(255, 255, 255, .88);
+    color: var(--seg-guinda);
     font-size: 15px;
     font-weight: 900;
     letter-spacing: -.3px;
@@ -240,13 +240,35 @@ body {
     border-radius: 14px;
     box-shadow: var(--seg-shadow);
     margin-bottom: 14px !important;
-    padding: 16px 18px;
+    padding: 14px 18px;
 }
 
 .heading h1,
 .hero h1 {
     color: var(--seg-text) !important;
+    font-size: 28px !important;
     letter-spacing: 0;
+    line-height: 1.1;
+    margin: 4px 0 8px !important;
+}
+
+.heading p,
+.hero p {
+    color: var(--seg-muted);
+    font-size: 13px !important;
+    line-height: 1.45;
+    margin: 0 !important;
+}
+
+.alert-gold {
+    align-self: flex-start;
+    background: rgba(191, 162, 118, .15) !important;
+    border: 1px solid rgba(191, 162, 118, .38) !important;
+    border-radius: 999px !important;
+    color: #7a5d2e !important;
+    font-size: 11px !important;
+    font-weight: 800;
+    padding: 7px 11px !important;
 }
 
 .eyebrow {
@@ -284,7 +306,7 @@ body {
 .quick-card strong {
     color: var(--seg-text);
     display: block;
-    font-size: 19px;
+    font-size: 18px;
     line-height: 1;
 }
 
@@ -316,9 +338,16 @@ body {
     border: 1px solid transparent;
     border-radius: 999px;
     color: var(--seg-muted);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 800;
-    padding: 8px 13px;
+    padding: 7px 11px;
+}
+
+.results-head h2 {
+    color: var(--seg-text);
+    font-size: 22px !important;
+    line-height: 1.2;
+    margin: 4px 0 0 !important;
 }
 
 .module-tabs button.active {
@@ -336,14 +365,31 @@ body {
     background: transparent !important;
     color: var(--seg-muted) !important;
     font-size: 11px !important;
-    padding: 8px 12px !important;
+    padding: 6px 12px !important;
 }
 
 .results-card td {
     background: #fff;
     border-bottom: 1px solid var(--seg-border) !important;
     border-top: 1px solid var(--seg-border);
-    padding: 14px 12px !important;
+    color: var(--seg-text);
+    font-size: 13px !important;
+    padding: 11px 12px !important;
+    vertical-align: middle !important;
+}
+
+.results-card td strong {
+    display: block;
+    font-size: 13px;
+    line-height: 1.2;
+}
+
+.results-card td small {
+    color: var(--seg-muted);
+    display: block;
+    font-size: 11px;
+    line-height: 1.2;
+    margin-top: 3px;
 }
 
 .results-card tr td:first-child {
@@ -387,7 +433,7 @@ body {
 
 .upload-card,
 .results-card {
-    padding: 18px !important;
+    padding: 16px !important;
 }
 
 .source-column {
