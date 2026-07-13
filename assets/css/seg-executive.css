@@ -3,34 +3,35 @@
     --seg-guinda-dark: #42101a;
     --seg-guinda-soft: #8a2a3a;
     --seg-gold: #bfa276;
-    --seg-bg: #f8f9fa;
+    --seg-gold-light: #f4e8d4;
+    --seg-bg: #f6f7fa;
     --seg-card: #ffffff;
-    --seg-border: #e9edf2;
-    --seg-text: #1f2933;
-    --seg-muted: #7a8491;
-    --seg-success: #2e9f68;
-    --seg-warning: #b98a2c;
-    --seg-shadow: 0 12px 28px rgba(28, 39, 54, .07);
-    --seg-sidebar-width: 230px;
+    --seg-border: #eef1f6;
+    --seg-text: #1f2937;
+    --seg-muted: #6b7280;
+    --seg-success: #10b981;
+    --seg-warning: #f59e0b;
+    --seg-shadow: 0 10px 30px rgba(66, 16, 26, 0.04);
+    --seg-sidebar-width: 250px;
 }
 
 body {
-    background: var(--seg-bg) !important;
+    background: radial-gradient(circle at 80% 15%, rgba(191, 162, 118, 0.07), transparent 35%), var(--seg-bg) !important;
     color: var(--seg-text);
     font-family: Inter, "Segoe UI", Arial, sans-serif !important;
 }
 
 .seg-navbar {
     align-items: center;
-    background: rgba(248, 249, 250, .92) !important;
-    border-bottom: 1px solid var(--seg-border) !important;
-    box-shadow: none !important;
-    color: var(--seg-text) !important;
+    background: linear-gradient(135deg, var(--seg-guinda-dark) 0%, var(--seg-guinda) 60%, var(--seg-guinda-soft) 100%) !important;
+    border-bottom: 2px solid var(--seg-gold) !important;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08) !important;
+    color: #ffffff !important;
     display: flex;
-    height: 64px !important;
+    height: 72px !important;
     justify-content: space-between;
     left: var(--seg-sidebar-width) !important;
-    padding: 0 26px !important;
+    padding: 0 28px !important;
     position: fixed;
     right: 0;
     top: 0;
@@ -39,38 +40,38 @@ body {
 
 .seg-navbar-title {
     display: grid;
-    gap: 2px;
+    gap: 1px;
 }
 
 .seg-navbar-title span {
-    color: var(--seg-muted);
-    font-size: 11px;
+    color: var(--seg-gold) !important;
+    font-size: 10px;
     font-weight: 800;
-    letter-spacing: 1.5px;
+    letter-spacing: 1.8px;
     text-transform: uppercase;
 }
 
 .seg-navbar-title strong {
-    color: var(--seg-text);
-    font-size: 16px;
+    color: #ffffff !important;
+    font-size: 17px;
     font-weight: 800;
 }
 
 .seg-navbar-actions {
     align-items: center;
-    background: var(--seg-card) !important;
-    border: 1px solid var(--seg-border) !important;
+    background: rgba(255, 255, 255, 0.08) !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
     border-radius: 999px;
-    box-shadow: 0 8px 24px rgba(28, 39, 54, .06);
+    box-shadow: none;
     display: flex;
     gap: 10px;
-    padding: 7px 12px !important;
+    padding: 7px 14px !important;
 }
 
 .seg-status-dot {
     background: var(--seg-success);
     border-radius: 50%;
-    box-shadow: 0 0 0 5px rgba(46, 159, 104, .14);
+    box-shadow: 0 0 0 5px rgba(16, 185, 129, 0.25);
     display: block;
     height: 8px;
     width: 8px;
@@ -78,20 +79,20 @@ body {
 
 .seg-badge {
     background: transparent !important;
-    color: var(--seg-guinda) !important;
+    color: #ffffff !important;
     font-size: 12px !important;
     font-weight: 800 !important;
     padding: 0 !important;
 }
 
 .seg-sidebar {
-    background: linear-gradient(180deg, var(--seg-guinda) 0%, var(--seg-guinda-dark) 100%) !important;
-    border-radius: 0 24px 0 0;
-    border-right: 1px solid rgba(191, 162, 118, .35) !important;
+    background: linear-gradient(180deg, var(--seg-guinda-dark) 0%, var(--seg-guinda) 60%, #300a11 100%) !important;
+    border-radius: 0;
+    border-right: 1px solid rgba(191, 162, 118, .25) !important;
     bottom: 0;
-    box-shadow: 16px 0 45px rgba(66, 16, 26, .20) !important;
+    box-shadow: 10px 0 30px rgba(0, 0, 0, .15) !important;
     left: 0;
-    padding: 18px 14px !important;
+    padding: 20px 16px !important;
     position: fixed;
     top: 0 !important;
     width: var(--seg-sidebar-width) !important;
@@ -100,39 +101,39 @@ body {
 
 .seg-logo-box {
     align-items: center;
-    background: #fff;
-    border: 1px solid rgba(191, 162, 118, .42);
-    border-radius: 14px;
-    color: #fff;
-    display: flex;
-    justify-items: center;
-    justify-content: center;
-    margin-bottom: 14px;
-    min-height: 70px;
-    overflow: hidden;
-    padding: 10px;
-    text-decoration: none;
+    background: #ffffff !important;
+    border: 1px solid rgba(191, 162, 118, .42) !important;
+    border-radius: 12px !important;
+    display: flex !important;
+    justify-content: center !important;
+    margin-bottom: 20px !important;
+    height: 76px !important;
+    overflow: hidden !important;
+    padding: 8px 12px !important;
+    text-decoration: none !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+    transition: transform 0.2s ease;
+}
+
+.seg-logo-box:hover {
+    transform: scale(1.02);
 }
 
 .seg-logo-box img {
-    display: block;
-    height: auto;
-    max-height: 50px;
-    max-width: 186px;
-    object-fit: contain;
-    object-position: center;
-    width: 100%;
-}
-
-.seg-logo-box img[src$="logoSeg.png"] {
-    min-height: 1px;
+    display: block !important;
+    height: auto !important;
+    max-height: 100% !important;
+    max-width: 100% !important;
+    object-fit: contain !important;
+    object-position: center !important;
+    width: auto !important;
 }
 
 .seg-logo-box span {
-    color: var(--seg-guinda);
-    font-size: 15px;
-    font-weight: 900;
-    letter-spacing: -.3px;
+    color: var(--seg-guinda) !important;
+    font-size: 15px !important;
+    font-weight: 900 !important;
+    letter-spacing: -.3px !important;
 }
 
 .seg-logo-box span[hidden] {
@@ -185,11 +186,11 @@ body {
 
 .seg-menu a:hover,
 .seg-menu a.active {
-    background: rgba(255, 255, 255, .13);
-    border-color: rgba(191, 162, 118, .45);
-    box-shadow: inset 3px 0 0 var(--seg-gold);
+    background: rgba(255, 255, 255, .08) !important;
+    border-color: rgba(191, 162, 118, .35) !important;
+    box-shadow: inset 4px 0 0 var(--seg-gold) !important;
     color: #fff;
-    transform: translateX(3px);
+    transform: translateX(4px) !important;
 }
 
 .seg-menu a.active i {
@@ -198,15 +199,15 @@ body {
 }
 
 .seg-sidebar-foot {
-    background: rgba(255, 255, 255, .10);
-    border: 1px solid rgba(255, 255, 255, .14);
-    border-radius: 16px;
-    bottom: 14px;
-    color: rgba(255, 255, 255, .64);
-    left: 14px;
-    padding: 10px;
-    position: absolute;
-    right: 14px;
+    background: rgba(255, 255, 255, .05) !important;
+    border: 1px solid rgba(255, 255, 255, .1) !important;
+    border-radius: 12px !important;
+    bottom: 18px !important;
+    color: rgba(255, 255, 255, .6) !important;
+    left: 14px !important;
+    padding: 12px !important;
+    position: absolute !important;
+    right: 14px !important;
 }
 
 .seg-sidebar-foot span {
@@ -226,7 +227,7 @@ body {
 .workspace {
     margin-left: var(--seg-sidebar-width) !important;
     max-width: none !important;
-    padding: 84px 24px 30px !important;
+    padding: 96px 28px 30px !important;
 }
 
 .hero,
@@ -234,22 +235,24 @@ body {
 .results-card,
 .metric,
 .source-column,
-.quick-card {
+.quick-card,
+.panel-card {
     background: var(--seg-card) !important;
     border: 1px solid var(--seg-border) !important;
-    border-radius: 14px !important;
+    border-radius: 16px !important;
     box-shadow: var(--seg-shadow) !important;
 }
 
 .heading {
     align-items: center !important;
-    background: var(--seg-card);
-    border: 1px solid var(--seg-border);
-    border-radius: 14px;
-    box-shadow: var(--seg-shadow);
-    margin-bottom: 14px !important;
-    padding: 14px 18px;
+    background: var(--seg-card) !important;
+    border: 1px solid var(--seg-border) !important;
+    border-radius: 16px !important;
+    box-shadow: var(--seg-shadow) !important;
+    margin-bottom: 20px !important;
+    padding: 18px 24px !important;
 }
+
 
 .heading h1,
 .hero h1 {
@@ -433,6 +436,8 @@ body {
 .confirm {
     background: var(--seg-guinda) !important;
     border-radius: 10px !important;
+    color: #fff !important;
+    text-decoration: none !important;
 }
 
 .btn-sync-catalogs {
@@ -440,12 +445,19 @@ body {
 }
 
 .compact-action {
+    align-items: center;
     box-shadow: none !important;
     display: inline-flex !important;
     font-size: 12px !important;
+    font-weight: 800;
     margin: 0 !important;
     padding: 9px 13px !important;
     text-decoration: none;
+}
+
+.compact-action:hover {
+    background: var(--seg-guinda-dark) !important;
+    color: #fff !important;
 }
 
 .dashboard-grid {

@@ -1,3 +1,22 @@
+<?php
+
+declare(strict_types=1);
+
+require_once dirname(__DIR__) . '/services/conexion.php';
+
+$conexion = Conexion::conectar();
+$segBasePath = '';
+
+function dashboardCount(PDO $conexion, string $query): int
+{
+    return (int) $conexion->query($query)->fetchColumn();
+}
+
+$totalEscuelas = dashboardCount($conexion, 'SELECT COUNT(*) FROM escuelas');
+$totalVinculos = dashboardCount($conexion, 'SELECT COUNT(*) FROM escuelas_rpu');
+$rpusVinculados = dashboardCount($conexion, 'SELECT COUNT(DISTINCT RPU) FROM escuelas_rpu');
+$avance = $totalEscuelas > 0 ? min(100, round($totalVinculos / $totalEscuelas * 100, 1)) : 0;
+?>
 <!doctype html>
 <html lang="es">
 <head>
@@ -9,7 +28,6 @@
     <link href="../assets/css/seg-executive.css" rel="stylesheet">
 </head>
 <body>
-<?php $segBasePath = ''; ?>
 <?php include_once __DIR__ . '/fragments/navbar.php'; ?>
 <?php include_once __DIR__ . '/fragments/sidebar.php'; ?>
 <main class="content">
@@ -23,19 +41,19 @@
     </section>
     <section class="quick-actions">
         <article class="quick-card">
-            <span class="quick-icon"><i class="bi bi-file-earmark-spreadsheet"></i></span>
-            <div><strong>4</strong><span>Archivos de trabajo</span></div>
-            <small>SEG/CFE</small>
+            <span class="quick-icon"><i class="bi bi-building-check"></i></span>
+            <div><strong><?= number_format($totalEscuelas) ?></strong><span>Escuelas insertadas</span></div>
+            <small>Catalogo</small>
         </article>
         <article class="quick-card">
             <span class="quick-icon"><i class="bi bi-diagram-3"></i></span>
-            <div><strong>RPU-CCT</strong><span>Vinculacion controlada</span></div>
-            <small>Padron</small>
+            <div><strong><?= number_format($totalVinculos) ?></strong><span>Vinculos guardados</span></div>
+            <small>RPU-CCT</small>
         </article>
         <article class="quick-card">
-            <span class="quick-icon"><i class="bi bi-shield-check"></i></span>
-            <div><strong>Publico</strong><span>Filtro de control oficial</span></div>
-            <small>Validacion</small>
+            <span class="quick-icon"><i class="bi bi-speedometer2"></i></span>
+            <div><strong><?= number_format($avance, 1) ?>%</strong><span>Avance de vinculacion</span></div>
+            <small><?= number_format($rpusVinculados) ?> RPU</small>
         </article>
     </section>
     <section class="dashboard-grid">

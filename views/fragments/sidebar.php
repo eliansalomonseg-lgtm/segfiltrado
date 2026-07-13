@@ -6,7 +6,7 @@ $logoPath = $segBasePath . '../assets/img/logoSeg.png';
 <aside class="seg-sidebar">
     <a class="seg-logo-box" href="<?= htmlspecialchars($segBasePath . 'dashboard.php', ENT_QUOTES, 'UTF-8') ?>">
         <img src="<?= htmlspecialchars($logoPath, ENT_QUOTES, 'UTF-8') ?>" alt="Logo Secretaria de Educacion Guerrero" onload="this.nextElementSibling.hidden=true" onerror="this.style.display='none'">
-        <span>LogoHere</span>
+        <span>SEG Guerrero</span>
     </a>
     <nav class="seg-menu" aria-label="Navegacion principal">
         <a class="<?= $paginaActual === 'dashboard.php' ? 'active' : '' ?>" href="<?= htmlspecialchars($segBasePath . 'dashboard.php', ENT_QUOTES, 'UTF-8') ?>">
