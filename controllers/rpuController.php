@@ -337,6 +337,7 @@ class RpuController
             'municipio' => (string) ($fila['NOMBREMUN'] ?? ''),
             'localidad' => (string) ($fila['NOMBRELOC'] ?? ''),
             'status' => (string) ($fila['STATUS'] ?? ''),
+            'nivel' => $this->nivelEducativo((string) ($fila['SUBNIVEL'] ?? '')),
             'subnivel' => (string) ($fila['SUBNIVEL'] ?? ''),
             'fuente' => (string) ($fila['ORIGEN'] ?? 'Catalogo local SEG/Oficializacion'),
             'score' => $score,
@@ -421,6 +422,24 @@ class RpuController
     {
         $texto = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $texto) ?: $texto;
         return trim(preg_replace('/\s+/', ' ', preg_replace('/[^A-Z0-9 ]/', ' ', strtoupper($texto))) ?? '');
+    }
+
+    private function nivelEducativo(string $subnivel): string
+    {
+        $texto = $this->normalizar($subnivel);
+        if (str_contains($texto, 'PREESCOLAR')) {
+            return 'Preescolar';
+        }
+        if (str_contains($texto, 'PRIMARIA')) {
+            return 'Primaria';
+        }
+        if (str_contains($texto, 'TELESECUNDARIA')) {
+            return 'Telesecundaria';
+        }
+        if (str_contains($texto, 'SECUNDARIA')) {
+            return 'Secundaria';
+        }
+        return $subnivel !== '' ? $subnivel : 'Sin nivel';
     }
 
     private function nulo(mixed $valor): ?string

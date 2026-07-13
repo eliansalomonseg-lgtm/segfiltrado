@@ -177,7 +177,8 @@ function schoolPanel(escuela, vinculado) {
         <strong>${escapeHtml(escuela.cct || 'Sin CCT')} - ${escapeHtml(escuela.nombre || 'Escuela sin nombre')}</strong>
         <small><b>Domicilio:</b> ${escapeHtml(escuela.domicilio || 'Sin domicilio')}</small>
         <small><b>Localidad:</b> ${escapeHtml(escuela.localidad || 'Sin localidad')} - <b>Municipio:</b> ${escapeHtml(escuela.municipio || 'Sin municipio')}</small>
-        <small><b>Nivel:</b> ${escapeHtml(escuela.subnivel || 'Sin nivel')} - <b>Fuente:</b> ${escapeHtml(escuela.fuente || 'Catalogo local')}</small>
+        <small><b>Nivel educativo:</b> ${escapeHtml(escuela.nivel || 'Sin nivel')}</small>
+        <small><b>Subnivel:</b> ${escapeHtml(escuela.subnivel || 'Sin subnivel')} - <b>Fuente:</b> ${escapeHtml(escuela.fuente || 'Catalogo local')}</small>
         <span class="status-pill ${vinculado ? 'status-ok' : 'status-warn'}">${escapeHtml(escuela.origen || (vinculado ? 'Vinculo confirmado' : 'Sugerencia'))} - ${escapeHtml(escuela.score || 0)}%</span>
     </div>`;
 }
