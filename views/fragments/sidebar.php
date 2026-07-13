@@ -24,6 +24,11 @@ $logoPath = $segBasePath . '../assets/img/logoSeg.png';
             <span>Importaciones</span>
             <small>Tablas cargadas</small>
         </a>
+        <a class="<?= $paginaActual === 'rpus.php' ? 'active' : '' ?>" href="<?= htmlspecialchars($segBasePath . 'rpus.php', ENT_QUOTES, 'UTF-8') ?>">
+            <i class="bi bi-pin-map"></i>
+            <span>Expediente RPU</span>
+            <small>Mapa e historial</small>
+        </a>
         <a class="<?= $paginaActual === 'ajustes.php' ? 'active' : '' ?>" href="<?= htmlspecialchars($segBasePath . 'ajustes.php', ENT_QUOTES, 'UTF-8') ?>">
             <i class="bi bi-exclamation-diamond"></i>
             <span>Ajustes CFE</span>
