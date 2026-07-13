@@ -719,7 +719,7 @@ body {
     align-items: stretch;
     display: grid;
     gap: 12px;
-    grid-template-columns: minmax(260px, 1fr) auto auto;
+    grid-template-columns: minmax(260px, 1fr) minmax(360px, .9fr) auto auto;
 }
 
 .adjustment-drop {
@@ -776,6 +776,49 @@ body {
 
 .adjustment-summary {
     grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.period-controls {
+    background: #fbfcfd;
+    border: 1px solid var(--seg-border);
+    border-radius: 14px;
+    display: grid;
+    gap: 8px;
+    grid-template-columns: 1fr .75fr 1.25fr;
+    padding: 10px;
+}
+
+.period-controls label {
+    display: grid;
+    gap: 5px;
+    margin: 0;
+}
+
+.period-controls span {
+    color: var(--seg-muted);
+    font-size: 10px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.period-controls select,
+.period-controls input {
+    background: #fff;
+    border: 1px solid #dfe4ec;
+    border-radius: 10px;
+    color: var(--seg-text);
+    font-size: 12px;
+    font-weight: 800;
+    min-height: 36px;
+    outline: none;
+    padding: 0 9px;
+    width: 100%;
+}
+
+.period-controls select:focus,
+.period-controls input:focus {
+    border-color: rgba(106, 27, 41, .35);
+    box-shadow: 0 0 0 3px rgba(106, 27, 41, .08);
 }
 
 .upload-card,
@@ -900,6 +943,10 @@ body {
     }
 
     .adjustment-form {
+        grid-template-columns: 1fr;
+    }
+
+    .period-controls {
         grid-template-columns: 1fr;
     }
 

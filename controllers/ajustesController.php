@@ -17,6 +17,17 @@ class AjustesController
         if (!in_array($extension, ['xlsx', 'xls'], true)) {
             $this->responder(['ok' => false, 'error' => 'Solo se admiten reportes Excel XLSX o XLS.'], 422);
         }
+        $anio = (int) ($_POST['anio_reporte'] ?? 0);
+        $mes = (int) ($_POST['mes_reporte'] ?? 0);
+        $modoPeriodo = (string) ($_POST['modo_periodo'] ?? 'automatico');
+
+        if ($anio < 2020 || $anio > 2100 || $mes < 1 || $mes > 12) {
+            $this->responder(['ok' => false, 'error' => 'Selecciona mes y anio validos del reporte.'], 422);
+        }
+
+        if (!in_array($modoPeriodo, ['automatico', 'mensual', 'bimestral'], true)) {
+            $this->responder(['ok' => false, 'error' => 'Selecciona un modo de periodo valido.'], 422);
+        }
 
         $ruta = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'ajustes_cfe_' . bin2hex(random_bytes(16)) . '.' . $extension;
 
@@ -27,7 +38,13 @@ class AjustesController
 
             $python = $this->localizarPython();
             $script = dirname(__DIR__) . '/services/detectar_ajustes_cfe.py';
-            $comando = escapeshellarg($python) . ' ' . escapeshellarg($script) . ' ' . escapeshellarg($ruta) . ' 2>&1';
+            $comando = escapeshellarg($python)
+                . ' ' . escapeshellarg($script)
+                . ' ' . escapeshellarg($ruta)
+                . ' ' . escapeshellarg((string) $anio)
+                . ' ' . escapeshellarg((string) $mes)
+                . ' ' . escapeshellarg($modoPeriodo)
+                . ' 2>&1';
             $salida = shell_exec($comando);
             $lineas = is_string($salida)
                 ? array_values(array_filter(array_map('trim', preg_split('/\R/', $salida))))

@@ -4,7 +4,6 @@ import math
 import re
 import sys
 import unicodedata
-from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -85,9 +84,21 @@ def mes_desde_nombre(ruta):
     return int(coincidencia.group(1)), int(coincidencia.group(2))
 
 
-def clasificar_alertas(fila, mes_reporte):
+def periodo_esperado(tarifa, modo):
+    tarifa_normalizada = normalizar_columna(tarifa)
+    if modo == "mensual":
+        return "mensual", 25, 35
+    if modo == "bimestral":
+        return "bimestral", 50, 75
+    if tarifa_normalizada in {"68", "78", "GDMTH", "GDMTO", "DIST", "DIT"}:
+        return "mensual", 25, 35
+    return "bimestral", 50, 75
+
+
+def clasificar_alertas(fila, mes_reporte, modo_periodo):
     desde = fecha(fila["DESDE"])
     hasta = fecha(fila["HASTA"])
+    tipo_periodo, minimo_dias, maximo_dias = periodo_esperado(fila["TARIFA"], modo_periodo)
     consumo = numero(fila["CONSUMO"])
     energia = numero(fila["ENERGIA"])
     dap = numero(fila["DAP"])
@@ -101,8 +112,8 @@ def clasificar_alertas(fila, mes_reporte):
 
     if desde and hasta:
         dias = (hasta - desde).days
-        if dias < 50 or dias > 75:
-            alertas.append(f"Periodo no bimestral ({dias} dias)")
+        if dias < minimo_dias or dias > maximo_dias:
+            alertas.append(f"Periodo no {tipo_periodo} ({dias} dias)")
             severidad += 3
         if mes_reporte and (hasta.year, hasta.month) != mes_reporte:
             alertas.append("Fecha HASTA fuera del mes del reporte")
@@ -139,20 +150,21 @@ def clasificar_alertas(fila, mes_reporte):
         alertas.append("Consumo elevado")
         severidad += 2
 
-    return alertas, severidad, dias, desde, hasta, consumo, energia, dap, cargos, creditos, total, diferencia
+    return alertas, severidad, dias, desde, hasta, consumo, energia, dap, cargos, creditos, total, diferencia, tipo_periodo
 
 
-def analizar(ruta):
+def analizar(ruta, anio=None, mes=None, modo_periodo="automatico"):
     datos = cargar_reporte(ruta)
-    mes_reporte = mes_desde_nombre(ruta)
+    mes_reporte = (anio, mes) if anio and mes else mes_desde_nombre(ruta)
     registros = []
     total_alertas = 0
     severos = 0
     periodo_correcto = 0
 
     for _, fila in datos.iterrows():
-        alertas, severidad, dias, desde, hasta, consumo, energia, dap, cargos, creditos, total, diferencia = clasificar_alertas(fila, mes_reporte)
-        if dias is not None and 50 <= dias <= 75:
+        alertas, severidad, dias, desde, hasta, consumo, energia, dap, cargos, creditos, total, diferencia, tipo_periodo = clasificar_alertas(fila, mes_reporte, modo_periodo)
+        _, minimo_dias, maximo_dias = periodo_esperado(fila["TARIFA"], modo_periodo)
+        if dias is not None and minimo_dias <= dias <= maximo_dias:
             periodo_correcto += 1
         if alertas:
             total_alertas += 1
@@ -166,6 +178,7 @@ def analizar(ruta):
             "desde": desde.strftime("%Y-%m-%d") if desde else "",
             "hasta": hasta.strftime("%Y-%m-%d") if hasta else "",
             "dias": dias if dias is not None else "",
+            "tipo_periodo": tipo_periodo,
             "consumo": consumo,
             "energia": energia,
             "dap": dap,
@@ -182,6 +195,7 @@ def analizar(ruta):
         "ok": True,
         "archivo": ruta.name,
         "mes_reporte": f"{mes_reporte[0]}-{mes_reporte[1]:02d}" if mes_reporte else "",
+        "modo_periodo": modo_periodo,
         "resumen": {
             "registros": len(registros),
             "con_alerta": total_alertas,
@@ -196,13 +210,14 @@ def analizar(ruta):
 def exportar_csv(resultado, ruta_salida):
     with open(ruta_salida, "w", newline="", encoding="utf-8-sig") as archivo:
         escritor = csv.writer(archivo)
-        escritor.writerow(["RPU", "NOMBRE", "POBLACION", "TARIFA", "DESDE", "HASTA", "DIAS", "CONSUMO", "ENERGIA", "DAP", "CARGOS_DEPOSITOS", "CREDITOS_REDONDEOS", "TOTAL", "DIFERENCIA", "SEVERIDAD", "ALERTAS"])
+        escritor.writerow(["RPU", "NOMBRE", "POBLACION", "TARIFA", "TIPO_PERIODO", "DESDE", "HASTA", "DIAS", "CONSUMO", "ENERGIA", "DAP", "CARGOS_DEPOSITOS", "CREDITOS_REDONDEOS", "TOTAL", "DIFERENCIA", "SEVERIDAD", "ALERTAS"])
         for fila in resultado["registros"]:
             escritor.writerow([
                 fila["rpu"],
                 fila["nombre"],
                 fila["poblacion"],
                 fila["tarifa"],
+                fila["tipo_periodo"],
                 fila["desde"],
                 fila["hasta"],
                 fila["dias"],
@@ -219,12 +234,27 @@ def exportar_csv(resultado, ruta_salida):
 
 
 try:
-    if len(sys.argv) not in {2, 3}:
+    if len(sys.argv) not in {2, 5, 6}:
         raise ValueError("Se requiere un reporte CFE en Excel.")
-    resultado = analizar(Path(sys.argv[1]))
-    if len(sys.argv) == 3:
-        exportar_csv(resultado, Path(sys.argv[2]))
-        resultado["csv"] = str(Path(sys.argv[2]))
+    ruta_reporte = Path(sys.argv[1])
+    anio_reporte = None
+    mes_reporte = None
+    modo = "automatico"
+    ruta_csv = None
+    if len(sys.argv) >= 5:
+        anio_reporte = int(sys.argv[2])
+        mes_reporte = int(sys.argv[3])
+        modo = sys.argv[4]
+        if modo not in {"automatico", "mensual", "bimestral"}:
+            raise ValueError("Modo de periodo no valido.")
+        if mes_reporte < 1 or mes_reporte > 12:
+            raise ValueError("Mes del reporte no valido.")
+    if len(sys.argv) == 6:
+        ruta_csv = Path(sys.argv[5])
+    resultado = analizar(ruta_reporte, anio_reporte, mes_reporte, modo)
+    if ruta_csv is not None:
+        exportar_csv(resultado, ruta_csv)
+        resultado["csv"] = str(ruta_csv)
     print(json.dumps(resultado, ensure_ascii=False))
 except Exception as error:
     print(json.dumps({"ok": False, "error": str(error)}, ensure_ascii=False))

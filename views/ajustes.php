@@ -5,6 +5,8 @@ declare(strict_types=1);
 session_start();
 
 $segBasePath = '';
+$anioActual = (int) date('Y');
+$mesActual = (int) date('n');
 
 if (empty($_SESSION['seg_csrf'])) {
     $_SESSION['seg_csrf'] = bin2hex(random_bytes(24));
@@ -44,6 +46,28 @@ if (empty($_SESSION['seg_csrf'])) {
                 <strong id="adjustment-file-name">Selecciona reporte CFE mensual</strong>
                 <small>Ejemplo: 2025-04_M061_Reporte.xlsx</small>
             </label>
+            <div class="period-controls">
+                <label>
+                    <span>Mes</span>
+                    <select name="mes_reporte" required>
+                        <?php foreach ([1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril', 5 => 'Mayo', 6 => 'Junio', 7 => 'Julio', 8 => 'Agosto', 9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre'] as $numero => $nombre): ?>
+                            <option value="<?= $numero ?>" <?= $numero === $mesActual ? 'selected' : '' ?>><?= htmlspecialchars($nombre, ENT_QUOTES, 'UTF-8') ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label>
+                    <span>Anio</span>
+                    <input type="number" name="anio_reporte" min="2020" max="2100" value="<?= $anioActual ?>" required>
+                </label>
+                <label>
+                    <span>Periodo</span>
+                    <select name="modo_periodo" required>
+                        <option value="automatico">Automatico por tarifa</option>
+                        <option value="mensual">Todo mensual</option>
+                        <option value="bimestral">Todo bimestral</option>
+                    </select>
+                </label>
+            </div>
             <button class="btn-seg compact-action" type="submit"><i class="bi bi-search me-2"></i>Analizar ajustes</button>
             <button class="btn-seg compact-action btn-sync-catalogs" type="button" id="download-adjustments" disabled><i class="bi bi-download me-2"></i>Exportar alertas</button>
         </form>
@@ -68,7 +92,7 @@ if (empty($_SESSION['seg_csrf'])) {
         </article>
         <article class="quick-card">
             <span class="quick-icon"><i class="bi bi-calendar2-check"></i></span>
-            <div><strong data-summary="periodo_bimestral">0</strong><span>Periodo bimestral</span></div>
+            <div><strong data-summary="periodo_bimestral">0</strong><span>Periodo correcto</span></div>
             <small>Correctos</small>
         </article>
         <article class="quick-card">
@@ -131,13 +155,13 @@ function render(data) {
             target.textContent = key === 'importe_total' ? money.format(value) : number.format(value);
         }
     });
-    fileLabel.textContent = `${data.archivo || 'Reporte'} ${data.mes_reporte ? ' - ' + data.mes_reporte : ''}`;
+    fileLabel.textContent = `${data.archivo || 'Reporte'} ${data.mes_reporte ? ' - ' + data.mes_reporte : ''} - ${data.modo_periodo || 'automatico'}`;
     body.innerHTML = currentRows.filter((row) => row.alertas.length > 0).slice(0, 200).map((row) => {
-        const level = row.severidad >= 7 - 'status-warn' : row.severidad >= 4 - '' : 'status-ok';
+        const level = row.severidad >= 7 ? 'status-warn' : row.severidad >= 4 ? '' : 'status-ok';
         return `<tr>
             <td><strong>${escapeHtml(row.rpu)}</strong><small>${escapeHtml(row.tarifa || 'Sin tarifa')}</small></td>
             <td><strong>${escapeHtml(row.nombre)}</strong><small>${escapeHtml(row.poblacion)}</small></td>
-            <td><strong>${escapeHtml(row.desde)} / ${escapeHtml(row.hasta)}</strong><small>${escapeHtml(row.dias)} dias</small></td>
+            <td><strong>${escapeHtml(row.desde)} / ${escapeHtml(row.hasta)}</strong><small>${escapeHtml(row.tipo_periodo || '')} - ${escapeHtml(row.dias)} dias</small></td>
             <td><strong>${number.format(row.consumo || 0)}</strong><small>kWh</small></td>
             <td><strong>${money.format(row.total || 0)}</strong><small>Diferencia ${money.format(row.diferencia || 0)}</small></td>
             <td><strong>${money.format(row.cargos_depositos || 0)}</strong><small>Creditos ${money.format(row.creditos_redondeos || 0)}</small></td>
@@ -152,7 +176,7 @@ function render(data) {
 form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const data = new FormData(form);
-    statusBox.textContent = 'Analizando reporte CFE y validando periodos bimestrales...';
+    statusBox.textContent = 'Analizando reporte CFE contra el mes, anio y periodo seleccionado...';
     download.disabled = true;
     try {
         const response = await fetch('../controllers/ajustesController.php', {
@@ -176,9 +200,9 @@ form.reporte_cfe.addEventListener('change', () => {
 });
 
 download.addEventListener('click', () => {
-    const headers = ['RPU','NOMBRE','POBLACION','TARIFA','DESDE','HASTA','DIAS','CONSUMO','ENERGIA','DAP','CARGOS_DEPOSITOS','CREDITOS_REDONDEOS','TOTAL','DIFERENCIA','SEVERIDAD','ALERTAS'];
+    const headers = ['RPU','NOMBRE','POBLACION','TARIFA','TIPO_PERIODO','DESDE','HASTA','DIAS','CONSUMO','ENERGIA','DAP','CARGOS_DEPOSITOS','CREDITOS_REDONDEOS','TOTAL','DIFERENCIA','SEVERIDAD','ALERTAS'];
     const rows = currentRows.filter((row) => row.alertas.length > 0).map((row) => [
-        row.rpu, row.nombre, row.poblacion, row.tarifa, row.desde, row.hasta, row.dias, row.consumo, row.energia, row.dap, row.cargos_depositos, row.creditos_redondeos, row.total, row.diferencia, row.severidad, row.alertas.join(' | ')
+        row.rpu, row.nombre, row.poblacion, row.tarifa, row.tipo_periodo, row.desde, row.hasta, row.dias, row.consumo, row.energia, row.dap, row.cargos_depositos, row.creditos_redondeos, row.total, row.diferencia, row.severidad, row.alertas.join(' | ')
     ]);
     const csv = [headers, ...rows].map((row) => row.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob(['\ufeff' + csv], {type: 'text/csv;charset=utf-8;'});
