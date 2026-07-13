@@ -1,11 +1,11 @@
 <?php
 $segBasePath = $segBasePath ?? '';
 $paginaActual = basename($_SERVER['PHP_SELF'] ?? '');
-$logoPath = $segBasePath . '../assets/img/logo_seg.png';
+$logoPath = $segBasePath . '../assets/img/logoSeg.png';
 ?>
 <aside class="seg-sidebar">
     <a class="seg-logo-box" href="<?= htmlspecialchars($segBasePath . 'dashboard.php', ENT_QUOTES, 'UTF-8') ?>">
-        <img src="<?= htmlspecialchars($logoPath, ENT_QUOTES, 'UTF-8') ?>" alt="Logo Secretaria de Educacion Guerrero" onerror="this.style.display='none'">
+        <img src="<?= htmlspecialchars($logoPath, ENT_QUOTES, 'UTF-8') ?>" alt="Logo Secretaria de Educacion Guerrero" onload="this.nextElementSibling.hidden=true" onerror="this.style.display='none'">
         <span>LogoHere</span>
     </a>
     <nav class="seg-menu" aria-label="Navegacion principal">
@@ -19,15 +19,10 @@ $logoPath = $segBasePath . '../assets/img/logo_seg.png';
             <span>Consolidacion Masiva</span>
             <small>4 archivos</small>
         </a>
-        <a href="#">
-            <i class="bi bi-search"></i>
-            <span>Auditoria de Ajustes</span>
-            <small>Consumo y directores</small>
-        </a>
-        <a href="#">
-            <i class="bi bi-gear"></i>
-            <span>Configuracion</span>
-            <small>Parametros del sistema</small>
+        <a class="<?= $paginaActual === 'importaciones.php' ? 'active' : '' ?>" href="<?= htmlspecialchars($segBasePath . 'importaciones.php', ENT_QUOTES, 'UTF-8') ?>">
+            <i class="bi bi-table"></i>
+            <span>Importaciones</span>
+            <small>Tablas cargadas</small>
         </a>
     </nav>
     <div class="seg-sidebar-foot">
