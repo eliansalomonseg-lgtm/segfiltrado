@@ -260,7 +260,7 @@ function renderRiskRpus(data) {
     const periods = data.periodos || [];
     const rows = data.rpus || [];
     riskPeriods.textContent = periods.length
-        ? `Analisis sobre periodos: ${periods.join(', ')}. Se muestran los ${rows.length} RPUs con mayor riesgo.`
+        ? `Analisis sobre periodos: ${periods.join(', ')}. Se muestran RPUs cuyo pago subio 50% o mas contra el periodo anterior.`
         : 'Todavia no hay reportes CFE guardados para sugerir RPUs.';
     riskList.innerHTML = rows.length
         ? rows.map((row) => {
@@ -270,7 +270,8 @@ function renderRiskRpus(data) {
             <span>
                 <strong>${escapeHtml(row.rpu)} - ${escapeHtml(row.nombre || 'Sin nombre CFE')}</strong>
                 <small><b>CFE:</b> ${escapeHtml(row.poblacion || 'Sin poblacion')} - Tarifa ${escapeHtml(row.tarifa || 'N/D')} - ${escapeHtml(row.periodo)}</small>
-                <small><b>Riesgo:</b> ${escapeHtml(row.motivo)} - ${money.format(row.total || 0)} - ${number.format(row.consumo || 0)} kWh</small>
+                <small><b>Incremento:</b> ${escapeHtml(row.incremento_porcentaje || 0)}% - ${money.format(row.total_anterior || 0)} (${escapeHtml(row.periodo_anterior || 'previo')}) -> ${money.format(row.total || 0)} (${escapeHtml(row.periodo || 'actual')})</small>
+                <small><b>Riesgo:</b> ${escapeHtml(row.motivo)} - ${number.format(row.consumo || 0)} kWh</small>
                 <small>${linked ? `<b>Escuela:</b> ${escapeHtml(row.cct)} - ${escapeHtml(row.escuela || '')} - ${escapeHtml(row.nivel || row.subnivel || 'Sin nivel')} - ${escapeHtml(row.localidad || '')}` : '<b>Escuela:</b> sin vinculo confirmado'}</small>
             </span>
             <em class="${linked ? 'risk-linked' : 'risk-unlinked'}">${linked ? 'Vinculado' : 'Sin vinculo'}</em>
@@ -281,7 +282,7 @@ function renderRiskRpus(data) {
 }
 
 async function loadRiskRpus() {
-    riskPeriods.textContent = 'Calculando RPUs sin vinculo y RPUs vinculados con alertas recientes, importes altos o consumo fuera de patron...';
+    riskPeriods.textContent = 'Calculando RPUs cuyo pago aumento 50% o mas contra el periodo anterior...';
     const body = new URLSearchParams({accion: 'sugerir_rpus_malos', csrf: token});
     const response = await fetch('../controllers/rpuController.php', {method: 'POST', body});
     const data = await response.json();

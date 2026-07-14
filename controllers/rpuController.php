@@ -82,23 +82,22 @@ class RpuController
                 $alertas = count(array_filter($filas, fn (array $fila): bool => $fila['severidad'] >= 4 || $fila['alertas'] !== ''));
                 $maxSeveridad = max(array_column($filas, 'severidad') ?: [0]);
                 $subioTotal = $anterior ? (float) $ultima['total'] - (float) $anterior['total'] : 0;
-                $score = ($maxSeveridad * 10) + ($alertas * 8);
+                $totalAnterior = $anterior ? (float) $anterior['total'] : 0;
+                $incrementoPorcentaje = $totalAnterior > 0 ? ($subioTotal / $totalAnterior) * 100 : 0;
+                if ($incrementoPorcentaje < 50) {
+                    continue;
+                }
+                $score = 50 + (int) min(45, round($incrementoPorcentaje / 2));
                 if (!$grupo['cct']) {
                     $score += 8;
                 } elseif ((int) $ultima['severidad'] >= 4 || $alertas >= 2) {
-                    $score += 14;
-                }
-                if ($subioTotal > 0) {
-                    $score += 15;
+                    $score += 6;
                 }
                 if ((float) $ultima['total'] >= 20000) {
-                    $score += 12;
+                    $score += 5;
                 }
-                if ((int) $ultima['severidad'] >= 4) {
+                if ($incrementoPorcentaje >= 70) {
                     $score += 10;
-                }
-                if ($score < 25) {
-                    continue;
                 }
                 $rpus[] = [
                     'rpu' => $grupo['rpu'],
@@ -112,13 +111,16 @@ class RpuController
                     'localidad' => $grupo['localidad'],
                     'municipio' => $grupo['municipio'],
                     'periodo' => $ultima['periodo'],
+                    'periodo_anterior' => $anterior['periodo'] ?? '',
                     'total' => (float) $ultima['total'],
+                    'total_anterior' => $totalAnterior,
                     'consumo' => (float) $ultima['consumo'],
                     'alertas' => $alertas,
                     'max_severidad' => $maxSeveridad,
                     'diferencia_total' => $subioTotal,
+                    'incremento_porcentaje' => round($incrementoPorcentaje, 1),
                     'score' => min(100, $score),
-                    'motivo' => $this->motivoRiesgo($grupo['cct'] !== null, $alertas, $maxSeveridad, $subioTotal, (float) $ultima['total'])
+                    'motivo' => $this->motivoRiesgo($grupo['cct'] !== null, $alertas, $maxSeveridad, $subioTotal, (float) $ultima['total'], $incrementoPorcentaje)
                 ];
             }
             usort($rpus, fn (array $a, array $b): int => $b['score'] <=> $a['score']);
@@ -421,9 +423,14 @@ class RpuController
         ];
     }
 
-    private function motivoRiesgo(bool $vinculado, int $alertas, int $maxSeveridad, float $subioTotal, float $total): string
+    private function motivoRiesgo(bool $vinculado, int $alertas, int $maxSeveridad, float $subioTotal, float $total, float $incrementoPorcentaje): string
     {
         $motivos = [];
+        if ($incrementoPorcentaje >= 70) {
+            $motivos[] = 'incremento critico ' . round($incrementoPorcentaje, 1) . '%';
+        } elseif ($incrementoPorcentaje >= 50) {
+            $motivos[] = 'incremento alto ' . round($incrementoPorcentaje, 1) . '%';
+        }
         if (!$vinculado) {
             $motivos[] = 'sin vinculo';
         } elseif ($maxSeveridad >= 4 || $alertas >= 2) {
@@ -438,7 +445,7 @@ class RpuController
             $motivos[] = $alertas . ' meses con alerta';
         }
         if ($subioTotal > 0) {
-            $motivos[] = 'subio el pago';
+            $motivos[] = 'subio ' . number_format($subioTotal, 2, '.', ',');
         }
         if ($total >= 20000) {
             $motivos[] = 'importe alto';
