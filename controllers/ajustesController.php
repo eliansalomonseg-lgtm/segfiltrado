@@ -169,7 +169,7 @@ class AjustesController
         try {
             $conexion = Conexion::conectar();
             $this->prepararHistorialCfe($conexion);
-            $tipo = (string) ($_POST['exportar_tipo'] ?? 'ultimos_3');
+            $tipo = (string) ($_POST['exportar_tipo'] ?? 'ajustes_mes');
             $anio = (int) ($_POST['anio_exportacion'] ?? 0);
             $mes = (int) ($_POST['mes_exportacion'] ?? 0);
             $modo = 'problemas';

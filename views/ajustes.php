@@ -77,8 +77,8 @@ if (empty($_SESSION['seg_csrf'])) {
         <div class="results-head">
             <div>
                 <span class="eyebrow">EXPORTACIONES</span>
-                <h2>Reportes para explicar en direccion</h2>
-                <p>Exporta desde la base local sin volver a importar archivos.</p>
+                <h2>Reportes por mes</h2>
+                <p>Elige mes y anio para exportar desde la base local sin volver a importar archivos.</p>
             </div>
         </div>
         <form id="export-form" class="adjustment-form" method="POST" action="../controllers/ajustesController.php">
@@ -101,7 +101,6 @@ if (empty($_SESSION['seg_csrf'])) {
             <div class="d-flex flex-wrap gap-2">
                 <button class="btn-seg compact-action btn-sync-catalogs" type="submit" name="exportar_tipo" value="ajustes_mes"><i class="bi bi-file-earmark-excel me-2"></i>Ajustes del mes</button>
                 <button class="btn-seg compact-action btn-sync-catalogs" type="submit" name="exportar_tipo" value="bajo_consumo_mes"><i class="bi bi-battery me-2"></i>Consumo muy bajo</button>
-                <button class="btn-seg compact-action btn-sync-catalogs" type="submit" name="exportar_tipo" value="ultimos_3"><i class="bi bi-clock-history me-2"></i>Ultimos 3 reportes</button>
             </div>
         </form>
     </section>
