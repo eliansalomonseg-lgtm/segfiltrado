@@ -262,70 +262,110 @@ form.reporte_cfe.addEventListener('change', () => {
 
 download.addEventListener('click', () => {
     const rows = problemRows();
-    const months = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
-    const reportMonth = Number((currentReport.mes_reporte || '').split('-')[1] || 0);
     const summaryData = currentReport.resumen || {};
     const moneyCell = (value) => Number(value || 0).toLocaleString('es-MX', {style:'currency', currency:'MXN'});
-    const rowsHtml = rows.map((row, index) => {
-        const linked = row.escuelas_vinculadas?.[0];
-        const suggested = row.sugerencias_escuela?.[0];
-        const cct = linked?.cct || suggested?.cct || '';
-        const school = linked?.nombre || suggested?.nombre || 'SIN ESCUELA VINCULADA';
-        const estado = rowCase(row);
-        const estadoClass = estado.includes('CORRECTO') ? 'status-ok' : estado.includes('MUCHOS') ? 'status-warn' : 'status-bad';
-        const monthCells = months.map((_, monthIndex) => `<td class="money">${monthIndex + 1 === reportMonth ? moneyCell(row.total) : ''}</td>`).join('');
-        return `<tr class="${index % 2 === 0 ? 'even' : 'odd'}">
-            <td>${index + 1}</td>
-            <td class="${estadoClass}">${escapeHtml(estado)}</td>
-            <td>${escapeHtml(currentReport.mes_reporte || '')}</td>
-            <td>${escapeHtml(row.rpu)}</td>
-            <td>${escapeHtml(row.tarifa || '')}</td>
-            <td>${escapeHtml(row.nombre || '')}</td>
-            <td>${escapeHtml(row.poblacion || '')}</td>
-            <td>${escapeHtml(cct)}</td>
-            <td>${escapeHtml(school)}</td>
-            <td>${escapeHtml(row.tipo_periodo || '')}</td>
-            <td>${escapeHtml(row.desde || '')}</td>
-            <td>${escapeHtml(row.hasta || '')}</td>
-            <td>${escapeHtml(row.dias || '')}</td>
-            <td class="number">${number.format(row.consumo || 0)}</td>
-            ${monthCells}
-            <td class="money total">${moneyCell(row.total)}</td>
-            <td class="money">${moneyCell(row.tendencia?.diferencia_total || 0)}</td>
-            <td>${escapeHtml(row.alertas?.join(' | ') || 'Sin ajuste: revisar aumento')}</td>
-        </tr>`;
-    }).join('');
+    const linkedSchool = (row) => row.escuelas_vinculadas?.[0] || null;
+    const suggestedSchool = (row) => row.sugerencias_escuela?.[0] || null;
+    const rowIdentity = (row) => {
+        const linked = linkedSchool(row);
+        const suggested = suggestedSchool(row);
+        if (linked) {
+            return {
+                cct: linked.cct || '',
+                school: linked.nombre || 'ESCUELA SIN NOMBRE',
+                source: 'VINCULO CONFIRMADO'
+            };
+        }
+        if (suggested) {
+            return {
+                cct: suggested.cct || '',
+                school: suggested.nombre || 'ESCUELA SUGERIDA',
+                source: 'SUGERIDA POR HISTORIAL'
+            };
+        }
+        return {
+            cct: '',
+            school: `RPU SIN ESCUELA VINCULADA: ${row.rpu}`,
+            source: 'VALIDAR ESCUELA'
+        };
+    };
+    const wentUp = (row) => row.tendencia && Number(row.tendencia.diferencia_total || 0) > 0;
+    const adjustedRows = rows.filter((row) => row.alertas.length > 0);
+    const increasedRows = rows.filter((row) => !row.alertas.length && wentUp(row));
+    const unlinkedRows = rows.filter((row) => !linkedSchool(row));
+    const sectionRows = (items, title, className, plainMessage) => {
+        if (!items.length) {
+            return `<tr class="section ${className}"><td colspan="13">${escapeHtml(title)}: SIN CASOS</td></tr>`;
+        }
+        const bodyRows = items.map((row, index) => {
+            const identity = rowIdentity(row);
+            const estado = rowCase(row);
+            const increase = Number(row.tendencia?.diferencia_total || 0);
+            const message = row.alertas.length
+                ? row.alertas.join(' | ')
+                : plainMessage;
+            return `<tr class="${index % 2 === 0 ? 'even' : 'odd'}">
+                <td>${index + 1}</td>
+                <td class="${className}">${escapeHtml(estado)}</td>
+                <td>${escapeHtml(identity.school)}</td>
+                <td>${escapeHtml(identity.cct)}</td>
+                <td>${escapeHtml(row.rpu)}</td>
+                <td>${escapeHtml(row.poblacion || '')}</td>
+                <td>${escapeHtml(identity.source)}</td>
+                <td>${escapeHtml(row.desde || '')} / ${escapeHtml(row.hasta || '')}</td>
+                <td>${escapeHtml(row.dias || '')}</td>
+                <td class="number">${number.format(row.consumo || 0)}</td>
+                <td class="money total">${moneyCell(row.total)}</td>
+                <td class="money">${moneyCell(increase)}</td>
+                <td>${escapeHtml(message)}</td>
+            </tr>`;
+        }).join('');
+        return `<tr class="section ${className}"><td colspan="13">${escapeHtml(title)} (${number.format(items.length)})</td></tr>${bodyRows}`;
+    };
+    const totalExport = rows.length;
+    const linkedCount = rows.filter((row) => linkedSchool(row)).length;
+    const unlinkedCount = rows.filter((row) => !linkedSchool(row)).length;
+    const rowsHtml = [
+        sectionRows(adjustedRows, '1. ESCUELAS/RPUS CON AJUSTE EN EL ULTIMO REPORTE', 'status-bad', 'Tiene ajuste en el recibo.'),
+        sectionRows(increasedRows, '2. ESCUELAS/RPUS QUE SUBIERON SIN NECESIDAD DE AJUSTE', 'status-warn', 'No trae ajuste de dias, pero el pago subio contra el reporte anterior.'),
+        sectionRows(unlinkedRows, '3. RPUS SIN ESCUELA VINCULADA PARA VALIDAR', 'status-open', 'No se tiene escuela confirmada; validar a que plantel corresponde.')
+    ].join('');
     const html = `<!doctype html><html><head><meta charset="utf-8">
     <style>
         body{font-family:Arial,sans-serif}
         table{border-collapse:collapse;width:100%}
-        td,th{border:1px solid #4aa8d8;font-size:10px;padding:4px;text-align:center;vertical-align:middle}
+        td,th{border:1px solid #4aa8d8;font-size:10px;padding:5px;text-align:center;vertical-align:middle}
         .brand td{border:0;font-weight:bold}
-        .brand-title{font-size:15px;text-align:center}
+        .brand-title{font-size:16px;text-align:center}
         .brand-sub{font-size:12px;text-align:center}
         .red-band td{background:#d60000;color:#fff;font-size:12px;font-weight:bold;text-align:center}
-        .summary td{background:#f6f0df;border-color:#d8c894;font-weight:bold}
+        .summary td{background:#f6f0df;border-color:#d8c894;font-weight:bold;font-size:11px}
+        .director td{background:#fff2cc;border-color:#d6b656;font-size:12px;font-weight:bold;text-align:left}
         th{background:#92d050;color:#000;font-weight:bold}
+        .section td,.section{color:#fff!important;font-size:12px;font-weight:bold;text-align:left}
         .even td{background:#d9f2ff}
         .odd td{background:#ffffff}
         .status-ok{background:#c6efce!important;color:#006100;font-weight:bold}
         .status-warn{background:#ffeb9c!important;color:#9c6500;font-weight:bold}
         .status-bad{background:#ffc7ce!important;color:#9c0006;font-weight:bold}
+        .status-open{background:#d9e1f2!important;color:#203864;font-weight:bold}
+        tr.status-bad td,.section.status-bad td{background:#9c0006!important;color:#fff!important}
+        tr.status-warn td,.section.status-warn td{background:#bf9000!important;color:#fff!important}
+        tr.status-open td,.section.status-open td{background:#203864!important;color:#fff!important}
         .money{text-align:right;mso-number-format:"\\0022$\\0022#,##0.00"}
         .number{text-align:right}
         .total{font-weight:bold;background:#e2f0d9!important}
     </style></head><body>
     <table>
-        <tr class="brand"><td colspan="7" style="text-align:left">SECRETARIA DE EDUCACION GUERRERO</td><td colspan="15" class="brand-title">REPORTE CONCENTRADO DE REVISION CFE</td><td colspan="7" style="text-align:right">Sistema de Consolidacion Educativa</td></tr>
-        <tr class="brand"><td colspan="29" class="brand-sub">SUBSECRETARIA DE ADMINISTRACION Y FINANZAS - DIRECCION DE RECURSOS MATERIALES</td></tr>
-        <tr class="red-band"><td colspan="29">REPORTE DE CASOS CON AJUSTES, MUCHOS DIAS O AUMENTOS SIN AJUSTE</td></tr>
-        <tr class="summary"><td colspan="4">Reporte: ${escapeHtml(currentReport.archivo || '')}</td><td colspan="3">Periodo: ${escapeHtml(currentReport.mes_reporte || '')}</td><td colspan="3">Casos exportados: ${number.format(rows.length)}</td><td colspan="4">Muchos dias: ${number.format(summaryData.ajuste_muchos_dias || 0)}</td><td colspan="6">Periodo correcto y subio: ${number.format(summaryData.periodo_correcto_con_aumento || 0)}</td><td colspan="9">Sin alerta y subio: ${number.format(summaryData.sin_alerta_con_aumento || 0)}</td></tr>
+        <tr class="brand"><td colspan="3" style="text-align:left">SECRETARIA DE EDUCACION GUERRERO</td><td colspan="7" class="brand-title">REPORTE EJECUTIVO DE REVISION CFE</td><td colspan="3" style="text-align:right">Sistema de Consolidacion Educativa</td></tr>
+        <tr class="brand"><td colspan="13" class="brand-sub">SUBSECRETARIA DE ADMINISTRACION Y FINANZAS - DIRECCION DE RECURSOS MATERIALES</td></tr>
+        <tr class="red-band"><td colspan="13">RESUMEN PARA REVISION CON DIRECTORES</td></tr>
+        <tr class="director"><td colspan="13">LECTURA RAPIDA: En el reporte ${escapeHtml(currentReport.mes_reporte || '')}, hay ${number.format(adjustedRows.length)} casos con ajuste, ${number.format(increasedRows.length)} casos que subieron sin ajuste y ${number.format(unlinkedCount)} RPUs sin escuela vinculada para validar.</td></tr>
+        <tr class="summary"><td colspan="2">Reporte: ${escapeHtml(currentReport.archivo || '')}</td><td colspan="2">Periodo: ${escapeHtml(currentReport.mes_reporte || '')}</td><td colspan="2">Casos exportados: ${number.format(totalExport)}</td><td colspan="2">Con escuela: ${number.format(linkedCount)}</td><td colspan="2">Sin escuela: ${number.format(unlinkedCount)}</td><td colspan="3">Importe total del reporte: ${moneyCell(summaryData.importe_total || 0)}</td></tr>
         <tr>
-            <th>N.P.</th><th>ESTADO</th><th>REPORTE</th><th>RPU</th><th>TARIFA</th><th>RECIBO CFE</th><th>POBLACION</th><th>CCT</th><th>ESCUELA</th><th>TIPO</th><th>DESDE</th><th>HASTA</th><th>DIAS</th><th>CONSUMO KWH</th>
-            ${months.map((month) => `<th>${month}</th>`).join('')}
-            <th>TOTAL</th><th>DIF. ANTERIOR</th><th>OBSERVACIONES</th>
+            <th>N.P.</th><th>SITUACION</th><th>ESCUELA O RPU</th><th>CCT</th><th>RPU</th><th>POBLACION CFE</th><th>ESTADO DEL VINCULO</th><th>PERIODO</th><th>DIAS</th><th>CONSUMO KWH</th><th>TOTAL ACTUAL</th><th>SUBIO VS ANTERIOR</th><th>QUE DECIR / OBSERVACION</th>
         </tr>
-        ${rowsHtml || '<tr><td colspan="29">Sin casos para exportar</td></tr>'}
+        ${rowsHtml || '<tr><td colspan="13">Sin casos para exportar</td></tr>'}
     </table></body></html>`;
     const blob = new Blob(['\ufeff' + html], {type: 'application/vnd.ms-excel;charset=utf-8;'});
     const url = URL.createObjectURL(blob);
