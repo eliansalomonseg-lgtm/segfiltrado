@@ -69,9 +69,41 @@ if (empty($_SESSION['seg_csrf'])) {
                 </label>
             </div>
             <button class="btn-seg compact-action" type="submit"><i class="bi bi-search me-2"></i>Analizar ajustes</button>
-            <button class="btn-seg compact-action btn-sync-catalogs" type="button" id="download-adjustments"><i class="bi bi-file-earmark-excel me-2"></i>Exportar Excel ultimos 3 reportes</button>
         </form>
         <div id="adjustment-status" class="adjustment-status">Carga un reporte para iniciar la revision.</div>
+    </section>
+
+    <section class="results-card adjustment-uploader">
+        <div class="results-head">
+            <div>
+                <span class="eyebrow">EXPORTACIONES</span>
+                <h2>Reportes para explicar en direccion</h2>
+                <p>Exporta desde la base local sin volver a importar archivos.</p>
+            </div>
+        </div>
+        <form id="export-form" class="adjustment-form" method="POST" action="../controllers/ajustesController.php">
+            <input type="hidden" name="accion" value="exportar_excel_directores">
+            <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['seg_csrf'], ENT_QUOTES, 'UTF-8') ?>">
+            <div class="period-controls">
+                <label>
+                    <span>Mes a exportar</span>
+                    <select name="mes_exportacion" required>
+                        <?php foreach ([1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril', 5 => 'Mayo', 6 => 'Junio', 7 => 'Julio', 8 => 'Agosto', 9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre'] as $numero => $nombre): ?>
+                            <option value="<?= $numero ?>" <?= $numero === $mesActual ? 'selected' : '' ?>><?= htmlspecialchars($nombre, ENT_QUOTES, 'UTF-8') ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label>
+                    <span>Anio</span>
+                    <input type="number" name="anio_exportacion" min="2020" max="2100" value="<?= $anioActual ?>" required>
+                </label>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <button class="btn-seg compact-action btn-sync-catalogs" type="submit" name="exportar_tipo" value="ajustes_mes"><i class="bi bi-file-earmark-excel me-2"></i>Ajustes del mes</button>
+                <button class="btn-seg compact-action btn-sync-catalogs" type="submit" name="exportar_tipo" value="bajo_consumo_mes"><i class="bi bi-battery me-2"></i>Consumo muy bajo</button>
+                <button class="btn-seg compact-action btn-sync-catalogs" type="submit" name="exportar_tipo" value="ultimos_3"><i class="bi bi-clock-history me-2"></i>Ultimos 3 reportes</button>
+            </div>
+        </form>
     </section>
 
     <section class="quick-actions adjustment-summary" id="adjustment-summary" hidden>
@@ -168,7 +200,6 @@ const results = document.getElementById('adjustment-results');
 const body = document.getElementById('adjustment-body');
 const fileLabel = document.getElementById('adjustment-file');
 const fileName = document.getElementById('adjustment-file-name');
-const download = document.getElementById('download-adjustments');
 let currentRows = [];
 let currentReport = {};
 
@@ -231,14 +262,12 @@ function render(data) {
     }).join('');
     summary.hidden = false;
     results.hidden = false;
-    download.disabled = false;
 }
 
 form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const data = new FormData(form);
     statusBox.textContent = 'Analizando reporte CFE contra el mes, anio y periodo seleccionado...';
-    download.disabled = false;
     try {
         const response = await fetch('../controllers/ajustesController.php', {
             method: 'POST',
@@ -258,23 +287,6 @@ form.addEventListener('submit', async (event) => {
 
 form.reporte_cfe.addEventListener('change', () => {
     fileName.textContent = form.reporte_cfe.files[0]?.name || 'Selecciona reporte CFE';
-});
-
-download.addEventListener('click', () => {
-    const exportForm = document.createElement('form');
-    exportForm.method = 'POST';
-    exportForm.action = '../controllers/ajustesController.php';
-    exportForm.style.display = 'none';
-    [['accion', 'exportar_excel_directores'], ['csrf', token]].forEach(([name, value]) => {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = name;
-        input.value = value;
-        exportForm.appendChild(input);
-    });
-    document.body.appendChild(exportForm);
-    exportForm.submit();
-    exportForm.remove();
 });
 </script>
 </body>
