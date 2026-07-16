@@ -84,10 +84,10 @@ class RpuController
                 $subioTotal = $anterior ? (float) $ultima['total'] - (float) $anterior['total'] : 0;
                 $totalAnterior = $anterior ? (float) $anterior['total'] : 0;
                 $incrementoPorcentaje = $totalAnterior > 0 ? ($subioTotal / $totalAnterior) * 100 : 0;
-                $periodosBajoConsumo = count(array_filter($filas, fn (array $fila): bool => (float) $fila['consumo'] <= 20));
+                $periodosBajoConsumo = count(array_filter($filas, fn (array $fila): bool => (float) $fila['consumo'] <= 50));
                 $periodosPagoMinimo = count(array_filter($filas, fn (array $fila): bool => (float) $fila['total'] <= 100));
                 $consumoPromedio = count($filas) > 0 ? array_sum(array_column($filas, 'consumo')) / count($filas) : 0;
-                $consumoActualBajo = (float) $ultima['consumo'] <= 20;
+                $consumoActualBajo = (float) $ultima['consumo'] <= 50;
                 $pagoMinimoActual = (float) $ultima['total'] <= 100;
                 $consumoCeroActual = (float) $ultima['consumo'] <= 0 || (float) $ultima['total'] <= 0;
                 $riesgoIncremento = $incrementoPorcentaje >= 50;

@@ -50,7 +50,7 @@ if (empty($_SESSION['seg_csrf'])) {
             <div>
                 <span class="eyebrow">REVISION PRIORITARIA</span>
                 <h2>RPUs sugeridos por los ultimos 6 periodos</h2>
-                <p class="section-note">Incluye subidas fuertes, pago minimo, consumo cero y consumo bajo repetido en los ultimos seis periodos.</p>
+                <p class="section-note">Incluye subidas fuertes, pago minimo, consumo cero y consumo bajo de 50 kWh o menos en los ultimos seis periodos.</p>
             </div>
             <button id="reload-risk-rpus" class="btn-seg compact-action" type="button"><i class="bi bi-arrow-clockwise me-2"></i>Actualizar</button>
         </div>
@@ -59,7 +59,7 @@ if (empty($_SESSION['seg_csrf'])) {
             <button type="button" data-risk-filter="todos" class="active">Todos</button>
             <button type="button" data-risk-filter="pago_minimo">Pago minimo</button>
             <button type="button" data-risk-filter="sin_consumo">Sin consumo</button>
-            <button type="button" data-risk-filter="consumo_bajo">Consume poco</button>
+            <button type="button" data-risk-filter="consumo_bajo">Consume <=50 kWh</button>
             <button type="button" data-risk-filter="incremento">Subio mucho</button>
             <button type="button" data-risk-filter="sin_vinculo">Sin vinculo</button>
         </div>
@@ -318,7 +318,7 @@ function renderRiskPage() {
                 : type === 'sin_consumo'
                     ? 'No registra consumo actual'
                     : type === 'consumo_bajo'
-                        ? `Consumo bajo en ${escapeHtml(row.periodos_bajo_consumo || 0)} periodos`
+                        ? `Consumo de 50 kWh o menos en ${escapeHtml(row.periodos_bajo_consumo || 0)} periodos`
                         : `Subio de ${money.format(row.total_anterior || 0)} a ${money.format(row.total || 0)}`;
             return `<button class="risk-rpu-item risk-type-${escapeHtml(type)} ${linked ? 'is-linked' : 'is-unlinked'}" type="button" data-rpu="${escapeHtml(row.rpu)}">
             <span class="risk-score">${escapeHtml(row.score)}</span>
