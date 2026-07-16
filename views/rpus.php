@@ -50,12 +50,13 @@ if (empty($_SESSION['seg_csrf'])) {
             <div>
                 <span class="eyebrow">REVISION PRIORITARIA</span>
                 <h2>RPUs sugeridos por los ultimos 6 periodos</h2>
-                <p class="section-note">Incluye aumentos fuertes y consumo bajo repetido en los ultimos seis periodos cargados.</p>
+                <p class="section-note">Incluye subidas fuertes, pago minimo, consumo cero y consumo bajo repetido en los ultimos seis periodos.</p>
             </div>
             <button id="reload-risk-rpus" class="btn-seg compact-action" type="button"><i class="bi bi-arrow-clockwise me-2"></i>Actualizar</button>
         </div>
         <div id="risk-rpu-periods" class="adjustment-status">Buscando periodos cargados...</div>
         <div id="risk-rpu-list" class="risk-rpu-list"></div>
+        <div id="risk-rpu-pager" class="risk-pager" hidden></div>
     </section>
 
     <section id="rpu-summary" class="quick-actions" hidden>
@@ -143,8 +144,12 @@ const chart = document.getElementById('rpu-chart');
 const historyBody = document.getElementById('rpu-history-body');
 const riskList = document.getElementById('risk-rpu-list');
 const riskPeriods = document.getElementById('risk-rpu-periods');
+const riskPager = document.getElementById('risk-rpu-pager');
 const reloadRisk = document.getElementById('reload-risk-rpus');
 let currentRpu = '';
+let riskRows = [];
+let riskPage = 1;
+const riskPageSize = 10;
 
 const money = new Intl.NumberFormat('es-MX', {style: 'currency', currency: 'MXN'});
 const number = new Intl.NumberFormat('es-MX');
@@ -258,35 +263,63 @@ function render(data) {
 
 function renderRiskRpus(data) {
     const periods = data.periodos || [];
-    const rows = data.rpus || [];
+    riskRows = data.rpus || [];
+    riskPage = 1;
     riskPeriods.textContent = periods.length
-        ? `Analisis de los ultimos 6 periodos: ${periods.join(', ')}. Se muestran aumentos fuertes y posibles escuelas sin operacion por consumo bajo repetido.`
+        ? `Ultimos 6 periodos: ${periods.join(', ')}. ${riskRows.length} casos para revisar.`
         : 'Todavia no hay reportes CFE guardados para sugerir RPUs.';
+    renderRiskPage();
+}
+
+function riskLabel(type) {
+    return {
+        incremento: 'Subio mucho',
+        consumo_bajo: 'Consume poco',
+        pago_minimo: 'Pago minimo',
+        sin_consumo: 'Sin consumo',
+        mixto: 'Doble alerta'
+    }[type] || 'Revision';
+}
+
+function renderRiskPage() {
+    const totalPages = Math.max(1, Math.ceil(riskRows.length / riskPageSize));
+    riskPage = Math.min(Math.max(1, riskPage), totalPages);
+    const start = (riskPage - 1) * riskPageSize;
+    const rows = riskRows.slice(start, start + riskPageSize);
     riskList.innerHTML = rows.length
         ? rows.map((row) => {
             const linked = Boolean(row.cct);
             const type = row.riesgo_tipo || 'incremento';
-            const typeLabel = type === 'consumo_bajo' ? 'Consumo bajo' : (type === 'mixto' ? 'Mixto' : 'Incremento');
+            const label = riskLabel(type);
             const schoolName = linked ? `${row.cct} - ${row.escuela || 'Escuela sin nombre'}` : 'Sin escuela vinculada';
-            const history = (row.historial_periodos || []).map((item) => `${escapeHtml(item.periodo)}: ${money.format(item.total || 0)} / ${number.format(item.consumo || 0)} kWh`).join(' | ');
-            const detail = type === 'consumo_bajo'
-                ? `<small><b>Consumo bajo:</b> ${number.format(row.consumo || 0)} kWh actual - promedio ${number.format(row.consumo_promedio || 0)} kWh - ${escapeHtml(row.periodos_bajo_consumo || 0)} periodos bajos</small>`
-                : `<small><b>Incremento:</b> ${escapeHtml(row.incremento_porcentaje || 0)}% - ${money.format(row.total_anterior || 0)} (${escapeHtml(row.periodo_anterior || 'previo')}) -> ${money.format(row.total || 0)} (${escapeHtml(row.periodo || 'actual')})</small>`;
-            return `<button class="risk-rpu-item ${linked ? 'is-linked' : 'is-unlinked'}" type="button" data-rpu="${escapeHtml(row.rpu)}">
+            const history = (row.historial_periodos || []).map((item) => `<span>${escapeHtml(item.periodo)}<b>${money.format(item.total || 0)}</b><small>${number.format(item.consumo || 0)} kWh</small></span>`).join('');
+            const mainMetric = type === 'incremento' || type === 'mixto'
+                ? `${escapeHtml(row.incremento_porcentaje || 0)}%`
+                : `${number.format(row.consumo || 0)} kWh`;
+            const simpleReason = type === 'pago_minimo'
+                ? `Pago minimo en ${escapeHtml(row.periodos_pago_minimo || 0)} periodos`
+                : type === 'sin_consumo'
+                    ? 'No registra consumo actual'
+                    : type === 'consumo_bajo'
+                        ? `Consumo bajo en ${escapeHtml(row.periodos_bajo_consumo || 0)} periodos`
+                        : `Subio de ${money.format(row.total_anterior || 0)} a ${money.format(row.total || 0)}`;
+            return `<button class="risk-rpu-item risk-type-${escapeHtml(type)} ${linked ? 'is-linked' : 'is-unlinked'}" type="button" data-rpu="${escapeHtml(row.rpu)}">
             <span class="risk-score">${escapeHtml(row.score)}</span>
             <span>
-                <strong>${escapeHtml(row.rpu)} - ${escapeHtml(row.nombre || 'Sin nombre CFE')}</strong>
-                <small><b>Escuela:</b> ${escapeHtml(schoolName)}${linked ? ` - ${escapeHtml(row.nivel || row.subnivel || 'Sin nivel')} - ${escapeHtml(row.localidad || '')}` : ''}</small>
-                <small><b>${escapeHtml(typeLabel)}:</b> ${escapeHtml(row.poblacion || 'Sin poblacion')} - Tarifa ${escapeHtml(row.tarifa || 'N/D')} - ${escapeHtml(row.periodo)}</small>
-                ${detail}
-                <small><b>Ultimos 6:</b> ${history || 'Sin historial suficiente'}</small>
-                <small><b>Riesgo:</b> ${escapeHtml(row.motivo)} - ${number.format(row.consumo || 0)} kWh</small>
+                <strong>${escapeHtml(row.rpu)} - ${escapeHtml(schoolName)}</strong>
+                <small>${escapeHtml(row.nombre || 'Recibo CFE sin nombre')} - ${escapeHtml(row.poblacion || 'Sin poblacion')} - Tarifa ${escapeHtml(row.tarifa || 'N/D')}</small>
+                <span class="risk-simple"><b>${escapeHtml(label)}</b><strong>${mainMetric}</strong><small>${escapeHtml(simpleReason)}</small></span>
+                <span class="risk-history">${history || '<span>Sin historial suficiente</span>'}</span>
             </span>
             <em class="${linked ? 'risk-linked' : 'risk-unlinked'}">${linked ? 'Vinculado' : 'Sin vinculo'}</em>
             <i class="bi bi-chevron-right"></i>
         </button>`;
         }).join('')
         : '<div class="empty-state"><i class="bi bi-check2-circle"></i><strong>Sin RPUs criticos</strong><span>No se encontraron casos prioritarios en los ultimos periodos.</span></div>';
+    riskPager.hidden = riskRows.length <= riskPageSize;
+    riskPager.innerHTML = riskRows.length > riskPageSize
+        ? `<button type="button" data-risk-page="prev" ${riskPage === 1 ? 'disabled' : ''}>Anterior</button><span>Pagina ${riskPage} de ${totalPages} - ${riskRows.length} casos</span><button type="button" data-risk-page="next" ${riskPage === totalPages ? 'disabled' : ''}>Siguiente</button>`
+        : '';
 }
 
 async function loadRiskRpus() {
@@ -354,6 +387,15 @@ riskList.addEventListener('click', async (event) => {
     } catch (error) {
         statusBox.textContent = error.message;
     }
+});
+
+riskPager.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-risk-page]');
+    if (!button) {
+        return;
+    }
+    riskPage += button.dataset.riskPage === 'next' ? 1 : -1;
+    renderRiskPage();
 });
 
 reloadRisk.addEventListener('click', async () => {

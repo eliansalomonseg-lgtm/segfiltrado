@@ -1045,6 +1045,98 @@ body {
     color: var(--seg-guinda);
 }
 
+.risk-simple {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 6px;
+}
+
+.risk-simple b {
+    background: rgba(106, 27, 41, .08);
+    border-radius: 999px;
+    color: var(--seg-guinda);
+    font-size: 10px;
+    font-weight: 900;
+    padding: 5px 9px;
+}
+
+.risk-simple strong {
+    color: var(--seg-text);
+    display: inline !important;
+    font-size: 15px !important;
+}
+
+.risk-simple small {
+    margin: 0 !important;
+}
+
+.risk-history {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.risk-history span {
+    background: #fff;
+    border: 1px solid var(--seg-border);
+    border-radius: 8px;
+    color: var(--seg-muted);
+    font-size: 10px;
+    font-weight: 800;
+    padding: 5px 7px;
+}
+
+.risk-history b {
+    color: var(--seg-text);
+    display: block;
+    font-size: 10px;
+}
+
+.risk-history small {
+    font-size: 9px !important;
+    margin: 0 !important;
+}
+
+.risk-type-pago_minimo .risk-score,
+.risk-type-sin_consumo .risk-score,
+.risk-type-consumo_bajo .risk-score {
+    background: rgba(37, 99, 235, .1);
+    border-color: rgba(37, 99, 235, .18);
+    color: #1d4ed8;
+}
+
+.risk-pager {
+    align-items: center;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 12px;
+}
+
+.risk-pager span {
+    color: var(--seg-muted);
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.risk-pager button {
+    background: #fff;
+    border: 1px solid var(--seg-border);
+    border-radius: 10px;
+    color: var(--seg-guinda);
+    font-size: 11px;
+    font-weight: 900;
+    padding: 7px 12px;
+}
+
+.risk-pager button:disabled {
+    color: #aeb5c0;
+    cursor: not-allowed;
+}
+
 .rpu-bar {
     align-items: center;
     display: grid;

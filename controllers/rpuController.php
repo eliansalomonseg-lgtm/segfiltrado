@@ -84,19 +84,28 @@ class RpuController
                 $subioTotal = $anterior ? (float) $ultima['total'] - (float) $anterior['total'] : 0;
                 $totalAnterior = $anterior ? (float) $anterior['total'] : 0;
                 $incrementoPorcentaje = $totalAnterior > 0 ? ($subioTotal / $totalAnterior) * 100 : 0;
-                $periodosBajoConsumo = count(array_filter($filas, fn (array $fila): bool => (float) $fila['consumo'] <= 20 || (float) $fila['total'] <= 100));
+                $periodosBajoConsumo = count(array_filter($filas, fn (array $fila): bool => (float) $fila['consumo'] <= 20));
+                $periodosPagoMinimo = count(array_filter($filas, fn (array $fila): bool => (float) $fila['total'] <= 100));
                 $consumoPromedio = count($filas) > 0 ? array_sum(array_column($filas, 'consumo')) / count($filas) : 0;
-                $consumoActualBajo = (float) $ultima['consumo'] <= 20 || (float) $ultima['total'] <= 100;
+                $consumoActualBajo = (float) $ultima['consumo'] <= 20;
+                $pagoMinimoActual = (float) $ultima['total'] <= 100;
                 $consumoCeroActual = (float) $ultima['consumo'] <= 0 || (float) $ultima['total'] <= 0;
                 $riesgoIncremento = $incrementoPorcentaje >= 50;
                 $riesgoBajoConsumo = $consumoActualBajo && ($periodosBajoConsumo >= 2 || $consumoCeroActual);
-                if (!$riesgoIncremento && !$riesgoBajoConsumo) {
+                $riesgoPagoMinimo = $pagoMinimoActual && ($periodosPagoMinimo >= 2 || $consumoCeroActual);
+                if (!$riesgoIncremento && !$riesgoBajoConsumo && !$riesgoPagoMinimo) {
                     continue;
                 }
                 $score = $riesgoIncremento ? 50 + (int) min(45, round($incrementoPorcentaje / 2)) : 58;
                 if ($riesgoBajoConsumo) {
                     $score += $consumoCeroActual ? 22 : 12;
                     if ($periodosBajoConsumo >= 3) {
+                        $score += 8;
+                    }
+                }
+                if ($riesgoPagoMinimo) {
+                    $score += 18;
+                    if ($periodosPagoMinimo >= 3) {
                         $score += 8;
                     }
                 }
@@ -132,6 +141,7 @@ class RpuController
                     'diferencia_total' => $subioTotal,
                     'incremento_porcentaje' => round($incrementoPorcentaje, 1),
                     'periodos_bajo_consumo' => $periodosBajoConsumo,
+                    'periodos_pago_minimo' => $periodosPagoMinimo,
                     'consumo_promedio' => round($consumoPromedio, 2),
                     'historial_periodos' => array_map(
                         fn (array $fila): array => [
@@ -141,16 +151,16 @@ class RpuController
                         ],
                         $filas
                     ),
-                    'riesgo_tipo' => $riesgoBajoConsumo && !$riesgoIncremento ? 'consumo_bajo' : ($riesgoBajoConsumo ? 'mixto' : 'incremento'),
+                    'riesgo_tipo' => $this->tipoRiesgo($riesgoIncremento, $riesgoBajoConsumo, $riesgoPagoMinimo, $consumoCeroActual),
                     'score' => min(100, $score),
-                    'motivo' => $this->motivoRiesgo($grupo['cct'] !== null, $alertas, $maxSeveridad, $subioTotal, (float) $ultima['total'], $incrementoPorcentaje, $riesgoBajoConsumo, $periodosBajoConsumo, (float) $ultima['consumo'])
+                    'motivo' => $this->motivoRiesgo($grupo['cct'] !== null, $alertas, $maxSeveridad, $subioTotal, (float) $ultima['total'], $incrementoPorcentaje, $riesgoBajoConsumo, $periodosBajoConsumo, (float) $ultima['consumo'], $riesgoPagoMinimo, $periodosPagoMinimo)
                 ];
             }
             usort($rpus, fn (array $a, array $b): int => $b['score'] <=> $a['score']);
             $this->responder([
                 'ok' => true,
                 'periodos' => array_map(fn (array $periodo): string => sprintf('%04d-%02d', (int) $periodo['anio'], (int) $periodo['mes']), $periodos),
-                'rpus' => array_slice($rpus, 0, 30)
+                'rpus' => array_slice($rpus, 0, 300)
             ]);
         } catch (Throwable $e) {
             $this->responder(['ok' => false, 'error' => $e->getMessage()], 500);
@@ -446,7 +456,24 @@ class RpuController
         ];
     }
 
-    private function motivoRiesgo(bool $vinculado, int $alertas, int $maxSeveridad, float $subioTotal, float $total, float $incrementoPorcentaje, bool $riesgoBajoConsumo, int $periodosBajoConsumo, float $consumoActual): string
+    private function tipoRiesgo(bool $riesgoIncremento, bool $riesgoBajoConsumo, bool $riesgoPagoMinimo, bool $consumoCeroActual): string
+    {
+        if ($consumoCeroActual) {
+            return 'sin_consumo';
+        }
+        if ($riesgoIncremento && ($riesgoBajoConsumo || $riesgoPagoMinimo)) {
+            return 'mixto';
+        }
+        if ($riesgoPagoMinimo) {
+            return 'pago_minimo';
+        }
+        if ($riesgoBajoConsumo) {
+            return 'consumo_bajo';
+        }
+        return 'incremento';
+    }
+
+    private function motivoRiesgo(bool $vinculado, int $alertas, int $maxSeveridad, float $subioTotal, float $total, float $incrementoPorcentaje, bool $riesgoBajoConsumo, int $periodosBajoConsumo, float $consumoActual, bool $riesgoPagoMinimo, int $periodosPagoMinimo): string
     {
         $motivos = [];
         if ($incrementoPorcentaje >= 70) {
@@ -458,6 +485,12 @@ class RpuController
             $motivos[] = $consumoActual <= 0 ? 'sin consumo actual' : 'consumo muy bajo';
             if ($periodosBajoConsumo >= 2) {
                 $motivos[] = $periodosBajoConsumo . ' periodos bajos';
+            }
+        }
+        if ($riesgoPagoMinimo) {
+            $motivos[] = 'pago minimo';
+            if ($periodosPagoMinimo >= 2) {
+                $motivos[] = $periodosPagoMinimo . ' periodos con minimo';
             }
         }
         if (!$vinculado) {
