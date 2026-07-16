@@ -49,8 +49,8 @@ if (empty($_SESSION['seg_csrf'])) {
         <div class="results-head">
             <div>
                 <span class="eyebrow">REVISION PRIORITARIA</span>
-                <h2>RPUs sugeridos por los ultimos meses cargados</h2>
-                <p class="section-note">Incluye RPUs sin vinculo y tambien medidores ya vinculados que presentan importes, consumos o alertas fuera de patron.</p>
+                <h2>RPUs sugeridos por los ultimos 3 periodos</h2>
+                <p class="section-note">Incluye aumentos fuertes y consumo bajo repetido en los ultimos tres periodos cargados.</p>
             </div>
             <button id="reload-risk-rpus" class="btn-seg compact-action" type="button"><i class="bi bi-arrow-clockwise me-2"></i>Actualizar</button>
         </div>
@@ -260,7 +260,7 @@ function renderRiskRpus(data) {
     const periods = data.periodos || [];
     const rows = data.rpus || [];
     riskPeriods.textContent = periods.length
-        ? `Analisis sobre periodos: ${periods.join(', ')}. Se muestran aumentos fuertes y posibles escuelas sin operacion por consumo bajo repetido.`
+        ? `Analisis de los ultimos 3 periodos: ${periods.join(', ')}. Se muestran aumentos fuertes y posibles escuelas sin operacion por consumo bajo repetido.`
         : 'Todavia no hay reportes CFE guardados para sugerir RPUs.';
     riskList.innerHTML = rows.length
         ? rows.map((row) => {
@@ -287,7 +287,7 @@ function renderRiskRpus(data) {
 }
 
 async function loadRiskRpus() {
-    riskPeriods.textContent = 'Calculando aumentos fuertes, consumos en cero y consumos muy bajos repetidos...';
+    riskPeriods.textContent = 'Calculando los ultimos 3 periodos: aumentos fuertes, consumos en cero y consumos muy bajos repetidos...';
     const body = new URLSearchParams({accion: 'sugerir_rpus_malos', csrf: token});
     const response = await fetch('../controllers/rpuController.php', {method: 'POST', body});
     const data = await response.json();

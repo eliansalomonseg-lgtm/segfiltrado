@@ -15,7 +15,7 @@ class RpuController
             $conexion = Conexion::conectar();
             $this->prepararTablas($conexion);
             $periodos = $conexion->query(
-                'SELECT DISTINCT anio, mes FROM cfe_reportes ORDER BY anio DESC, mes DESC LIMIT 4'
+                'SELECT DISTINCT anio, mes FROM cfe_reportes ORDER BY anio DESC, mes DESC LIMIT 3'
             )->fetchAll();
             if (!$periodos) {
                 $this->responder(['ok' => true, 'periodos' => [], 'rpus' => []]);
