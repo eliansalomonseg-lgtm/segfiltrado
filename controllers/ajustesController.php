@@ -163,6 +163,36 @@ class AjustesController
         }
     }
 
+    public function exportarExcelDirectores(): void
+    {
+        $this->validarToken();
+        try {
+            $conexion = Conexion::conectar();
+            $this->prepararHistorialCfe($conexion);
+            $reportes = $conexion->query(
+                'SELECT id, archivo, anio, mes, total_registros, con_alerta, severos, periodo_correcto, ajuste_muchos_dias, periodo_correcto_con_aumento, sin_alerta_con_aumento, importe_total
+                 FROM cfe_reportes
+                 ORDER BY anio DESC, mes DESC, id DESC
+                 LIMIT 3'
+            )->fetchAll();
+
+            if (!$reportes) {
+                $this->responder(['ok' => false, 'error' => 'Aun no hay reportes CFE guardados para exportar.'], 422);
+            }
+
+            $casos = $this->obtenerCasosExcelDirectores($conexion, array_map(static fn (array $reporte): int => (int) $reporte['id'], $reportes));
+            $html = $this->construirExcelDirectores($reportes, $casos);
+
+            http_response_code(200);
+            header('Content-Type: application/vnd.ms-excel; charset=utf-8');
+            header('Content-Disposition: attachment; filename="reporte_directores_cfe_ultimos_3_' . date('Ymd_His') . '.xls"');
+            echo "\xEF\xBB\xBF" . $html;
+            exit;
+        } catch (Throwable $e) {
+            $this->responder(['ok' => false, 'error' => 'Fallo al exportar Excel: ' . $e->getMessage()], 500);
+        }
+    }
+
     private function guardarHistorial(PDO $conexion, array $resultado, int $anio, int $mes, string $modoPeriodo): array
     {
         $resumen = $resultado['resumen'] ?? [];
@@ -418,6 +448,198 @@ class AjustesController
         return $tendencias;
     }
 
+    private function obtenerCasosExcelDirectores(PDO $conexion, array $reportesIds): array
+    {
+        $reportesIds = array_values(array_filter(array_map('intval', $reportesIds)));
+        if (!$reportesIds) {
+            return [];
+        }
+        $marcadores = implode(',', array_fill(0, count($reportesIds), '?'));
+        $consulta = $conexion->prepare(
+            "SELECT cc.id, cc.reporte_id, cc.RPU, cc.CCT, cc.nombre_cfe, cc.poblacion_cfe, cc.tarifa_cfe, cc.tipo_periodo,
+                    cc.desde, cc.hasta, cc.dias, cc.consumo, cc.total, cc.diferencia, cc.severidad, cc.alertas,
+                    cr.anio, cr.mes,
+                    (
+                        SELECT GROUP_CONCAT(DISTINCT er2.CCT ORDER BY er2.CCT SEPARATOR ' / ')
+                        FROM escuelas_rpu er2
+                        WHERE er2.RPU = cc.RPU
+                    ) ccts_vinculados,
+                    (
+                        SELECT GROUP_CONCAT(DISTINCT e2.NOMBRECT ORDER BY e2.NOMBRECT SEPARATOR ' / ')
+                        FROM escuelas_rpu er2
+                        LEFT JOIN escuelas e2 ON e2.CCT = er2.CCT
+                        WHERE er2.RPU = cc.RPU
+                    ) escuelas_vinculadas,
+                    (
+                        SELECT GROUP_CONCAT(DISTINCT e2.SUBNIVEL ORDER BY e2.SUBNIVEL SEPARATOR ' / ')
+                        FROM escuelas_rpu er2
+                        LEFT JOIN escuelas e2 ON e2.CCT = er2.CCT
+                        WHERE er2.RPU = cc.RPU
+                    ) niveles_vinculados,
+                    (
+                        SELECT prev.total
+                        FROM cfe_consumos prev
+                        INNER JOIN cfe_reportes pr ON pr.id = prev.reporte_id
+                        WHERE prev.RPU = cc.RPU
+                          AND (pr.anio < cr.anio OR (pr.anio = cr.anio AND pr.mes < cr.mes) OR (pr.anio = cr.anio AND pr.mes = cr.mes AND pr.id < cr.id))
+                        ORDER BY pr.anio DESC, pr.mes DESC, pr.id DESC, prev.id DESC
+                        LIMIT 1
+                    ) total_anterior
+             FROM cfe_consumos cc
+             INNER JOIN cfe_reportes cr ON cr.id = cc.reporte_id
+             WHERE cc.reporte_id IN ($marcadores)
+             ORDER BY cr.anio DESC, cr.mes DESC, cr.id DESC, cc.total DESC"
+        );
+        $consulta->execute($reportesIds);
+        $casos = [];
+        foreach ($consulta->fetchAll() as $fila) {
+            $caso = $this->prepararCasoExcelDirectores($fila);
+            if ($caso !== null) {
+                $casos[(int) $fila['reporte_id']][] = $caso;
+            }
+        }
+        return $casos;
+    }
+
+    private function prepararCasoExcelDirectores(array $fila): ?array
+    {
+        $dias = is_numeric($fila['dias'] ?? null) ? (int) $fila['dias'] : null;
+        $tipoPeriodo = (string) ($fila['tipo_periodo'] ?? '');
+        $maximo = $tipoPeriodo === 'mensual' ? 35 : 75;
+        $minimo = $tipoPeriodo === 'mensual' ? 25 : 50;
+        $periodoCorrecto = $dias !== null && $dias >= $minimo && $dias <= $maximo;
+        $totalActual = (float) ($fila['total'] ?? 0);
+        $totalAnterior = $fila['total_anterior'] !== null ? (float) $fila['total_anterior'] : null;
+        $aumento = $totalAnterior !== null ? $totalActual - $totalAnterior : 0.0;
+        $alertas = trim((string) ($fila['alertas'] ?? ''));
+        $muchosDias = $dias !== null && $dias > $maximo;
+        $subioSinAjuste = $periodoCorrecto && $aumento > 0;
+        $sinVinculo = trim((string) ($fila['ccts_vinculados'] ?? '')) === '';
+
+        if (!$muchosDias && $alertas === '' && !$subioSinAjuste) {
+            return null;
+        }
+
+        if ($muchosDias || $alertas !== '') {
+            $seccion = 'ajustes';
+            $situacion = $muchosDias ? 'CON AJUSTE POR MUCHOS DIAS' : 'CON AJUSTE';
+            $mensaje = $alertas !== '' ? $alertas : 'El recibo trae mas dias de los esperados para su tarifa.';
+        } elseif ($subioSinAjuste) {
+            $seccion = 'aumentos';
+            $situacion = 'SUBIO SIN AJUSTE';
+            $mensaje = 'El periodo esta correcto, pero el pago subio contra el reporte anterior.';
+        }
+        if ($sinVinculo) {
+            $mensaje .= ' No tiene escuela vinculada; presentarlo por RPU y validar el plantel.';
+        }
+
+        return [
+            'seccion' => $seccion,
+            'situacion' => $situacion,
+            'escuela' => trim((string) ($fila['escuelas_vinculadas'] ?? '')) !== '' ? (string) $fila['escuelas_vinculadas'] : 'RPU SIN ESCUELA VINCULADA',
+            'cct' => (string) ($fila['ccts_vinculados'] ?? ''),
+            'nivel' => (string) ($fila['niveles_vinculados'] ?? ''),
+            'rpu' => (string) ($fila['RPU'] ?? ''),
+            'recibo' => (string) ($fila['nombre_cfe'] ?? ''),
+            'poblacion' => (string) ($fila['poblacion_cfe'] ?? ''),
+            'tarifa' => (string) ($fila['tarifa_cfe'] ?? ''),
+            'periodo' => trim((string) ($fila['desde'] ?? '') . ' / ' . (string) ($fila['hasta'] ?? '')),
+            'dias' => $dias,
+            'consumo' => (float) ($fila['consumo'] ?? 0),
+            'total' => $totalActual,
+            'aumento' => $aumento,
+            'mensaje' => $mensaje
+        ];
+    }
+
+    private function construirExcelDirectores(array $reportes, array $casos): string
+    {
+        $totales = ['ajustes' => 0, 'aumentos' => 0, 'sin_vinculo' => 0];
+        foreach ($casos as $grupo) {
+            foreach ($grupo as $caso) {
+                $totales[$caso['seccion']]++;
+                if (trim((string) $caso['cct']) === '') {
+                    $totales['sin_vinculo']++;
+                }
+            }
+        }
+        $periodos = implode(', ', array_map(static fn (array $reporte): string => sprintf('%04d-%02d', (int) $reporte['anio'], (int) $reporte['mes']), $reportes));
+        $html = '<!doctype html><html><head><meta charset="utf-8"><style>
+            body{font-family:Arial,sans-serif}
+            table{border-collapse:collapse;width:100%}
+            td,th{border:1px solid #4aa8d8;font-size:10px;padding:5px;text-align:center;vertical-align:middle}
+            .brand td{border:0;font-weight:bold}
+            .brand-title{font-size:16px;text-align:center}
+            .brand-sub{font-size:12px;text-align:center}
+            .red-band td{background:#d60000;color:#fff;font-size:12px;font-weight:bold;text-align:center}
+            .summary td{background:#f6f0df;border-color:#d8c894;font-weight:bold;font-size:11px}
+            .director td{background:#fff2cc;border-color:#d6b656;font-size:12px;font-weight:bold;text-align:left}
+            .report td{background:#6A1B29;color:#fff;font-size:12px;font-weight:bold;text-align:left}
+            th{background:#92d050;color:#000;font-weight:bold}
+            .section td{color:#fff!important;font-size:12px;font-weight:bold;text-align:left}
+            .section-ajustes td{background:#9c0006!important}
+            .section-aumentos td{background:#bf9000!important}
+            .section-sin-vinculo td{background:#203864!important}
+            .even td{background:#d9f2ff}
+            .odd td{background:#ffffff}
+            .money{text-align:right;mso-number-format:"\0022$\0022#,##0.00"}
+            .number{text-align:right}
+            .total{font-weight:bold;background:#e2f0d9!important}
+        </style></head><body><table>';
+        $html .= '<tr class="brand"><td colspan="15" class="brand-title">SECRETARIA DE EDUCACION GUERRERO</td></tr>';
+        $html .= '<tr class="brand"><td colspan="15" class="brand-sub">SUBSECRETARIA DE ADMINISTRACION Y FINANZAS - DIRECCION DE RECURSOS MATERIALES</td></tr>';
+        $html .= '<tr class="red-band"><td colspan="15">REPORTE ENTENDIBLE DE PROBLEMAS CFE - ULTIMOS 3 REPORTES</td></tr>';
+        $html .= '<tr class="director"><td colspan="15">Lectura rapida: en los reportes ' . $this->excelTexto($periodos) . ' hay ' . number_format($totales['ajustes']) . ' casos con ajuste o muchos dias, ' . number_format($totales['aumentos']) . ' casos que subieron sin ajuste y ' . number_format($totales['sin_vinculo']) . ' casos que se deben explicar por RPU porque no tienen escuela vinculada.</td></tr>';
+        $html .= '<tr class="summary"><td colspan="4">Reportes incluidos: ' . $this->excelTexto($periodos) . '</td><td colspan="3">Con ajuste: ' . number_format($totales['ajustes']) . '</td><td colspan="3">Subieron sin ajuste: ' . number_format($totales['aumentos']) . '</td><td colspan="5">Sin escuela vinculada dentro de alertas: ' . number_format($totales['sin_vinculo']) . '</td></tr>';
+        $html .= '<tr><th>N.P.</th><th>SITUACION</th><th>ESCUELA O RPU</th><th>CCT</th><th>NIVEL</th><th>RPU</th><th>RECIBO CFE</th><th>POBLACION CFE</th><th>TARIFA</th><th>PERIODO</th><th>DIAS</th><th>CONSUMO KWH</th><th>TOTAL ACTUAL</th><th>SUBIO VS ANTERIOR</th><th>QUE DECIR</th></tr>';
+
+        foreach ($reportes as $reporte) {
+            $reporteId = (int) $reporte['id'];
+            $periodo = sprintf('%04d-%02d', (int) $reporte['anio'], (int) $reporte['mes']);
+            $html .= '<tr class="report"><td colspan="15">REPORTE ' . $this->excelTexto($periodo) . ' - ' . $this->excelTexto((string) $reporte['archivo']) . '</td></tr>';
+            $grupo = $casos[$reporteId] ?? [];
+            $html .= $this->excelSeccionDirectores($grupo, 'ajustes', '1. CON AJUSTE O MUCHOS DIAS');
+            $html .= $this->excelSeccionDirectores($grupo, 'aumentos', '2. SUBIERON SIN AJUSTE');
+        }
+
+        return $html . '</table></body></html>';
+    }
+
+    private function excelSeccionDirectores(array $grupo, string $seccion, string $titulo): string
+    {
+        $items = array_values(array_filter($grupo, static fn (array $caso): bool => $caso['seccion'] === $seccion));
+        $clase = str_replace('_', '-', $seccion);
+        if (!$items) {
+            return '<tr class="section section-' . $clase . '"><td colspan="15">' . $this->excelTexto($titulo) . ': SIN CASOS</td></tr>';
+        }
+        $html = '<tr class="section section-' . $clase . '"><td colspan="15">' . $this->excelTexto($titulo) . ' (' . number_format(count($items)) . ')</td></tr>';
+        foreach ($items as $indice => $caso) {
+            $html .= '<tr class="' . ($indice % 2 === 0 ? 'even' : 'odd') . '">';
+            $html .= '<td>' . ($indice + 1) . '</td>';
+            $html .= '<td>' . $this->excelTexto($caso['situacion']) . '</td>';
+            $html .= '<td>' . $this->excelTexto($caso['escuela']) . '</td>';
+            $html .= '<td>' . $this->excelTexto($caso['cct']) . '</td>';
+            $html .= '<td>' . $this->excelTexto($caso['nivel']) . '</td>';
+            $html .= '<td>' . $this->excelTexto($caso['rpu']) . '</td>';
+            $html .= '<td>' . $this->excelTexto($caso['recibo']) . '</td>';
+            $html .= '<td>' . $this->excelTexto($caso['poblacion']) . '</td>';
+            $html .= '<td>' . $this->excelTexto($caso['tarifa']) . '</td>';
+            $html .= '<td>' . $this->excelTexto($caso['periodo']) . '</td>';
+            $html .= '<td>' . $this->excelTexto((string) ($caso['dias'] ?? '')) . '</td>';
+            $html .= '<td class="number">' . number_format((float) $caso['consumo'], 2) . '</td>';
+            $html .= '<td class="money total">$ ' . number_format((float) $caso['total'], 2) . '</td>';
+            $html .= '<td class="money">$ ' . number_format((float) $caso['aumento'], 2) . '</td>';
+            $html .= '<td>' . $this->excelTexto($caso['mensaje']) . '</td>';
+            $html .= '</tr>';
+        }
+        return $html;
+    }
+
+    private function excelTexto(mixed $valor): string
+    {
+        return htmlspecialchars((string) $valor, ENT_QUOTES, 'UTF-8');
+    }
+
     private function textoONulo(mixed $valor): ?string
     {
         $texto = trim((string) $valor);
@@ -457,6 +679,10 @@ $controlador = new AjustesController();
 
 if ($accion === 'analizar_ajustes_cfe') {
     $controlador->analizar();
+}
+
+if ($accion === 'exportar_excel_directores') {
+    $controlador->exportarExcelDirectores();
 }
 
 http_response_code(400);
