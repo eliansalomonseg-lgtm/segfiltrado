@@ -110,6 +110,9 @@ class AjustesController
                 con_alerta INT NOT NULL DEFAULT 0,
                 severos INT NOT NULL DEFAULT 0,
                 periodo_correcto INT NOT NULL DEFAULT 0,
+                ajuste_muchos_dias INT NOT NULL DEFAULT 0,
+                periodo_correcto_con_aumento INT NOT NULL DEFAULT 0,
+                sin_alerta_con_aumento INT NOT NULL DEFAULT 0,
                 importe_total DECIMAL(14,2) NOT NULL DEFAULT 0,
                 creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_cfe_reportes_periodo (anio, mes)
@@ -144,6 +147,20 @@ class AjustesController
                 FOREIGN KEY (CCT) REFERENCES escuelas(CCT) ON DELETE SET NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
+        $this->asegurarColumna($conexion, 'cfe_reportes', 'ajuste_muchos_dias', 'INT NOT NULL DEFAULT 0');
+        $this->asegurarColumna($conexion, 'cfe_reportes', 'periodo_correcto_con_aumento', 'INT NOT NULL DEFAULT 0');
+        $this->asegurarColumna($conexion, 'cfe_reportes', 'sin_alerta_con_aumento', 'INT NOT NULL DEFAULT 0');
+    }
+
+    private function asegurarColumna(PDO $conexion, string $tabla, string $columna, string $definicion): void
+    {
+        $consulta = $conexion->prepare(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?'
+        );
+        $consulta->execute([$tabla, $columna]);
+        if ((int) $consulta->fetchColumn() === 0) {
+            $conexion->exec('ALTER TABLE `' . $tabla . '` ADD COLUMN `' . $columna . '` ' . $definicion);
+        }
     }
 
     private function guardarHistorial(PDO $conexion, array $resultado, int $anio, int $mes, string $modoPeriodo): array
@@ -246,6 +263,52 @@ class AjustesController
         $resultado['resumen']['rpu_con_vinculo'] = $conVinculo;
         $resultado['resumen']['rpu_sugeridos_por_historial'] = $conSugerencia;
         $resultado['resumen']['rpu_mejorando'] = $mejorando;
+        $resultado = $this->anexarResumenReporte($conexion, $resultado);
+        return $resultado;
+    }
+
+    private function anexarResumenReporte(PDO $conexion, array $resultado): array
+    {
+        $registros = is_array($resultado['registros'] ?? null) ? $resultado['registros'] : [];
+        $muchosDias = 0;
+        $periodoCorrectoConAumento = 0;
+        $sinAlertaConAumento = 0;
+        foreach ($registros as $registro) {
+            if (!is_array($registro)) {
+                continue;
+            }
+            $dias = is_numeric($registro['dias'] ?? null) ? (int) $registro['dias'] : null;
+            $tipo = (string) ($registro['tipo_periodo'] ?? '');
+            $maximo = $tipo === 'mensual' ? 35 : 75;
+            $minimo = $tipo === 'mensual' ? 25 : 50;
+            $periodoCorrecto = $dias !== null && $dias >= $minimo && $dias <= $maximo;
+            $subio = is_array($registro['tendencia'] ?? null) && (float) ($registro['tendencia']['diferencia_total'] ?? 0) > 0;
+            $alertas = is_array($registro['alertas'] ?? null) ? $registro['alertas'] : [];
+            if ($dias !== null && $dias > $maximo) {
+                $muchosDias++;
+            }
+            if ($periodoCorrecto && $subio) {
+                $periodoCorrectoConAumento++;
+            }
+            if (!$alertas && $subio) {
+                $sinAlertaConAumento++;
+            }
+        }
+        $resultado['resumen']['ajuste_muchos_dias'] = $muchosDias;
+        $resultado['resumen']['periodo_correcto_con_aumento'] = $periodoCorrectoConAumento;
+        $resultado['resumen']['sin_alerta_con_aumento'] = $sinAlertaConAumento;
+        $reporteId = (int) ($resultado['reporte_id'] ?? 0);
+        if ($reporteId > 0) {
+            $consulta = $conexion->prepare(
+                'UPDATE cfe_reportes SET ajuste_muchos_dias = :muchos_dias, periodo_correcto_con_aumento = :periodo_correcto_aumento, sin_alerta_con_aumento = :sin_alerta_aumento WHERE id = :id'
+            );
+            $consulta->execute([
+                'muchos_dias' => $muchosDias,
+                'periodo_correcto_aumento' => $periodoCorrectoConAumento,
+                'sin_alerta_aumento' => $sinAlertaConAumento,
+                'id' => $reporteId
+            ]);
+        }
         return $resultado;
     }
 

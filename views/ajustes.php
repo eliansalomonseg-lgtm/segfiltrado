@@ -96,6 +96,21 @@ if (empty($_SESSION['seg_csrf'])) {
             <small>Correctos</small>
         </article>
         <article class="quick-card">
+            <span class="quick-icon"><i class="bi bi-calendar2-x"></i></span>
+            <div><strong data-summary="ajuste_muchos_dias">0</strong><span>Muchos dias</span></div>
+            <small>Ajuste</small>
+        </article>
+        <article class="quick-card">
+            <span class="quick-icon"><i class="bi bi-graph-up-arrow"></i></span>
+            <div><strong data-summary="periodo_correcto_con_aumento">0</strong><span>Correctos que subieron</span></div>
+            <small>Sin ajuste de dias</small>
+        </article>
+        <article class="quick-card">
+            <span class="quick-icon"><i class="bi bi-check2-circle"></i></span>
+            <div><strong data-summary="sin_alerta_con_aumento">0</strong><span>Sin alerta y subio</span></div>
+            <small>Revisar consumo</small>
+        </article>
+        <article class="quick-card">
             <span class="quick-icon"><i class="bi bi-cash-coin"></i></span>
             <div><strong data-summary="importe_total">0</strong><span>Importe total</span></div>
             <small>Facturado</small>
@@ -172,10 +187,20 @@ function render(data) {
         }
     });
     fileLabel.textContent = `${data.archivo || 'Reporte'} ${data.mes_reporte ? ' - ' + data.mes_reporte : ''} - ${data.modo_periodo || 'automatico'}`;
-    body.innerHTML = currentRows.filter((row) => row.alertas.length > 0).slice(0, 200).map((row) => {
+    body.innerHTML = currentRows.filter((row) => row.alertas.length > 0 || (row.tendencia && Number(row.tendencia.diferencia_total || 0) > 0)).slice(0, 200).map((row) => {
         const level = row.severidad >= 7 ? 'status-warn' : row.severidad >= 4 ? '' : 'status-ok';
         const linked = row.escuelas_vinculadas?.[0];
         const suggested = row.sugerencias_escuela?.[0];
+        const maxDays = row.tipo_periodo === 'mensual' ? 35 : 75;
+        const minDays = row.tipo_periodo === 'mensual' ? 25 : 50;
+        const days = Number(row.dias || 0);
+        const periodOk = days >= minDays && days <= maxDays;
+        const wentUp = row.tendencia && Number(row.tendencia.diferencia_total || 0) > 0;
+        const simpleCase = days > maxDays
+            ? 'Muchos dias'
+            : periodOk && wentUp
+                ? 'Periodo bien, pero subio'
+                : row.alertas.length ? 'Con ajuste' : 'Sin ajuste';
         const school = linked
             ? `<strong>${escapeHtml(linked.cct)} - ${escapeHtml(linked.nombre)}</strong><small>Vinculo confirmado</small>`
             : suggested
@@ -187,7 +212,7 @@ function render(data) {
         return `<tr>
             <td><strong>${escapeHtml(row.rpu)}</strong><small>${escapeHtml(row.tarifa || 'Sin tarifa')}</small></td>
             <td><strong>${escapeHtml(row.nombre)}</strong><small>${escapeHtml(row.poblacion)}</small></td>
-            <td><strong>${escapeHtml(row.desde)} / ${escapeHtml(row.hasta)}</strong><small>${escapeHtml(row.tipo_periodo || '')} - ${escapeHtml(row.dias)} dias</small></td>
+            <td><strong>${escapeHtml(simpleCase)}</strong><small>${escapeHtml(row.desde)} / ${escapeHtml(row.hasta)}<br>${escapeHtml(row.tipo_periodo || '')} - ${escapeHtml(row.dias)} dias</small></td>
             <td>${school}</td>
             <td><strong>${number.format(row.consumo || 0)}</strong><small>kWh</small></td>
             <td><strong>${money.format(row.total || 0)}</strong><small>${escapeHtml(trend)}<br>Diferencia ${money.format(row.diferencia || 0)}</small></td>
@@ -228,7 +253,7 @@ form.reporte_cfe.addEventListener('change', () => {
 
 download.addEventListener('click', () => {
     const headers = ['RPU','NOMBRE','POBLACION','TARIFA','CCT_VINCULADO','ESCUELA_VINCULADA','CCT_SUGERIDO','ESCUELA_SUGERIDA','PERIODO_ANTERIOR','DIFERENCIA_TOTAL_ANTERIOR','TIPO_PERIODO','DESDE','HASTA','DIAS','CONSUMO','ENERGIA','DAP','CARGOS_DEPOSITOS','CREDITOS_REDONDEOS','TOTAL','DIFERENCIA','SEVERIDAD','ALERTAS'];
-    const rows = currentRows.filter((row) => row.alertas.length > 0).map((row) => [
+    const rows = currentRows.filter((row) => row.alertas.length > 0 || (row.tendencia && Number(row.tendencia.diferencia_total || 0) > 0)).map((row) => [
         row.rpu,
         row.nombre,
         row.poblacion,

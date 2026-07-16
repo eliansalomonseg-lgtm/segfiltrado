@@ -117,6 +117,9 @@ CREATE TABLE IF NOT EXISTS `cfe_reportes` (
   `con_alerta` INT NOT NULL DEFAULT 0,
   `severos` INT NOT NULL DEFAULT 0,
   `periodo_correcto` INT NOT NULL DEFAULT 0,
+  `ajuste_muchos_dias` INT NOT NULL DEFAULT 0,
+  `periodo_correcto_con_aumento` INT NOT NULL DEFAULT 0,
+  `sin_alerta_con_aumento` INT NOT NULL DEFAULT 0,
   `importe_total` DECIMAL(14,2) NOT NULL DEFAULT 0,
   `creado_en` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_cfe_reportes_periodo` (`anio`, `mes`)
