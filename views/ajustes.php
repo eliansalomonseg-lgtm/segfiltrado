@@ -69,7 +69,7 @@ if (empty($_SESSION['seg_csrf'])) {
                 </label>
             </div>
             <button class="btn-seg compact-action" type="submit"><i class="bi bi-search me-2"></i>Analizar ajustes</button>
-            <button class="btn-seg compact-action btn-sync-catalogs" type="button" id="download-adjustments" disabled><i class="bi bi-download me-2"></i>Exportar alertas</button>
+            <button class="btn-seg compact-action btn-sync-catalogs" type="button" id="download-adjustments" disabled><i class="bi bi-file-earmark-excel me-2"></i>Exportar Excel</button>
         </form>
         <div id="adjustment-status" class="adjustment-status">Carga un reporte para iniciar la revision.</div>
     </section>
@@ -170,6 +170,7 @@ const fileLabel = document.getElementById('adjustment-file');
 const fileName = document.getElementById('adjustment-file-name');
 const download = document.getElementById('download-adjustments');
 let currentRows = [];
+let currentReport = {};
 
 const money = new Intl.NumberFormat('es-MX', {style: 'currency', currency: 'MXN'});
 const number = new Intl.NumberFormat('es-MX');
@@ -178,8 +179,25 @@ function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
 }
 
+function problemRows() {
+    return currentRows.filter((row) => row.alertas.length > 0 || (row.tendencia && Number(row.tendencia.diferencia_total || 0) > 0));
+}
+
+function rowCase(row) {
+    const maxDays = row.tipo_periodo === 'mensual' ? 35 : 75;
+    const minDays = row.tipo_periodo === 'mensual' ? 25 : 50;
+    const days = Number(row.dias || 0);
+    const periodOk = days >= minDays && days <= maxDays;
+    const wentUp = row.tendencia && Number(row.tendencia.diferencia_total || 0) > 0;
+    if (days > maxDays) return 'MUCHOS DIAS';
+    if (periodOk && wentUp && !row.alertas.length) return 'PERIODO CORRECTO / SUBIO';
+    if (periodOk && wentUp) return 'CON AJUSTE Y SUBIO';
+    return row.alertas.length ? 'CON AJUSTE' : 'REVISION';
+}
+
 function render(data) {
     currentRows = data.registros || [];
+    currentReport = data;
     Object.entries(data.resumen || {}).forEach(([key, value]) => {
         const target = summary.querySelector(`[data-summary="${key}"]`);
         if (target) {
@@ -187,20 +205,11 @@ function render(data) {
         }
     });
     fileLabel.textContent = `${data.archivo || 'Reporte'} ${data.mes_reporte ? ' - ' + data.mes_reporte : ''} - ${data.modo_periodo || 'automatico'}`;
-    body.innerHTML = currentRows.filter((row) => row.alertas.length > 0 || (row.tendencia && Number(row.tendencia.diferencia_total || 0) > 0)).slice(0, 200).map((row) => {
+    body.innerHTML = problemRows().slice(0, 200).map((row) => {
         const level = row.severidad >= 7 ? 'status-warn' : row.severidad >= 4 ? '' : 'status-ok';
         const linked = row.escuelas_vinculadas?.[0];
         const suggested = row.sugerencias_escuela?.[0];
-        const maxDays = row.tipo_periodo === 'mensual' ? 35 : 75;
-        const minDays = row.tipo_periodo === 'mensual' ? 25 : 50;
-        const days = Number(row.dias || 0);
-        const periodOk = days >= minDays && days <= maxDays;
-        const wentUp = row.tendencia && Number(row.tendencia.diferencia_total || 0) > 0;
-        const simpleCase = days > maxDays
-            ? 'Muchos dias'
-            : periodOk && wentUp
-                ? 'Periodo bien, pero subio'
-                : row.alertas.length ? 'Con ajuste' : 'Sin ajuste';
+        const simpleCase = rowCase(row).toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
         const school = linked
             ? `<strong>${escapeHtml(linked.cct)} - ${escapeHtml(linked.nombre)}</strong><small>Vinculo confirmado</small>`
             : suggested
@@ -252,38 +261,77 @@ form.reporte_cfe.addEventListener('change', () => {
 });
 
 download.addEventListener('click', () => {
-    const headers = ['RPU','NOMBRE','POBLACION','TARIFA','CCT_VINCULADO','ESCUELA_VINCULADA','CCT_SUGERIDO','ESCUELA_SUGERIDA','PERIODO_ANTERIOR','DIFERENCIA_TOTAL_ANTERIOR','TIPO_PERIODO','DESDE','HASTA','DIAS','CONSUMO','ENERGIA','DAP','CARGOS_DEPOSITOS','CREDITOS_REDONDEOS','TOTAL','DIFERENCIA','SEVERIDAD','ALERTAS'];
-    const rows = currentRows.filter((row) => row.alertas.length > 0 || (row.tendencia && Number(row.tendencia.diferencia_total || 0) > 0)).map((row) => [
-        row.rpu,
-        row.nombre,
-        row.poblacion,
-        row.tarifa,
-        row.escuelas_vinculadas?.[0]?.cct || '',
-        row.escuelas_vinculadas?.[0]?.nombre || '',
-        row.sugerencias_escuela?.[0]?.cct || '',
-        row.sugerencias_escuela?.[0]?.nombre || '',
-        row.tendencia?.periodo_anterior || '',
-        row.tendencia?.diferencia_total || '',
-        row.tipo_periodo,
-        row.desde,
-        row.hasta,
-        row.dias,
-        row.consumo,
-        row.energia,
-        row.dap,
-        row.cargos_depositos,
-        row.creditos_redondeos,
-        row.total,
-        row.diferencia,
-        row.severidad,
-        row.alertas.join(' | ')
-    ]);
-    const csv = [headers, ...rows].map((row) => row.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
-    const blob = new Blob(['\ufeff' + csv], {type: 'text/csv;charset=utf-8;'});
+    const rows = problemRows();
+    const months = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO','JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
+    const reportMonth = Number((currentReport.mes_reporte || '').split('-')[1] || 0);
+    const summaryData = currentReport.resumen || {};
+    const moneyCell = (value) => Number(value || 0).toLocaleString('es-MX', {style:'currency', currency:'MXN'});
+    const rowsHtml = rows.map((row, index) => {
+        const linked = row.escuelas_vinculadas?.[0];
+        const suggested = row.sugerencias_escuela?.[0];
+        const cct = linked?.cct || suggested?.cct || '';
+        const school = linked?.nombre || suggested?.nombre || 'SIN ESCUELA VINCULADA';
+        const estado = rowCase(row);
+        const estadoClass = estado.includes('CORRECTO') ? 'status-ok' : estado.includes('MUCHOS') ? 'status-warn' : 'status-bad';
+        const monthCells = months.map((_, monthIndex) => `<td class="money">${monthIndex + 1 === reportMonth ? moneyCell(row.total) : ''}</td>`).join('');
+        return `<tr class="${index % 2 === 0 ? 'even' : 'odd'}">
+            <td>${index + 1}</td>
+            <td class="${estadoClass}">${escapeHtml(estado)}</td>
+            <td>${escapeHtml(currentReport.mes_reporte || '')}</td>
+            <td>${escapeHtml(row.rpu)}</td>
+            <td>${escapeHtml(row.tarifa || '')}</td>
+            <td>${escapeHtml(row.nombre || '')}</td>
+            <td>${escapeHtml(row.poblacion || '')}</td>
+            <td>${escapeHtml(cct)}</td>
+            <td>${escapeHtml(school)}</td>
+            <td>${escapeHtml(row.tipo_periodo || '')}</td>
+            <td>${escapeHtml(row.desde || '')}</td>
+            <td>${escapeHtml(row.hasta || '')}</td>
+            <td>${escapeHtml(row.dias || '')}</td>
+            <td class="number">${number.format(row.consumo || 0)}</td>
+            ${monthCells}
+            <td class="money total">${moneyCell(row.total)}</td>
+            <td class="money">${moneyCell(row.tendencia?.diferencia_total || 0)}</td>
+            <td>${escapeHtml(row.alertas?.join(' | ') || 'Sin ajuste: revisar aumento')}</td>
+        </tr>`;
+    }).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8">
+    <style>
+        body{font-family:Arial,sans-serif}
+        table{border-collapse:collapse;width:100%}
+        td,th{border:1px solid #4aa8d8;font-size:10px;padding:4px;text-align:center;vertical-align:middle}
+        .brand td{border:0;font-weight:bold}
+        .brand-title{font-size:15px;text-align:center}
+        .brand-sub{font-size:12px;text-align:center}
+        .red-band td{background:#d60000;color:#fff;font-size:12px;font-weight:bold;text-align:center}
+        .summary td{background:#f6f0df;border-color:#d8c894;font-weight:bold}
+        th{background:#92d050;color:#000;font-weight:bold}
+        .even td{background:#d9f2ff}
+        .odd td{background:#ffffff}
+        .status-ok{background:#c6efce!important;color:#006100;font-weight:bold}
+        .status-warn{background:#ffeb9c!important;color:#9c6500;font-weight:bold}
+        .status-bad{background:#ffc7ce!important;color:#9c0006;font-weight:bold}
+        .money{text-align:right;mso-number-format:"\\0022$\\0022#,##0.00"}
+        .number{text-align:right}
+        .total{font-weight:bold;background:#e2f0d9!important}
+    </style></head><body>
+    <table>
+        <tr class="brand"><td colspan="7" style="text-align:left">SECRETARIA DE EDUCACION GUERRERO</td><td colspan="15" class="brand-title">REPORTE CONCENTRADO DE REVISION CFE</td><td colspan="7" style="text-align:right">Sistema de Consolidacion Educativa</td></tr>
+        <tr class="brand"><td colspan="29" class="brand-sub">SUBSECRETARIA DE ADMINISTRACION Y FINANZAS - DIRECCION DE RECURSOS MATERIALES</td></tr>
+        <tr class="red-band"><td colspan="29">REPORTE DE CASOS CON AJUSTES, MUCHOS DIAS O AUMENTOS SIN AJUSTE</td></tr>
+        <tr class="summary"><td colspan="4">Reporte: ${escapeHtml(currentReport.archivo || '')}</td><td colspan="3">Periodo: ${escapeHtml(currentReport.mes_reporte || '')}</td><td colspan="3">Casos exportados: ${number.format(rows.length)}</td><td colspan="4">Muchos dias: ${number.format(summaryData.ajuste_muchos_dias || 0)}</td><td colspan="6">Periodo correcto y subio: ${number.format(summaryData.periodo_correcto_con_aumento || 0)}</td><td colspan="9">Sin alerta y subio: ${number.format(summaryData.sin_alerta_con_aumento || 0)}</td></tr>
+        <tr>
+            <th>N.P.</th><th>ESTADO</th><th>REPORTE</th><th>RPU</th><th>TARIFA</th><th>RECIBO CFE</th><th>POBLACION</th><th>CCT</th><th>ESCUELA</th><th>TIPO</th><th>DESDE</th><th>HASTA</th><th>DIAS</th><th>CONSUMO KWH</th>
+            ${months.map((month) => `<th>${month}</th>`).join('')}
+            <th>TOTAL</th><th>DIF. ANTERIOR</th><th>OBSERVACIONES</th>
+        </tr>
+        ${rowsHtml || '<tr><td colspan="29">Sin casos para exportar</td></tr>'}
+    </table></body></html>`;
+    const blob = new Blob(['\ufeff' + html], {type: 'application/vnd.ms-excel;charset=utf-8;'});
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'ajustes_cfe.csv';
+    link.download = `reporte_cfe_problemas_${String(currentReport.mes_reporte || 'sin_periodo').replace(/[^0-9-]/g, '')}.xls`;
     link.click();
     URL.revokeObjectURL(url);
 });
