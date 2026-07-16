@@ -260,17 +260,22 @@ function renderRiskRpus(data) {
     const periods = data.periodos || [];
     const rows = data.rpus || [];
     riskPeriods.textContent = periods.length
-        ? `Analisis sobre periodos: ${periods.join(', ')}. Se muestran RPUs cuyo pago subio 50% o mas contra el periodo anterior.`
+        ? `Analisis sobre periodos: ${periods.join(', ')}. Se muestran aumentos fuertes y posibles escuelas sin operacion por consumo bajo repetido.`
         : 'Todavia no hay reportes CFE guardados para sugerir RPUs.';
     riskList.innerHTML = rows.length
         ? rows.map((row) => {
             const linked = Boolean(row.cct);
+            const type = row.riesgo_tipo || 'incremento';
+            const typeLabel = type === 'consumo_bajo' ? 'Consumo bajo' : (type === 'mixto' ? 'Mixto' : 'Incremento');
+            const detail = type === 'consumo_bajo'
+                ? `<small><b>Consumo bajo:</b> ${number.format(row.consumo || 0)} kWh actual - promedio ${number.format(row.consumo_promedio || 0)} kWh - ${escapeHtml(row.periodos_bajo_consumo || 0)} periodos bajos</small>`
+                : `<small><b>Incremento:</b> ${escapeHtml(row.incremento_porcentaje || 0)}% - ${money.format(row.total_anterior || 0)} (${escapeHtml(row.periodo_anterior || 'previo')}) -> ${money.format(row.total || 0)} (${escapeHtml(row.periodo || 'actual')})</small>`;
             return `<button class="risk-rpu-item ${linked ? 'is-linked' : 'is-unlinked'}" type="button" data-rpu="${escapeHtml(row.rpu)}">
             <span class="risk-score">${escapeHtml(row.score)}</span>
             <span>
                 <strong>${escapeHtml(row.rpu)} - ${escapeHtml(row.nombre || 'Sin nombre CFE')}</strong>
-                <small><b>CFE:</b> ${escapeHtml(row.poblacion || 'Sin poblacion')} - Tarifa ${escapeHtml(row.tarifa || 'N/D')} - ${escapeHtml(row.periodo)}</small>
-                <small><b>Incremento:</b> ${escapeHtml(row.incremento_porcentaje || 0)}% - ${money.format(row.total_anterior || 0)} (${escapeHtml(row.periodo_anterior || 'previo')}) -> ${money.format(row.total || 0)} (${escapeHtml(row.periodo || 'actual')})</small>
+                <small><b>${escapeHtml(typeLabel)}:</b> ${escapeHtml(row.poblacion || 'Sin poblacion')} - Tarifa ${escapeHtml(row.tarifa || 'N/D')} - ${escapeHtml(row.periodo)}</small>
+                ${detail}
                 <small><b>Riesgo:</b> ${escapeHtml(row.motivo)} - ${number.format(row.consumo || 0)} kWh</small>
                 <small>${linked ? `<b>Escuela:</b> ${escapeHtml(row.cct)} - ${escapeHtml(row.escuela || '')} - ${escapeHtml(row.nivel || row.subnivel || 'Sin nivel')} - ${escapeHtml(row.localidad || '')}` : '<b>Escuela:</b> sin vinculo confirmado'}</small>
             </span>
@@ -282,7 +287,7 @@ function renderRiskRpus(data) {
 }
 
 async function loadRiskRpus() {
-    riskPeriods.textContent = 'Calculando RPUs cuyo pago aumento 50% o mas contra el periodo anterior...';
+    riskPeriods.textContent = 'Calculando aumentos fuertes, consumos en cero y consumos muy bajos repetidos...';
     const body = new URLSearchParams({accion: 'sugerir_rpus_malos', csrf: token});
     const response = await fetch('../controllers/rpuController.php', {method: 'POST', body});
     const data = await response.json();

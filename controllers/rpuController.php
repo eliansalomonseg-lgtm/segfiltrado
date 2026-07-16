@@ -84,10 +84,22 @@ class RpuController
                 $subioTotal = $anterior ? (float) $ultima['total'] - (float) $anterior['total'] : 0;
                 $totalAnterior = $anterior ? (float) $anterior['total'] : 0;
                 $incrementoPorcentaje = $totalAnterior > 0 ? ($subioTotal / $totalAnterior) * 100 : 0;
-                if ($incrementoPorcentaje < 50) {
+                $periodosBajoConsumo = count(array_filter($filas, fn (array $fila): bool => (float) $fila['consumo'] <= 20 || (float) $fila['total'] <= 100));
+                $consumoPromedio = count($filas) > 0 ? array_sum(array_column($filas, 'consumo')) / count($filas) : 0;
+                $consumoActualBajo = (float) $ultima['consumo'] <= 20 || (float) $ultima['total'] <= 100;
+                $consumoCeroActual = (float) $ultima['consumo'] <= 0 || (float) $ultima['total'] <= 0;
+                $riesgoIncremento = $incrementoPorcentaje >= 50;
+                $riesgoBajoConsumo = $consumoActualBajo && ($periodosBajoConsumo >= 2 || $consumoCeroActual);
+                if (!$riesgoIncremento && !$riesgoBajoConsumo) {
                     continue;
                 }
-                $score = 50 + (int) min(45, round($incrementoPorcentaje / 2));
+                $score = $riesgoIncremento ? 50 + (int) min(45, round($incrementoPorcentaje / 2)) : 58;
+                if ($riesgoBajoConsumo) {
+                    $score += $consumoCeroActual ? 22 : 12;
+                    if ($periodosBajoConsumo >= 3) {
+                        $score += 8;
+                    }
+                }
                 if (!$grupo['cct']) {
                     $score += 8;
                 } elseif ((int) $ultima['severidad'] >= 4 || $alertas >= 2) {
@@ -119,8 +131,11 @@ class RpuController
                     'max_severidad' => $maxSeveridad,
                     'diferencia_total' => $subioTotal,
                     'incremento_porcentaje' => round($incrementoPorcentaje, 1),
+                    'periodos_bajo_consumo' => $periodosBajoConsumo,
+                    'consumo_promedio' => round($consumoPromedio, 2),
+                    'riesgo_tipo' => $riesgoBajoConsumo && !$riesgoIncremento ? 'consumo_bajo' : ($riesgoBajoConsumo ? 'mixto' : 'incremento'),
                     'score' => min(100, $score),
-                    'motivo' => $this->motivoRiesgo($grupo['cct'] !== null, $alertas, $maxSeveridad, $subioTotal, (float) $ultima['total'], $incrementoPorcentaje)
+                    'motivo' => $this->motivoRiesgo($grupo['cct'] !== null, $alertas, $maxSeveridad, $subioTotal, (float) $ultima['total'], $incrementoPorcentaje, $riesgoBajoConsumo, $periodosBajoConsumo, (float) $ultima['consumo'])
                 ];
             }
             usort($rpus, fn (array $a, array $b): int => $b['score'] <=> $a['score']);
@@ -423,13 +438,19 @@ class RpuController
         ];
     }
 
-    private function motivoRiesgo(bool $vinculado, int $alertas, int $maxSeveridad, float $subioTotal, float $total, float $incrementoPorcentaje): string
+    private function motivoRiesgo(bool $vinculado, int $alertas, int $maxSeveridad, float $subioTotal, float $total, float $incrementoPorcentaje, bool $riesgoBajoConsumo, int $periodosBajoConsumo, float $consumoActual): string
     {
         $motivos = [];
         if ($incrementoPorcentaje >= 70) {
             $motivos[] = 'incremento critico ' . round($incrementoPorcentaje, 1) . '%';
         } elseif ($incrementoPorcentaje >= 50) {
             $motivos[] = 'incremento alto ' . round($incrementoPorcentaje, 1) . '%';
+        }
+        if ($riesgoBajoConsumo) {
+            $motivos[] = $consumoActual <= 0 ? 'sin consumo actual' : 'consumo muy bajo';
+            if ($periodosBajoConsumo >= 2) {
+                $motivos[] = $periodosBajoConsumo . ' periodos bajos';
+            }
         }
         if (!$vinculado) {
             $motivos[] = 'sin vinculo';
