@@ -31,7 +31,7 @@ if (empty($_SESSION['seg_csrf'])) {
         <div>
             <span class="eyebrow">AUDITORIA CFE</span>
             <h1>Ajustes y cobros atipicos</h1>
-            <p>Sube un reporte CFE para detectar periodos fuera de regla, cargos, diferencias y cobros sin consumo.</p>
+                <p>Sube un reporte CFE para detectar cuando las fechas del recibo no coinciden con el periodo de pago esperado.</p>
         </div>
         <span class="alert-gold">01, 02, 1A, 1B, 1C, 1E bimestral | 03, 68, 78 mensual</span>
     </section>
@@ -99,7 +99,7 @@ if (empty($_SESSION['seg_csrf'])) {
                 </label>
             </div>
             <div class="d-flex flex-wrap gap-2">
-                <button class="btn-seg compact-action btn-sync-catalogs" type="submit" name="exportar_tipo" value="ajustes_mes"><i class="bi bi-file-earmark-excel me-2"></i>Ajustes del mes</button>
+                <button class="btn-seg compact-action btn-sync-catalogs" type="submit" name="exportar_tipo" value="ajustes_mes"><i class="bi bi-file-earmark-excel me-2"></i>Ajustes por fechas</button>
                 <button class="btn-seg compact-action btn-sync-catalogs" type="submit" name="exportar_tipo" value="bajo_consumo_mes"><i class="bi bi-battery me-2"></i>Consumo muy bajo</button>
             </div>
         </form>

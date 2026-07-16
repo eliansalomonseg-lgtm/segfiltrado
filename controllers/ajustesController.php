@@ -531,12 +531,17 @@ class AjustesController
         $tipoPeriodo = (string) ($fila['tipo_periodo'] ?? '');
         $maximo = $tipoPeriodo === 'mensual' ? 35 : 75;
         $minimo = $tipoPeriodo === 'mensual' ? 25 : 50;
+        $periodoEsperado = $tipoPeriodo === 'mensual' ? 'Mensual: de 25 a 35 dias' : 'Bimestral: de 50 a 75 dias';
         $periodoCorrecto = $dias !== null && $dias >= $minimo && $dias <= $maximo;
         $totalActual = (float) ($fila['total'] ?? 0);
         $totalAnterior = $fila['total_anterior'] !== null ? (float) $fila['total_anterior'] : null;
         $aumento = $totalAnterior !== null ? $totalActual - $totalAnterior : 0.0;
-        $alertas = trim((string) ($fila['alertas'] ?? ''));
-        $muchosDias = $dias !== null && $dias > $maximo;
+        $hasta = trim((string) ($fila['hasta'] ?? ''));
+        $fechaHastaFuera = false;
+        if (preg_match('/^(\d{4})-(\d{2})-\d{2}$/', $hasta, $coincidencia)) {
+            $fechaHastaFuera = (int) $coincidencia[1] !== (int) ($fila['anio'] ?? 0) || (int) $coincidencia[2] !== (int) ($fila['mes'] ?? 0);
+        }
+        $periodoFueraRegla = $dias === null || !$periodoCorrecto || $fechaHastaFuera;
         $subioSinAjuste = $periodoCorrecto && $aumento > 0;
         $sinVinculo = trim((string) ($fila['ccts_vinculados'] ?? '')) === '';
         if ($modo === 'bajo_consumo') {
@@ -562,6 +567,7 @@ class AjustesController
                 'poblacion' => (string) ($fila['poblacion_cfe'] ?? ''),
                 'tarifa' => (string) ($fila['tarifa_cfe'] ?? ''),
                 'periodo' => trim((string) ($fila['desde'] ?? '') . ' / ' . (string) ($fila['hasta'] ?? '')),
+                'periodo_esperado' => $periodoEsperado,
                 'dias' => $dias,
                 'consumo' => $consumo,
                 'total' => $totalActual,
@@ -570,14 +576,17 @@ class AjustesController
             ];
         }
 
-        if (!$muchosDias && $alertas === '' && !$subioSinAjuste) {
+        if (!$periodoFueraRegla && !$subioSinAjuste) {
             return null;
         }
 
-        if ($muchosDias || $alertas !== '') {
+        if ($periodoFueraRegla) {
             $seccion = 'ajustes';
-            $situacion = $muchosDias ? 'CON AJUSTE POR MUCHOS DIAS' : 'CON AJUSTE';
-            $mensaje = $alertas !== '' ? $alertas : 'El recibo trae mas dias de los esperados para su tarifa.';
+            $situacion = 'AJUSTE POR FECHAS';
+            $mensaje = 'La tarifa ' . (string) ($fila['tarifa_cfe'] ?? '') . ' debe ser ' . strtolower($periodoEsperado) . ', pero el recibo trae ' . (string) ($fila['desde'] ?? '') . ' al ' . (string) ($fila['hasta'] ?? '') . ' (' . (string) ($dias ?? 'sin dias') . ' dias).';
+            if ($fechaHastaFuera) {
+                $mensaje .= ' La fecha HASTA no corresponde al mes del reporte ' . sprintf('%04d-%02d', (int) ($fila['anio'] ?? 0), (int) ($fila['mes'] ?? 0)) . '.';
+            }
         } elseif ($subioSinAjuste) {
             $seccion = 'aumentos';
             $situacion = 'SUBIO SIN AJUSTE';
@@ -598,6 +607,7 @@ class AjustesController
             'poblacion' => (string) ($fila['poblacion_cfe'] ?? ''),
             'tarifa' => (string) ($fila['tarifa_cfe'] ?? ''),
             'periodo' => trim((string) ($fila['desde'] ?? '') . ' / ' . (string) ($fila['hasta'] ?? '')),
+            'periodo_esperado' => $periodoEsperado,
             'dias' => $dias,
             'consumo' => (float) ($fila['consumo'] ?? 0),
             'total' => $totalActual,
@@ -641,28 +651,28 @@ class AjustesController
             .number{text-align:right}
             .total{font-weight:bold;background:#e2f0d9!important}
         </style></head><body><table>';
-        $html .= '<tr class="brand"><td colspan="15" class="brand-title">SECRETARIA DE EDUCACION GUERRERO</td></tr>';
-        $html .= '<tr class="brand"><td colspan="15" class="brand-sub">SUBSECRETARIA DE ADMINISTRACION Y FINANZAS - DIRECCION DE RECURSOS MATERIALES</td></tr>';
-        $html .= '<tr class="red-band"><td colspan="15">' . $this->excelTexto($titulo) . '</td></tr>';
+        $html .= '<tr class="brand"><td colspan="16" class="brand-title">SECRETARIA DE EDUCACION GUERRERO</td></tr>';
+        $html .= '<tr class="brand"><td colspan="16" class="brand-sub">SUBSECRETARIA DE ADMINISTRACION Y FINANZAS - DIRECCION DE RECURSOS MATERIALES</td></tr>';
+        $html .= '<tr class="red-band"><td colspan="16">' . $this->excelTexto($titulo) . '</td></tr>';
         if ($modo === 'bajo_consumo') {
-            $html .= '<tr class="director"><td colspan="15">Lectura rapida: en los reportes ' . $this->excelTexto($periodos) . ' hay ' . number_format($totales['bajo_consumo']) . ' RPUs con consumo de 50 kWh o menos. Son casos para revisar si la escuela esta funcionando, tiene falta de servicio o solo paga el minimo.</td></tr>';
-            $html .= '<tr class="summary"><td colspan="5">Reportes incluidos: ' . $this->excelTexto($periodos) . '</td><td colspan="5">Consumo muy bajo: ' . number_format($totales['bajo_consumo']) . '</td><td colspan="5">Sin escuela vinculada: ' . number_format($totales['sin_vinculo']) . '</td></tr>';
+            $html .= '<tr class="director"><td colspan="16">Lectura rapida: en los reportes ' . $this->excelTexto($periodos) . ' hay ' . number_format($totales['bajo_consumo']) . ' RPUs con consumo de 50 kWh o menos. Son casos para revisar si la escuela esta funcionando, tiene falta de servicio o solo paga el minimo.</td></tr>';
+            $html .= '<tr class="summary"><td colspan="6">Reportes incluidos: ' . $this->excelTexto($periodos) . '</td><td colspan="5">Consumo muy bajo: ' . number_format($totales['bajo_consumo']) . '</td><td colspan="5">Sin escuela vinculada: ' . number_format($totales['sin_vinculo']) . '</td></tr>';
         } else {
-            $html .= '<tr class="director"><td colspan="15">Lectura rapida: en los reportes ' . $this->excelTexto($periodos) . ' hay ' . number_format($totales['ajustes']) . ' casos con ajuste o muchos dias, ' . number_format($totales['aumentos']) . ' casos que subieron sin ajuste y ' . number_format($totales['sin_vinculo']) . ' casos que se deben explicar por RPU porque no tienen escuela vinculada.</td></tr>';
-            $html .= '<tr class="summary"><td colspan="4">Reportes incluidos: ' . $this->excelTexto($periodos) . '</td><td colspan="3">Con ajuste: ' . number_format($totales['ajustes']) . '</td><td colspan="3">Subieron sin ajuste: ' . number_format($totales['aumentos']) . '</td><td colspan="5">Sin escuela vinculada dentro de alertas: ' . number_format($totales['sin_vinculo']) . '</td></tr>';
+            $html .= '<tr class="director"><td colspan="16">Lectura rapida: un ajuste es cuando las fechas DESDE/HASTA del recibo no coinciden con su periodo de pago. Mensual debe traer 25 a 35 dias; bimestral debe traer 50 a 75 dias. En los reportes ' . $this->excelTexto($periodos) . ' hay ' . number_format($totales['ajustes']) . ' ajustes por fechas y ' . number_format($totales['aumentos']) . ' casos que subieron aunque el periodo si esta correcto.</td></tr>';
+            $html .= '<tr class="summary"><td colspan="4">Reportes incluidos: ' . $this->excelTexto($periodos) . '</td><td colspan="4">Ajustes por fechas: ' . number_format($totales['ajustes']) . '</td><td colspan="4">Subieron sin ajuste: ' . number_format($totales['aumentos']) . '</td><td colspan="4">Sin escuela vinculada: ' . number_format($totales['sin_vinculo']) . '</td></tr>';
         }
-        $html .= '<tr><th>N.P.</th><th>SITUACION</th><th>ESCUELA O RPU</th><th>CCT</th><th>NIVEL</th><th>RPU</th><th>RECIBO CFE</th><th>POBLACION CFE</th><th>TARIFA</th><th>PERIODO</th><th>DIAS</th><th>CONSUMO KWH</th><th>TOTAL ACTUAL</th><th>SUBIO VS ANTERIOR</th><th>QUE DECIR</th></tr>';
+        $html .= '<tr><th>N.P.</th><th>SITUACION</th><th>ESCUELA O RPU</th><th>CCT</th><th>NIVEL</th><th>RPU</th><th>RECIBO CFE</th><th>POBLACION CFE</th><th>TARIFA</th><th>PERIODO ESPERADO</th><th>PERIODO QUE TRAE CFE</th><th>DIAS</th><th>CONSUMO KWH</th><th>TOTAL ACTUAL</th><th>SUBIO VS ANTERIOR</th><th>EXPLICACION SIMPLE</th></tr>';
 
         foreach ($reportes as $reporte) {
             $reporteId = (int) $reporte['id'];
             $periodo = sprintf('%04d-%02d', (int) $reporte['anio'], (int) $reporte['mes']);
-            $html .= '<tr class="report"><td colspan="15">REPORTE ' . $this->excelTexto($periodo) . ' - ' . $this->excelTexto((string) $reporte['archivo']) . '</td></tr>';
+            $html .= '<tr class="report"><td colspan="16">REPORTE ' . $this->excelTexto($periodo) . ' - ' . $this->excelTexto((string) $reporte['archivo']) . '</td></tr>';
             $grupo = $casos[$reporteId] ?? [];
             if ($modo === 'bajo_consumo') {
                 $html .= $this->excelSeccionDirectores($grupo, 'bajo_consumo', '1. CONSUMO MUY BAJO 0 A 50 KWH');
             } else {
-                $html .= $this->excelSeccionDirectores($grupo, 'ajustes', '1. CON AJUSTE O MUCHOS DIAS');
-                $html .= $this->excelSeccionDirectores($grupo, 'aumentos', '2. SUBIERON SIN AJUSTE');
+                $html .= $this->excelSeccionDirectores($grupo, 'ajustes', '1. AJUSTES POR FECHAS QUE NO COINCIDEN');
+                $html .= $this->excelSeccionDirectores($grupo, 'aumentos', '2. SUBIERON PERO SU PERIODO SI ESTA CORRECTO');
             }
         }
 
@@ -674,9 +684,9 @@ class AjustesController
         $items = array_values(array_filter($grupo, static fn (array $caso): bool => $caso['seccion'] === $seccion));
         $clase = str_replace('_', '-', $seccion);
         if (!$items) {
-            return '<tr class="section section-' . $clase . '"><td colspan="15">' . $this->excelTexto($titulo) . ': SIN CASOS</td></tr>';
+            return '<tr class="section section-' . $clase . '"><td colspan="16">' . $this->excelTexto($titulo) . ': SIN CASOS</td></tr>';
         }
-        $html = '<tr class="section section-' . $clase . '"><td colspan="15">' . $this->excelTexto($titulo) . ' (' . number_format(count($items)) . ')</td></tr>';
+        $html = '<tr class="section section-' . $clase . '"><td colspan="16">' . $this->excelTexto($titulo) . ' (' . number_format(count($items)) . ')</td></tr>';
         foreach ($items as $indice => $caso) {
             $html .= '<tr class="' . ($indice % 2 === 0 ? 'even' : 'odd') . '">';
             $html .= '<td>' . ($indice + 1) . '</td>';
@@ -688,6 +698,7 @@ class AjustesController
             $html .= '<td>' . $this->excelTexto($caso['recibo']) . '</td>';
             $html .= '<td>' . $this->excelTexto($caso['poblacion']) . '</td>';
             $html .= '<td>' . $this->excelTexto($caso['tarifa']) . '</td>';
+            $html .= '<td>' . $this->excelTexto($caso['periodo_esperado'] ?? '') . '</td>';
             $html .= '<td>' . $this->excelTexto($caso['periodo']) . '</td>';
             $html .= '<td>' . $this->excelTexto((string) ($caso['dias'] ?? '')) . '</td>';
             $html .= '<td class="number">' . number_format((float) $caso['consumo'], 2) . '</td>';
