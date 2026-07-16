@@ -49,8 +49,8 @@ if (empty($_SESSION['seg_csrf'])) {
         <div class="results-head">
             <div>
                 <span class="eyebrow">REVISION PRIORITARIA</span>
-                <h2>RPUs sugeridos por los ultimos 3 periodos</h2>
-                <p class="section-note">Incluye aumentos fuertes y consumo bajo repetido en los ultimos tres periodos cargados.</p>
+                <h2>RPUs sugeridos por los ultimos 6 periodos</h2>
+                <p class="section-note">Incluye aumentos fuertes y consumo bajo repetido en los ultimos seis periodos cargados.</p>
             </div>
             <button id="reload-risk-rpus" class="btn-seg compact-action" type="button"><i class="bi bi-arrow-clockwise me-2"></i>Actualizar</button>
         </div>
@@ -260,13 +260,15 @@ function renderRiskRpus(data) {
     const periods = data.periodos || [];
     const rows = data.rpus || [];
     riskPeriods.textContent = periods.length
-        ? `Analisis de los ultimos 3 periodos: ${periods.join(', ')}. Se muestran aumentos fuertes y posibles escuelas sin operacion por consumo bajo repetido.`
+        ? `Analisis de los ultimos 6 periodos: ${periods.join(', ')}. Se muestran aumentos fuertes y posibles escuelas sin operacion por consumo bajo repetido.`
         : 'Todavia no hay reportes CFE guardados para sugerir RPUs.';
     riskList.innerHTML = rows.length
         ? rows.map((row) => {
             const linked = Boolean(row.cct);
             const type = row.riesgo_tipo || 'incremento';
             const typeLabel = type === 'consumo_bajo' ? 'Consumo bajo' : (type === 'mixto' ? 'Mixto' : 'Incremento');
+            const schoolName = linked ? `${row.cct} - ${row.escuela || 'Escuela sin nombre'}` : 'Sin escuela vinculada';
+            const history = (row.historial_periodos || []).map((item) => `${escapeHtml(item.periodo)}: ${money.format(item.total || 0)} / ${number.format(item.consumo || 0)} kWh`).join(' | ');
             const detail = type === 'consumo_bajo'
                 ? `<small><b>Consumo bajo:</b> ${number.format(row.consumo || 0)} kWh actual - promedio ${number.format(row.consumo_promedio || 0)} kWh - ${escapeHtml(row.periodos_bajo_consumo || 0)} periodos bajos</small>`
                 : `<small><b>Incremento:</b> ${escapeHtml(row.incremento_porcentaje || 0)}% - ${money.format(row.total_anterior || 0)} (${escapeHtml(row.periodo_anterior || 'previo')}) -> ${money.format(row.total || 0)} (${escapeHtml(row.periodo || 'actual')})</small>`;
@@ -274,10 +276,11 @@ function renderRiskRpus(data) {
             <span class="risk-score">${escapeHtml(row.score)}</span>
             <span>
                 <strong>${escapeHtml(row.rpu)} - ${escapeHtml(row.nombre || 'Sin nombre CFE')}</strong>
+                <small><b>Escuela:</b> ${escapeHtml(schoolName)}${linked ? ` - ${escapeHtml(row.nivel || row.subnivel || 'Sin nivel')} - ${escapeHtml(row.localidad || '')}` : ''}</small>
                 <small><b>${escapeHtml(typeLabel)}:</b> ${escapeHtml(row.poblacion || 'Sin poblacion')} - Tarifa ${escapeHtml(row.tarifa || 'N/D')} - ${escapeHtml(row.periodo)}</small>
                 ${detail}
+                <small><b>Ultimos 6:</b> ${history || 'Sin historial suficiente'}</small>
                 <small><b>Riesgo:</b> ${escapeHtml(row.motivo)} - ${number.format(row.consumo || 0)} kWh</small>
-                <small>${linked ? `<b>Escuela:</b> ${escapeHtml(row.cct)} - ${escapeHtml(row.escuela || '')} - ${escapeHtml(row.nivel || row.subnivel || 'Sin nivel')} - ${escapeHtml(row.localidad || '')}` : '<b>Escuela:</b> sin vinculo confirmado'}</small>
             </span>
             <em class="${linked ? 'risk-linked' : 'risk-unlinked'}">${linked ? 'Vinculado' : 'Sin vinculo'}</em>
             <i class="bi bi-chevron-right"></i>
@@ -287,7 +290,7 @@ function renderRiskRpus(data) {
 }
 
 async function loadRiskRpus() {
-    riskPeriods.textContent = 'Calculando los ultimos 3 periodos: aumentos fuertes, consumos en cero y consumos muy bajos repetidos...';
+    riskPeriods.textContent = 'Calculando los ultimos 6 periodos: aumentos fuertes, consumos en cero y consumos muy bajos repetidos...';
     const body = new URLSearchParams({accion: 'sugerir_rpus_malos', csrf: token});
     const response = await fetch('../controllers/rpuController.php', {method: 'POST', body});
     const data = await response.json();

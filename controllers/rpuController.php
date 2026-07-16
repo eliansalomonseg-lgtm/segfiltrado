@@ -15,7 +15,7 @@ class RpuController
             $conexion = Conexion::conectar();
             $this->prepararTablas($conexion);
             $periodos = $conexion->query(
-                'SELECT DISTINCT anio, mes FROM cfe_reportes ORDER BY anio DESC, mes DESC LIMIT 3'
+                'SELECT DISTINCT anio, mes FROM cfe_reportes ORDER BY anio DESC, mes DESC LIMIT 6'
             )->fetchAll();
             if (!$periodos) {
                 $this->responder(['ok' => true, 'periodos' => [], 'rpus' => []]);
@@ -133,6 +133,14 @@ class RpuController
                     'incremento_porcentaje' => round($incrementoPorcentaje, 1),
                     'periodos_bajo_consumo' => $periodosBajoConsumo,
                     'consumo_promedio' => round($consumoPromedio, 2),
+                    'historial_periodos' => array_map(
+                        fn (array $fila): array => [
+                            'periodo' => $fila['periodo'],
+                            'total' => (float) $fila['total'],
+                            'consumo' => (float) $fila['consumo']
+                        ],
+                        $filas
+                    ),
                     'riesgo_tipo' => $riesgoBajoConsumo && !$riesgoIncremento ? 'consumo_bajo' : ($riesgoBajoConsumo ? 'mixto' : 'incremento'),
                     'score' => min(100, $score),
                     'motivo' => $this->motivoRiesgo($grupo['cct'] !== null, $alertas, $maxSeveridad, $subioTotal, (float) $ultima['total'], $incrementoPorcentaje, $riesgoBajoConsumo, $periodosBajoConsumo, (float) $ultima['consumo'])
