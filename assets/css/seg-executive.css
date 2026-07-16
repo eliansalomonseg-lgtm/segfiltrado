@@ -846,7 +846,7 @@ body {
 .rpu-grid {
     display: grid;
     gap: 14px;
-    grid-template-columns: minmax(360px, .9fr) minmax(420px, 1.1fr);
+    grid-template-columns: 1fr;
     margin-bottom: 14px;
 }
 
@@ -962,6 +962,52 @@ body {
     display: grid;
     gap: 8px;
     margin-top: 12px;
+}
+
+.risk-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.risk-filter-bar button {
+    background: #fff;
+    border: 1px solid var(--seg-border);
+    border-radius: 999px;
+    color: var(--seg-muted);
+    font-size: 11px;
+    font-weight: 900;
+    padding: 7px 11px;
+}
+
+.risk-filter-bar button.active {
+    background: var(--seg-guinda);
+    border-color: var(--seg-guinda);
+    color: #fff;
+}
+
+.risk-summary {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(5, minmax(120px, 1fr));
+    margin-top: 12px;
+}
+
+.risk-summary span {
+    background: #fff;
+    border: 1px solid var(--seg-border);
+    border-radius: 10px;
+    color: var(--seg-muted);
+    font-size: 10px;
+    font-weight: 800;
+    padding: 9px 10px;
+}
+
+.risk-summary b {
+    color: var(--seg-text);
+    display: block;
+    font-size: 14px;
 }
 
 .risk-rpu-item {
@@ -1309,6 +1355,10 @@ body {
     .risk-rpu-item em,
     .risk-rpu-item i {
         display: none;
+    }
+
+    .risk-summary {
+        grid-template-columns: 1fr 1fr;
     }
 
     .pager {

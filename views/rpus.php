@@ -55,6 +55,15 @@ if (empty($_SESSION['seg_csrf'])) {
             <button id="reload-risk-rpus" class="btn-seg compact-action" type="button"><i class="bi bi-arrow-clockwise me-2"></i>Actualizar</button>
         </div>
         <div id="risk-rpu-periods" class="adjustment-status">Buscando periodos cargados...</div>
+        <div class="risk-filter-bar" id="risk-filter-bar" hidden>
+            <button type="button" data-risk-filter="todos" class="active">Todos</button>
+            <button type="button" data-risk-filter="pago_minimo">Pago minimo</button>
+            <button type="button" data-risk-filter="sin_consumo">Sin consumo</button>
+            <button type="button" data-risk-filter="consumo_bajo">Consume poco</button>
+            <button type="button" data-risk-filter="incremento">Subio mucho</button>
+            <button type="button" data-risk-filter="sin_vinculo">Sin vinculo</button>
+        </div>
+        <div id="risk-rpu-summary" class="risk-summary" hidden></div>
         <div id="risk-rpu-list" class="risk-rpu-list"></div>
         <div id="risk-rpu-pager" class="risk-pager" hidden></div>
     </section>
@@ -89,15 +98,6 @@ if (empty($_SESSION['seg_csrf'])) {
                 <span class="alert-gold" id="rpu-link-state">Sin vinculo</span>
             </div>
             <div id="rpu-school" class="rpu-school-card"></div>
-            <div id="rpu-suggestions" class="rpu-suggestions"></div>
-        </article>
-
-        <article class="results-card rpu-map-card">
-            <div class="results-head">
-                <div><span class="eyebrow">MAPA</span><h2>Ubicacion aproximada</h2></div>
-                <a id="rpu-map-link" class="clear-link" href="#" target="_blank" rel="noopener">Abrir mapa</a>
-            </div>
-            <iframe id="rpu-map" title="Mapa del RPU" loading="lazy"></iframe>
         </article>
     </section>
 
@@ -136,19 +136,20 @@ const summary = document.getElementById('rpu-summary');
 const workspace = document.getElementById('rpu-workspace');
 const historyZone = document.getElementById('rpu-history-zone');
 const schoolBox = document.getElementById('rpu-school');
-const suggestionsBox = document.getElementById('rpu-suggestions');
 const linkState = document.getElementById('rpu-link-state');
-const map = document.getElementById('rpu-map');
-const mapLink = document.getElementById('rpu-map-link');
 const chart = document.getElementById('rpu-chart');
 const historyBody = document.getElementById('rpu-history-body');
 const riskList = document.getElementById('risk-rpu-list');
 const riskPeriods = document.getElementById('risk-rpu-periods');
+const riskFilterBar = document.getElementById('risk-filter-bar');
+const riskSummary = document.getElementById('risk-rpu-summary');
 const riskPager = document.getElementById('risk-rpu-pager');
 const reloadRisk = document.getElementById('reload-risk-rpus');
 let currentRpu = '';
+let riskRowsAll = [];
 let riskRows = [];
 let riskPage = 1;
+let riskFilter = 'todos';
 const riskPageSize = 10;
 
 const money = new Intl.NumberFormat('es-MX', {style: 'currency', currency: 'MXN'});
@@ -202,23 +203,11 @@ function comparisonCard(cfe, escuela, vinculado) {
 
 function renderSchool(data) {
     const linked = data.vinculos?.[0];
-    const suggestions = data.sugerencias || [];
     const cfe = data.cfe || {};
-    linkState.textContent = linked ? 'Vinculado' : suggestions.length ? 'Sugerencia disponible' : 'Sin vinculo';
+    linkState.textContent = linked ? 'Vinculado' : 'Sin vinculo';
     schoolBox.innerHTML = linked
         ? comparisonCard(cfe, linked, true)
-        : `${cfePanel(cfe)}<div class="empty-state"><i class="bi bi-link-45deg"></i><strong>RPU sin vinculo confirmado</strong><span>Compara la poblacion CFE contra localidad y municipio de las sugerencias antes de vincular.</span></div>`;
-    suggestionsBox.innerHTML = suggestions.length && !linked
-        ? `<h3>Sugerencias para vincular</h3>${suggestions.map((item) => `<div class="rpu-suggestion">
-            ${comparisonCard(cfe, item, false)}
-            <button class="btn-seg compact-action" type="button" data-cct="${escapeHtml(item.cct)}">Vincular</button>
-        </div>`).join('')}`
-        : '';
-}
-
-function renderMap(data) {
-    map.src = data.mapa?.url || 'https://www.google.com/maps?q=Guerrero%20Mexico&output=embed';
-    mapLink.href = (data.mapa?.url || '').replace('&output=embed', '');
+        : `${cfePanel(cfe)}<div class="empty-state"><i class="bi bi-link-45deg"></i><strong>RPU sin vinculo confirmado</strong><span>Este medidor todavia no tiene escuela asignada.</span></div>`;
 }
 
 function renderChart(historial) {
@@ -253,7 +242,6 @@ function renderHistory(historial) {
 function render(data) {
     setSummary(data.resumen || {});
     renderSchool(data);
-    renderMap(data);
     renderChart(data.historial || []);
     renderHistory(data.historial || []);
     summary.hidden = false;
@@ -263,12 +251,40 @@ function render(data) {
 
 function renderRiskRpus(data) {
     const periods = data.periodos || [];
-    riskRows = data.rpus || [];
+    riskRowsAll = data.rpus || [];
+    riskRows = applyRiskFilter(riskRowsAll);
     riskPage = 1;
     riskPeriods.textContent = periods.length
-        ? `Ultimos 6 periodos: ${periods.join(', ')}. ${riskRows.length} casos para revisar.`
+        ? `Ultimos 6 periodos: ${periods.join(', ')}. ${riskRowsAll.length} casos para revisar.`
         : 'Todavia no hay reportes CFE guardados para sugerir RPUs.';
+    riskFilterBar.hidden = riskRowsAll.length === 0;
+    riskSummary.hidden = riskRowsAll.length === 0;
+    updateRiskFilterButtons();
     renderRiskPage();
+}
+
+function applyRiskFilter(rows) {
+    if (riskFilter === 'todos') {
+        return rows;
+    }
+    if (riskFilter === 'sin_vinculo') {
+        return rows.filter((row) => !row.cct);
+    }
+    return rows.filter((row) => row.riesgo_tipo === riskFilter || (riskFilter === 'incremento' && row.riesgo_tipo === 'mixto'));
+}
+
+function updateRiskFilterButtons() {
+    riskFilterBar.querySelectorAll('button[data-risk-filter]').forEach((button) => {
+        button.classList.toggle('active', button.dataset.riskFilter === riskFilter);
+    });
+}
+
+function renderRiskSummary(rows) {
+    const totalActual = rows.reduce((sum, row) => sum + Number(row.total || 0), 0);
+    const consumoActual = rows.reduce((sum, row) => sum + Number(row.consumo || 0), 0);
+    const sinVinculo = rows.filter((row) => !row.cct).length;
+    const pagosMinimos = rows.filter((row) => row.riesgo_tipo === 'pago_minimo' || row.riesgo_tipo === 'sin_consumo').length;
+    riskSummary.innerHTML = `<span><b>${number.format(rows.length)}</b> casos</span><span><b>${money.format(totalActual)}</b> pago actual</span><span><b>${number.format(consumoActual)}</b> kWh</span><span><b>${number.format(pagosMinimos)}</b> minimo/sin consumo</span><span><b>${number.format(sinVinculo)}</b> sin vinculo</span>`;
 }
 
 function riskLabel(type) {
@@ -282,6 +298,7 @@ function riskLabel(type) {
 }
 
 function renderRiskPage() {
+    renderRiskSummary(riskRows);
     const totalPages = Math.max(1, Math.ceil(riskRows.length / riskPageSize));
     riskPage = Math.min(Math.max(1, riskPage), totalPages);
     const start = (riskPage - 1) * riskPageSize;
@@ -355,27 +372,6 @@ form.addEventListener('submit', async (event) => {
     }
 });
 
-suggestionsBox.addEventListener('click', async (event) => {
-    const button = event.target.closest('button[data-cct]');
-    if (!button) {
-        return;
-    }
-    button.disabled = true;
-    try {
-        const body = new URLSearchParams({accion: 'vincular_rpu', csrf: token, rpu: currentRpu, cct: button.dataset.cct});
-        const response = await fetch('../controllers/rpuController.php', {method: 'POST', body});
-        const data = await response.json();
-        if (!data.ok) {
-            throw new Error(data.error || 'No fue posible vincular.');
-        }
-        statusBox.textContent = data.mensaje;
-        await searchRpu(currentRpu);
-    } catch (error) {
-        statusBox.textContent = error.message;
-        button.disabled = false;
-    }
-});
-
 riskList.addEventListener('click', async (event) => {
     const button = event.target.closest('button[data-rpu]');
     if (!button) {
@@ -387,6 +383,18 @@ riskList.addEventListener('click', async (event) => {
     } catch (error) {
         statusBox.textContent = error.message;
     }
+});
+
+riskFilterBar.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-risk-filter]');
+    if (!button) {
+        return;
+    }
+    riskFilter = button.dataset.riskFilter;
+    riskRows = applyRiskFilter(riskRowsAll);
+    riskPage = 1;
+    updateRiskFilterButtons();
+    renderRiskPage();
 });
 
 riskPager.addEventListener('click', (event) => {
