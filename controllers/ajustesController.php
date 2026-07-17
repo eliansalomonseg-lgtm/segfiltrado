@@ -529,9 +529,7 @@ class AjustesController
     {
         $dias = is_numeric($fila['dias'] ?? null) ? (int) $fila['dias'] : null;
         $tipoPeriodo = (string) ($fila['tipo_periodo'] ?? '');
-        $maximo = $tipoPeriodo === 'mensual' ? 35 : 75;
-        $minimo = $tipoPeriodo === 'mensual' ? 25 : 50;
-        $periodoEsperado = $tipoPeriodo === 'mensual' ? 'Mensual: de 25 a 35 dias' : 'Bimestral: de 50 a 75 dias';
+        [$minimo, $maximo, $periodoEsperado] = $this->rangoPeriodoEsperado($tipoPeriodo, (int) ($fila['anio'] ?? 0), (int) ($fila['mes'] ?? 0));
         $periodoCorrecto = $dias !== null && $dias >= $minimo && $dias <= $maximo;
         $totalActual = (float) ($fila['total'] ?? 0);
         $totalAnterior = $fila['total_anterior'] !== null ? (float) $fila['total_anterior'] : null;
@@ -658,7 +656,7 @@ class AjustesController
             $html .= '<tr class="director"><td colspan="16">Lectura rapida: en los reportes ' . $this->excelTexto($periodos) . ' hay ' . number_format($totales['bajo_consumo']) . ' RPUs con consumo de 50 kWh o menos. Son casos para revisar si la escuela esta funcionando, tiene falta de servicio o solo paga el minimo.</td></tr>';
             $html .= '<tr class="summary"><td colspan="6">Reportes incluidos: ' . $this->excelTexto($periodos) . '</td><td colspan="5">Consumo muy bajo: ' . number_format($totales['bajo_consumo']) . '</td><td colspan="5">Sin escuela vinculada: ' . number_format($totales['sin_vinculo']) . '</td></tr>';
         } else {
-            $html .= '<tr class="director"><td colspan="16">Lectura rapida: un ajuste es cuando las fechas DESDE/HASTA del recibo no coinciden con su periodo de pago. Mensual debe traer 25 a 35 dias; bimestral debe traer 50 a 75 dias. En los reportes ' . $this->excelTexto($periodos) . ' hay ' . number_format($totales['ajustes']) . ' ajustes por fechas y ' . number_format($totales['aumentos']) . ' casos que subieron aunque el periodo si esta correcto.</td></tr>';
+            $html .= '<tr class="director"><td colspan="16">Lectura rapida: un ajuste es cuando las fechas DESDE/HASTA del recibo no coinciden con el calendario real del mes. Mensual se compara contra los dias reales del mes; bimestral contra la suma del mes y el mes anterior. En los reportes ' . $this->excelTexto($periodos) . ' hay ' . number_format($totales['ajustes']) . ' ajustes por fechas y ' . number_format($totales['aumentos']) . ' casos que subieron aunque el periodo si esta correcto.</td></tr>';
             $html .= '<tr class="summary"><td colspan="4">Reportes incluidos: ' . $this->excelTexto($periodos) . '</td><td colspan="4">Ajustes por fechas: ' . number_format($totales['ajustes']) . '</td><td colspan="4">Subieron sin ajuste: ' . number_format($totales['aumentos']) . '</td><td colspan="4">Sin escuela vinculada: ' . number_format($totales['sin_vinculo']) . '</td></tr>';
         }
         $html .= '<tr><th>N.P.</th><th>SITUACION</th><th>ESCUELA O RPU</th><th>CCT</th><th>NIVEL</th><th>RPU</th><th>RECIBO CFE</th><th>POBLACION CFE</th><th>TARIFA</th><th>PERIODO ESPERADO</th><th>PERIODO QUE TRAE CFE</th><th>DIAS</th><th>CONSUMO KWH</th><th>TOTAL ACTUAL</th><th>SUBIO VS ANTERIOR</th><th>EXPLICACION SIMPLE</th></tr>';
@@ -708,6 +706,30 @@ class AjustesController
             $html .= '</tr>';
         }
         return $html;
+    }
+
+    private function rangoPeriodoEsperado(string $tipoPeriodo, int $anio, int $mes): array
+    {
+        if ($anio < 1900 || $mes < 1 || $mes > 12) {
+            return $tipoPeriodo === 'mensual'
+                ? [25, 35, 'Mensual: rango general de 25 a 35 dias']
+                : [50, 75, 'Bimestral: rango general de 50 a 75 dias'];
+        }
+
+        if ($tipoPeriodo === 'mensual') {
+            $diasMes = $this->diasDelMes($anio, $mes);
+            return [max(1, $diasMes - 2), $diasMes + 2, 'Mensual: mes de ' . $diasMes . ' dias, aceptado de ' . max(1, $diasMes - 2) . ' a ' . ($diasMes + 2) . ' dias'];
+        }
+
+        $mesAnterior = $mes === 1 ? 12 : $mes - 1;
+        $anioAnterior = $mes === 1 ? $anio - 1 : $anio;
+        $diasBimestre = $this->diasDelMes($anioAnterior, $mesAnterior) + $this->diasDelMes($anio, $mes);
+        return [max(1, $diasBimestre - 3), $diasBimestre + 3, 'Bimestral: bimestre de ' . $diasBimestre . ' dias, aceptado de ' . max(1, $diasBimestre - 3) . ' a ' . ($diasBimestre + 3) . ' dias'];
+    }
+
+    private function diasDelMes(int $anio, int $mes): int
+    {
+        return (int) (new DateTimeImmutable(sprintf('%04d-%02d-01', $anio, $mes)))->format('t');
     }
 
     private function excelTexto(mixed $valor): string

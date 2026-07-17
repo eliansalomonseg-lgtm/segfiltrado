@@ -1,4 +1,5 @@
 import csv
+import calendar
 import json
 import math
 import re
@@ -100,10 +101,26 @@ def periodo_esperado(tarifa, modo):
     return "bimestral", 50, 75
 
 
+def rango_dias_periodo(tipo_periodo, mes_reporte):
+    if not mes_reporte:
+        if tipo_periodo == "mensual":
+            return 25, 35, "mensual"
+        return 50, 75, "bimestral"
+    anio, mes = mes_reporte
+    if tipo_periodo == "mensual":
+        dias_mes = calendar.monthrange(anio, mes)[1]
+        return max(1, dias_mes - 2), dias_mes + 2, f"mensual de {dias_mes} dias"
+    mes_anterior = 12 if mes == 1 else mes - 1
+    anio_anterior = anio - 1 if mes == 1 else anio
+    dias_bimestre = calendar.monthrange(anio_anterior, mes_anterior)[1] + calendar.monthrange(anio, mes)[1]
+    return max(1, dias_bimestre - 3), dias_bimestre + 3, f"bimestral de {dias_bimestre} dias"
+
+
 def clasificar_alertas(fila, mes_reporte, modo_periodo):
     desde = fecha(fila["DESDE"])
     hasta = fecha(fila["HASTA"])
-    tipo_periodo, minimo_dias, maximo_dias = periodo_esperado(fila["TARIFA"], modo_periodo)
+    tipo_periodo, _, _ = periodo_esperado(fila["TARIFA"], modo_periodo)
+    minimo_dias, maximo_dias, descripcion_periodo = rango_dias_periodo(tipo_periodo, mes_reporte)
     consumo = numero(fila["CONSUMO"])
     energia = numero(fila["ENERGIA"])
     dap = numero(fila["DAP"])
@@ -118,7 +135,7 @@ def clasificar_alertas(fila, mes_reporte, modo_periodo):
     if desde and hasta:
         dias = (hasta - desde).days
         if dias < minimo_dias or dias > maximo_dias:
-            alertas.append(f"Periodo no {tipo_periodo} ({dias} dias)")
+            alertas.append(f"Periodo no coincide con {descripcion_periodo} ({dias} dias)")
             severidad += 3
         if mes_reporte and (hasta.year, hasta.month) != mes_reporte:
             alertas.append("Fecha HASTA fuera del mes del reporte")
@@ -168,7 +185,8 @@ def analizar(ruta, anio=None, mes=None, modo_periodo="automatico"):
 
     for _, fila in datos.iterrows():
         alertas, severidad, dias, desde, hasta, consumo, energia, dap, cargos, creditos, total, diferencia, tipo_periodo = clasificar_alertas(fila, mes_reporte, modo_periodo)
-        _, minimo_dias, maximo_dias = periodo_esperado(fila["TARIFA"], modo_periodo)
+        tipo_periodo, _, _ = periodo_esperado(fila["TARIFA"], modo_periodo)
+        minimo_dias, maximo_dias, _ = rango_dias_periodo(tipo_periodo, mes_reporte)
         if dias is not None and minimo_dias <= dias <= maximo_dias:
             periodo_correcto += 1
         if alertas:

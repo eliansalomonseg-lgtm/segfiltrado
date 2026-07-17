@@ -33,7 +33,7 @@ if (empty($_SESSION['seg_csrf'])) {
             <h1>Ajustes y cobros atipicos</h1>
                 <p>Sube un reporte CFE para detectar cuando las fechas del recibo no coinciden con el periodo de pago esperado.</p>
         </div>
-        <span class="alert-gold">01, 02, 1A, 1B, 1C, 1E bimestral | 03, 68, 78 mensual</span>
+        <span class="alert-gold">Valida fechas contra calendario real del mes</span>
     </section>
 
     <section class="results-card adjustment-uploader">
