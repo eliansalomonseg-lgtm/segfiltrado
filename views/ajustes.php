@@ -4,9 +4,23 @@ declare(strict_types=1);
 
 session_start();
 
+require_once __DIR__ . '/../services/conexion.php';
+
 $segBasePath = '';
 $anioActual = (int) date('Y');
 $mesActual = (int) date('n');
+$anioExportacion = $anioActual;
+$mesExportacion = $mesActual;
+
+try {
+    $conexionVista = Conexion::conectar();
+    $ultimoReporte = $conexionVista->query('SELECT anio, mes FROM cfe_reportes ORDER BY anio DESC, mes DESC, id DESC LIMIT 1')->fetch();
+    if ($ultimoReporte) {
+        $anioExportacion = (int) $ultimoReporte['anio'];
+        $mesExportacion = (int) $ultimoReporte['mes'];
+    }
+} catch (Throwable) {
+}
 
 if (empty($_SESSION['seg_csrf'])) {
     $_SESSION['seg_csrf'] = bin2hex(random_bytes(24));
@@ -89,13 +103,13 @@ if (empty($_SESSION['seg_csrf'])) {
                     <span>Mes a exportar</span>
                     <select name="mes_exportacion" required>
                         <?php foreach ([1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril', 5 => 'Mayo', 6 => 'Junio', 7 => 'Julio', 8 => 'Agosto', 9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre'] as $numero => $nombre): ?>
-                            <option value="<?= $numero ?>" <?= $numero === $mesActual ? 'selected' : '' ?>><?= htmlspecialchars($nombre, ENT_QUOTES, 'UTF-8') ?></option>
+                            <option value="<?= $numero ?>" <?= $numero === $mesExportacion ? 'selected' : '' ?>><?= htmlspecialchars($nombre, ENT_QUOTES, 'UTF-8') ?></option>
                         <?php endforeach; ?>
                     </select>
                 </label>
                 <label>
                     <span>Anio</span>
-                    <input type="number" name="anio_exportacion" min="2020" max="2100" value="<?= $anioActual ?>" required>
+                    <input type="number" name="anio_exportacion" min="2020" max="2100" value="<?= $anioExportacion ?>" required>
                 </label>
             </div>
             <div class="d-flex flex-wrap gap-2">

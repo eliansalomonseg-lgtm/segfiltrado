@@ -201,7 +201,14 @@ class AjustesController
             }
 
             if (!$reportes) {
-                $this->responder(['ok' => false, 'error' => 'Aun no hay reportes CFE guardados para exportar.'], 422);
+                $periodosDisponibles = $this->periodosCfeDisponibles($conexion);
+                $mensaje = $tipo === 'ajustes_mes' || $tipo === 'bajo_consumo_mes'
+                    ? 'No hay reportes CFE guardados para ' . sprintf('%04d-%02d', $anio, $mes) . '.'
+                    : 'Aun no hay reportes CFE guardados para exportar.';
+                if ($periodosDisponibles !== '') {
+                    $mensaje .= ' Meses disponibles: ' . $periodosDisponibles . '.';
+                }
+                $this->responder(['ok' => false, 'error' => $mensaje], 422);
             }
 
             $casos = $this->obtenerCasosExcelDirectores($conexion, array_map(static fn (array $reporte): int => (int) $reporte['id'], $reportes), $modo);
@@ -523,6 +530,16 @@ class AjustesController
             }
         }
         return $casos;
+    }
+
+    private function periodosCfeDisponibles(PDO $conexion): string
+    {
+        $consulta = $conexion->query('SELECT DISTINCT anio, mes FROM cfe_reportes ORDER BY anio DESC, mes DESC');
+        $periodos = [];
+        foreach ($consulta->fetchAll() as $fila) {
+            $periodos[] = sprintf('%04d-%02d', (int) $fila['anio'], (int) $fila['mes']);
+        }
+        return implode(', ', $periodos);
     }
 
     private function prepararCasoExcelDirectores(array $fila, string $modo = 'problemas'): ?array
