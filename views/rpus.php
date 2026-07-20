@@ -56,11 +56,15 @@ if (empty($_SESSION['seg_csrf'])) {
         <form id="cfe-catalog-form" class="import-filters">
             <label class="search-field">
                 <i class="bi bi-search"></i>
-                <input type="search" name="q" placeholder="RPU o direccion">
+                <input type="search" name="q" placeholder="RPU">
             </label>
             <label class="search-field">
                 <i class="bi bi-building"></i>
                 <input type="search" name="nombre" list="cfe-nombre-options" data-cfe-option="nombre" placeholder="Nombre del servicio">
+            </label>
+            <label class="search-field">
+                <i class="bi bi-signpost"></i>
+                <input type="search" name="direccion" list="cfe-direccion-options" data-cfe-option="direccion" placeholder="Direccion del reporte">
             </label>
             <label class="search-field">
                 <i class="bi bi-geo-alt"></i>
@@ -81,6 +85,7 @@ if (empty($_SESSION['seg_csrf'])) {
             <button class="btn-seg compact-action" type="submit"><i class="bi bi-search me-2"></i>Buscar</button>
         </form>
         <datalist id="cfe-nombre-options"></datalist>
+        <datalist id="cfe-direccion-options"></datalist>
         <datalist id="cfe-poblacion-options"></datalist>
         <datalist id="cfe-tarifa-options"></datalist>
         <datalist id="cfe-division-options"></datalist>
@@ -337,8 +342,17 @@ async function loadCfeOptions(input) {
         accion: 'opciones_catalogo_cfe',
         csrf: token,
         campo,
-        q: input.value.trim()
+        termino: input.value.trim()
     });
+    const formData = new FormData(catalogForm);
+    for (const [key, value] of formData.entries()) {
+        if (key !== campo) {
+            body.set(key, value);
+        }
+    }
+    if (!catalogForm.sin_vinculo.checked) {
+        body.delete('sin_vinculo');
+    }
     const response = await fetch('../controllers/rpuController.php', {method: 'POST', body});
     const data = await response.json();
     if (!data.ok) {

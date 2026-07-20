@@ -206,7 +206,16 @@ def analizar(ruta, anio=None, mes=None, modo_periodo="automatico"):
             "division": valor_opcional(fila, "DIVISION"),
             "rpu": limpiar(fila["RPU"]),
             "nombre": limpiar(fila["NOMBRE"]),
-            "direccion": valor_opcional(fila, "DIRECCION", "DOMICILIO"),
+            "direccion": valor_opcional(
+                fila,
+                "DIRECCION",
+                "DIRECCIONDELSERVICIO",
+                "DIRECCIONSERVICIO",
+                "DOMICILIO",
+                "DOMICILIODELSERVICIO",
+                "DOMICILIOSERVICIO",
+                "UBICACION"
+            ),
             "poblacion": limpiar(fila["POBLACION"]),
             "tarifa": limpiar(fila["TARIFA"]),
             "desde": desde.strftime("%Y-%m-%d") if desde else "",

@@ -217,6 +217,7 @@ class RpuController
             $this->prepararTablas($conexion);
             $q = trim((string) ($_POST['q'] ?? ''));
             $nombre = trim((string) ($_POST['nombre'] ?? ''));
+            $direccion = trim((string) ($_POST['direccion'] ?? ''));
             $poblacion = trim((string) ($_POST['poblacion'] ?? ''));
             $tarifa = trim((string) ($_POST['tarifa'] ?? ''));
             $division = trim((string) ($_POST['division'] ?? ''));
@@ -242,6 +243,11 @@ class RpuController
             if ($nombre !== '') {
                 $condiciones[] = 'u.nombre_cfe LIKE :nombre';
                 $parametros['nombre'] = '%' . $nombre . '%';
+            }
+
+            if ($direccion !== '') {
+                $condiciones[] = 'u.direccion_cfe LIKE :direccion';
+                $parametros['direccion'] = '%' . $direccion . '%';
             }
 
             if ($poblacion !== '') {
@@ -311,9 +317,10 @@ class RpuController
             $conexion = Conexion::conectar();
             $this->prepararTablas($conexion);
             $campo = (string) ($_POST['campo'] ?? '');
-            $q = trim((string) ($_POST['q'] ?? ''));
+            $termino = trim((string) ($_POST['termino'] ?? ''));
             $columnas = [
                 'nombre' => 'nombre_cfe',
+                'direccion' => 'direccion_cfe',
                 'poblacion' => 'poblacion_cfe',
                 'tarifa' => 'tarifa_cfe',
                 'division' => 'division_cfe'
@@ -323,18 +330,24 @@ class RpuController
             }
 
             $columna = $columnas[$campo];
-            $parametros = [];
-            $where = "$columna IS NOT NULL AND $columna <> ''";
-            if ($q !== '') {
-                $where .= " AND $columna LIKE :q";
-                $parametros['q'] = '%' . $q . '%';
+            $condiciones = ["u.$columna IS NOT NULL", "u.$columna <> ''"];
+            $parametros = $this->filtrosCatalogoCfe($_POST, $campo, 'u', $condiciones);
+            if ($termino !== '') {
+                $condiciones[] = "u.$columna LIKE :termino";
+                $parametros['termino'] = '%' . $termino . '%';
             }
+            $where = 'WHERE ' . implode(' AND ', $condiciones);
 
             $consulta = $conexion->prepare(
-                "SELECT DISTINCT $columna valor
-                 FROM cfe_consumos
-                 WHERE $where
-                 ORDER BY $columna
+                "SELECT DISTINCT u.$columna valor
+                 FROM cfe_consumos u
+                 LEFT JOIN (
+                    SELECT RPU, GROUP_CONCAT(DISTINCT CCT ORDER BY CCT SEPARATOR ' / ') ccts
+                    FROM escuelas_rpu
+                    GROUP BY RPU
+                 ) v ON v.RPU = u.RPU
+                 $where
+                 ORDER BY u.$columna
                  LIMIT 80"
             );
             $consulta->execute($parametros);
@@ -342,6 +355,39 @@ class RpuController
         } catch (Throwable $e) {
             $this->responder(['ok' => false, 'error' => $e->getMessage()], 500);
         }
+    }
+
+    private function filtrosCatalogoCfe(array $datos, string $excluirCampo, string $alias, array &$condiciones): array
+    {
+        $mapa = [
+            'nombre' => 'nombre_cfe',
+            'direccion' => 'direccion_cfe',
+            'poblacion' => 'poblacion_cfe',
+            'tarifa' => 'tarifa_cfe',
+            'division' => 'division_cfe'
+        ];
+        $parametros = [];
+        foreach ($mapa as $campo => $columna) {
+            if ($campo === $excluirCampo) {
+                continue;
+            }
+            $valor = trim((string) ($datos[$campo] ?? ''));
+            if ($valor === '') {
+                continue;
+            }
+            $clave = 'filtro_' . $campo;
+            if ($campo === 'tarifa') {
+                $condiciones[] = "$alias.$columna = :$clave";
+                $parametros[$clave] = $valor;
+            } else {
+                $condiciones[] = "$alias.$columna LIKE :$clave";
+                $parametros[$clave] = '%' . $valor . '%';
+            }
+        }
+        if ((string) ($datos['sin_vinculo'] ?? '') === '1') {
+            $condiciones[] = 'v.RPU IS NULL';
+        }
+        return $parametros;
     }
 
     public function vincular(): void
