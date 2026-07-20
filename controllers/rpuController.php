@@ -303,6 +303,7 @@ class RpuController
                 'total' => $total,
                 'pagina' => $pagina,
                 'paginas' => max(1, (int) ceil($total / $porPagina)),
+                'disponibles' => $this->disponiblesCatalogoCfe($conexion),
                 'rpus' => $consulta->fetchAll()
             ]);
         } catch (Throwable $e) {
@@ -351,10 +352,25 @@ class RpuController
                  LIMIT 80"
             );
             $consulta->execute($parametros);
-            $this->responder(['ok' => true, 'opciones' => $consulta->fetchAll(PDO::FETCH_COLUMN)]);
+            $this->responder([
+                'ok' => true,
+                'disponibles' => $this->disponiblesCatalogoCfe($conexion),
+                'opciones' => $consulta->fetchAll(PDO::FETCH_COLUMN)
+            ]);
         } catch (Throwable $e) {
             $this->responder(['ok' => false, 'error' => $e->getMessage()], 500);
         }
+    }
+
+    private function disponiblesCatalogoCfe(PDO $conexion): array
+    {
+        return [
+            'division' => (int) $conexion->query("SELECT COUNT(*) FROM cfe_consumos WHERE division_cfe IS NOT NULL AND division_cfe <> ''")->fetchColumn(),
+            'direccion' => (int) $conexion->query("SELECT COUNT(*) FROM cfe_consumos WHERE direccion_cfe IS NOT NULL AND direccion_cfe <> ''")->fetchColumn(),
+            'poblacion' => (int) $conexion->query("SELECT COUNT(*) FROM cfe_consumos WHERE poblacion_cfe IS NOT NULL AND poblacion_cfe <> ''")->fetchColumn(),
+            'nombre' => (int) $conexion->query("SELECT COUNT(*) FROM cfe_consumos WHERE nombre_cfe IS NOT NULL AND nombre_cfe <> ''")->fetchColumn(),
+            'tarifa' => (int) $conexion->query("SELECT COUNT(*) FROM cfe_consumos WHERE tarifa_cfe IS NOT NULL AND tarifa_cfe <> ''")->fetchColumn()
+        ];
     }
 
     private function filtrosCatalogoCfe(array $datos, string $excluirCampo, string $alias, array &$condiciones): array

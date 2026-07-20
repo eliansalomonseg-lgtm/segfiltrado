@@ -64,7 +64,7 @@ if (empty($_SESSION['seg_csrf'])) {
             </label>
             <label class="search-field">
                 <i class="bi bi-signpost"></i>
-                <input type="search" name="direccion" list="cfe-direccion-options" data-cfe-option="direccion" placeholder="Direccion del reporte">
+                <input type="search" name="direccion" list="cfe-direccion-options" data-cfe-option="direccion" data-optional-cfe="direccion" placeholder="Direccion del reporte">
             </label>
             <label class="search-field">
                 <i class="bi bi-geo-alt"></i>
@@ -76,7 +76,7 @@ if (empty($_SESSION['seg_csrf'])) {
             </label>
             <label class="search-field">
                 <i class="bi bi-diagram-3"></i>
-                <input type="search" name="division" list="cfe-division-options" data-cfe-option="division" placeholder="Division">
+                <input type="search" name="division" list="cfe-division-options" data-cfe-option="division" data-optional-cfe="division" placeholder="Division">
             </label>
             <label class="search-field">
                 <input type="checkbox" name="sin_vinculo" value="1" checked>
@@ -187,6 +187,7 @@ const catalogPager = document.getElementById('cfe-catalog-pager');
 let currentRpu = '';
 let catalogPage = 1;
 const optionTimers = {};
+let catalogAvailability = {};
 
 const money = new Intl.NumberFormat('es-MX', {style: 'currency', currency: 'MXN'});
 const number = new Intl.NumberFormat('es-MX');
@@ -289,7 +290,16 @@ function render(data) {
 
 function renderCatalog(data) {
     const rows = data.rpus || [];
-    catalogStatus.textContent = `${number.format(data.total || 0)} RPUs encontrados en reportes CFE cargados.`;
+    catalogAvailability = data.disponibles || catalogAvailability || {};
+    updateCatalogAvailability();
+    const missing = [];
+    if (!Number(catalogAvailability.direccion || 0)) {
+        missing.push('direccion_cfe no tiene datos cargados');
+    }
+    if (!Number(catalogAvailability.division || 0)) {
+        missing.push('division_cfe no tiene datos cargados');
+    }
+    catalogStatus.textContent = `${number.format(data.total || 0)} RPUs encontrados en reportes CFE cargados.${missing.length ? ' Nota: ' + missing.join(' y ') + '.' : ''}`;
     catalogBody.innerHTML = rows.length
         ? rows.map((row) => {
             const linked = row.ccts && String(row.ccts).trim() !== '';
@@ -297,7 +307,7 @@ function renderCatalog(data) {
                 <td><strong>${escapeHtml(row.division_cfe || 'Sin division')}</strong><small>${escapeHtml(row.anio)}-${String(row.mes).padStart(2, '0')}</small></td>
                 <td><button class="link-button" type="button" data-rpu="${escapeHtml(row.RPU)}">${escapeHtml(row.RPU)}</button></td>
                 <td><strong>${escapeHtml(row.nombre_cfe || 'Sin nombre')}</strong><small>Total ${money.format(row.total || 0)} - ${number.format(row.consumo || 0)} kWh</small></td>
-                <td>${escapeHtml(row.direccion_cfe || 'Sin direccion')}</td>
+                <td>${escapeHtml(row.direccion_cfe || 'No cargada en cfe_consumos')}</td>
                 <td>${escapeHtml(row.poblacion_cfe || 'Sin poblacion')}</td>
                 <td><span class="status-pill">${escapeHtml(row.tarifa_cfe || 'N/D')}</span></td>
                 <td><span class="status-pill ${linked ? 'status-ok' : 'status-warn'}">${linked ? escapeHtml(row.ccts) : 'Sin vinculo'}</span></td>
@@ -308,6 +318,20 @@ function renderCatalog(data) {
     catalogPager.innerHTML = Number(data.paginas || 1) > 1
         ? `<button type="button" data-catalog-page="prev" ${Number(data.pagina || 1) <= 1 ? 'disabled' : ''}>Anterior</button><span>Pagina ${number.format(data.pagina || 1)} de ${number.format(data.paginas || 1)}</span><button type="button" data-catalog-page="next" ${Number(data.pagina || 1) >= Number(data.paginas || 1) ? 'disabled' : ''}>Siguiente</button>`
         : '';
+}
+
+function updateCatalogAvailability() {
+    catalogForm.querySelectorAll('[data-optional-cfe]').forEach((input) => {
+        const key = input.dataset.optionalCfe;
+        const hasData = Number(catalogAvailability[key] || 0) > 0;
+        input.disabled = !hasData;
+        input.placeholder = hasData
+            ? (key === 'direccion' ? 'Direccion del reporte' : 'Division')
+            : (key === 'direccion' ? 'Direccion no cargada' : 'Division no cargada');
+        if (!hasData) {
+            input.value = '';
+        }
+    });
 }
 
 async function searchCatalog(page = 1) {
@@ -358,6 +382,8 @@ async function loadCfeOptions(input) {
     if (!data.ok) {
         return;
     }
+    catalogAvailability = data.disponibles || catalogAvailability || {};
+    updateCatalogAvailability();
     list.innerHTML = (data.opciones || []).map((value) => `<option value="${escapeHtml(value)}"></option>`).join('');
 }
 
