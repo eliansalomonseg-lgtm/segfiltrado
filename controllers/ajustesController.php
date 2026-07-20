@@ -124,7 +124,9 @@ class AjustesController
                 reporte_id INT NOT NULL,
                 RPU VARCHAR(20) NOT NULL,
                 CCT VARCHAR(50) NULL,
+                division_cfe VARCHAR(80) NULL,
                 nombre_cfe VARCHAR(255) NULL,
+                direccion_cfe VARCHAR(255) NULL,
                 poblacion_cfe VARCHAR(255) NULL,
                 tarifa_cfe VARCHAR(10) NULL,
                 tipo_periodo VARCHAR(20) NULL,
@@ -147,6 +149,8 @@ class AjustesController
                 FOREIGN KEY (CCT) REFERENCES escuelas(CCT) ON DELETE SET NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'division_cfe', 'VARCHAR(80) NULL');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'direccion_cfe', 'VARCHAR(255) NULL');
         $this->asegurarColumna($conexion, 'cfe_reportes', 'ajuste_muchos_dias', 'INT NOT NULL DEFAULT 0');
         $this->asegurarColumna($conexion, 'cfe_reportes', 'periodo_correcto_con_aumento', 'INT NOT NULL DEFAULT 0');
         $this->asegurarColumna($conexion, 'cfe_reportes', 'sin_alerta_con_aumento', 'INT NOT NULL DEFAULT 0');
@@ -248,8 +252,8 @@ class AjustesController
             $reporteId = (int) $conexion->lastInsertId();
             $vinculos = $this->obtenerVinculosPorRpu($conexion, array_column($registros, 'rpu'));
             $consultaConsumo = $conexion->prepare(
-                'INSERT INTO cfe_consumos (reporte_id, RPU, CCT, nombre_cfe, poblacion_cfe, tarifa_cfe, tipo_periodo, desde, hasta, dias, consumo, energia, dap, cargos_depositos, creditos_redondeos, total, diferencia, severidad, alertas)
-                 VALUES (:reporte_id, :rpu, :cct, :nombre, :poblacion, :tarifa, :tipo_periodo, :desde, :hasta, :dias, :consumo, :energia, :dap, :cargos, :creditos, :total, :diferencia, :severidad, :alertas)'
+                'INSERT INTO cfe_consumos (reporte_id, RPU, CCT, division_cfe, nombre_cfe, direccion_cfe, poblacion_cfe, tarifa_cfe, tipo_periodo, desde, hasta, dias, consumo, energia, dap, cargos_depositos, creditos_redondeos, total, diferencia, severidad, alertas)
+                 VALUES (:reporte_id, :rpu, :cct, :division, :nombre, :direccion, :poblacion, :tarifa, :tipo_periodo, :desde, :hasta, :dias, :consumo, :energia, :dap, :cargos, :creditos, :total, :diferencia, :severidad, :alertas)'
             );
             foreach ($registros as $registro) {
                 if (!is_array($registro)) {
@@ -263,7 +267,9 @@ class AjustesController
                     'reporte_id' => $reporteId,
                     'rpu' => $rpu,
                     'cct' => $vinculos[$rpu][0]['cct'] ?? null,
+                    'division' => $this->textoONulo($registro['division'] ?? null),
                     'nombre' => $this->textoONulo($registro['nombre'] ?? null),
+                    'direccion' => $this->textoONulo($registro['direccion'] ?? null),
                     'poblacion' => $this->textoONulo($registro['poblacion'] ?? null),
                     'tarifa' => $this->textoONulo($registro['tarifa'] ?? null),
                     'tipo_periodo' => $this->textoONulo($registro['tipo_periodo'] ?? null),

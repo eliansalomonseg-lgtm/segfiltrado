@@ -48,24 +48,48 @@ if (empty($_SESSION['seg_csrf'])) {
     <section class="results-card rpu-risk-card">
         <div class="results-head">
             <div>
-                <span class="eyebrow">REVISION PRIORITARIA</span>
-                <h2>RPUs sugeridos por los ultimos 6 periodos</h2>
-                <p class="section-note">Incluye subidas fuertes, pago minimo, consumo cero y consumo bajo de 50 kWh o menos en los ultimos seis periodos.</p>
+                <span class="eyebrow">BUSCADOR CFE</span>
+                <h2>Descartar RPUs no vinculados</h2>
+                <p class="section-note">Busca en los reportes CFE cargados por RPU, nombre del servicio, direccion, poblacion, division o tarifa.</p>
             </div>
-            <button id="reload-risk-rpus" class="btn-seg compact-action" type="button"><i class="bi bi-arrow-clockwise me-2"></i>Actualizar</button>
         </div>
-        <div id="risk-rpu-periods" class="adjustment-status">Buscando periodos cargados...</div>
-        <div class="risk-filter-bar" id="risk-filter-bar" hidden>
-            <button type="button" data-risk-filter="todos" class="active">Todos</button>
-            <button type="button" data-risk-filter="pago_minimo">Pago minimo</button>
-            <button type="button" data-risk-filter="sin_consumo">Sin consumo</button>
-            <button type="button" data-risk-filter="consumo_bajo">Consume <=50 kWh</button>
-            <button type="button" data-risk-filter="incremento">Subio mucho</button>
-            <button type="button" data-risk-filter="sin_vinculo">Sin vinculo</button>
+        <form id="cfe-catalog-form" class="import-filters">
+            <label class="search-field">
+                <i class="bi bi-search"></i>
+                <input type="search" name="q" placeholder="RPU, nombre del servicio, direccion o division">
+            </label>
+            <label class="search-field">
+                <i class="bi bi-geo-alt"></i>
+                <input type="search" name="poblacion" placeholder="Municipio o poblacion CFE">
+            </label>
+            <label class="search-field">
+                <i class="bi bi-lightning"></i>
+                <input type="search" name="tarifa" placeholder="Tarifa">
+            </label>
+            <label class="search-field">
+                <input type="checkbox" name="sin_vinculo" value="1" checked>
+                <span>Solo sin vinculo</span>
+            </label>
+            <button class="btn-seg compact-action" type="submit"><i class="bi bi-search me-2"></i>Buscar</button>
+        </form>
+        <div id="cfe-catalog-status" class="adjustment-status">Usa los filtros para localizar medidores de escuelas que todavia no tienen RPU confirmado.</div>
+        <div class="table-wrap">
+            <table class="control-table">
+                <thead>
+                    <tr>
+                        <th>Division</th>
+                        <th>RPU</th>
+                        <th>Nombre del servicio</th>
+                        <th>Direccion</th>
+                        <th>Poblacion</th>
+                        <th>Tarifa</th>
+                        <th>Vinculo</th>
+                    </tr>
+                </thead>
+                <tbody id="cfe-catalog-body"></tbody>
+            </table>
         </div>
-        <div id="risk-rpu-summary" class="risk-summary" hidden></div>
-        <div id="risk-rpu-list" class="risk-rpu-list"></div>
-        <div id="risk-rpu-pager" class="risk-pager" hidden></div>
+        <div id="cfe-catalog-pager" class="risk-pager" hidden></div>
     </section>
 
     <section id="rpu-summary" class="quick-actions" hidden>
@@ -139,18 +163,12 @@ const schoolBox = document.getElementById('rpu-school');
 const linkState = document.getElementById('rpu-link-state');
 const chart = document.getElementById('rpu-chart');
 const historyBody = document.getElementById('rpu-history-body');
-const riskList = document.getElementById('risk-rpu-list');
-const riskPeriods = document.getElementById('risk-rpu-periods');
-const riskFilterBar = document.getElementById('risk-filter-bar');
-const riskSummary = document.getElementById('risk-rpu-summary');
-const riskPager = document.getElementById('risk-rpu-pager');
-const reloadRisk = document.getElementById('reload-risk-rpus');
+const catalogForm = document.getElementById('cfe-catalog-form');
+const catalogStatus = document.getElementById('cfe-catalog-status');
+const catalogBody = document.getElementById('cfe-catalog-body');
+const catalogPager = document.getElementById('cfe-catalog-pager');
 let currentRpu = '';
-let riskRowsAll = [];
-let riskRows = [];
-let riskPage = 1;
-let riskFilter = 'todos';
-const riskPageSize = 10;
+let catalogPage = 1;
 
 const money = new Intl.NumberFormat('es-MX', {style: 'currency', currency: 'MXN'});
 const number = new Intl.NumberFormat('es-MX');
@@ -249,105 +267,49 @@ function render(data) {
     historyZone.hidden = false;
 }
 
-function renderRiskRpus(data) {
-    const periods = data.periodos || [];
-    riskRowsAll = data.rpus || [];
-    riskRows = applyRiskFilter(riskRowsAll);
-    riskPage = 1;
-    riskPeriods.textContent = periods.length
-        ? `Ultimos 6 periodos: ${periods.join(', ')}. ${riskRowsAll.length} casos para revisar.`
-        : 'Todavia no hay reportes CFE guardados para sugerir RPUs.';
-    riskFilterBar.hidden = riskRowsAll.length === 0;
-    riskSummary.hidden = riskRowsAll.length === 0;
-    updateRiskFilterButtons();
-    renderRiskPage();
-}
-
-function applyRiskFilter(rows) {
-    if (riskFilter === 'todos') {
-        return rows;
-    }
-    if (riskFilter === 'sin_vinculo') {
-        return rows.filter((row) => !row.cct);
-    }
-    return rows.filter((row) => row.riesgo_tipo === riskFilter || (riskFilter === 'incremento' && row.riesgo_tipo === 'mixto'));
-}
-
-function updateRiskFilterButtons() {
-    riskFilterBar.querySelectorAll('button[data-risk-filter]').forEach((button) => {
-        button.classList.toggle('active', button.dataset.riskFilter === riskFilter);
-    });
-}
-
-function renderRiskSummary(rows) {
-    const totalActual = rows.reduce((sum, row) => sum + Number(row.total || 0), 0);
-    const consumoActual = rows.reduce((sum, row) => sum + Number(row.consumo || 0), 0);
-    const sinVinculo = rows.filter((row) => !row.cct).length;
-    const pagosMinimos = rows.filter((row) => row.riesgo_tipo === 'pago_minimo' || row.riesgo_tipo === 'sin_consumo').length;
-    riskSummary.innerHTML = `<span><b>${number.format(rows.length)}</b> casos</span><span><b>${money.format(totalActual)}</b> pago actual</span><span><b>${number.format(consumoActual)}</b> kWh</span><span><b>${number.format(pagosMinimos)}</b> minimo/sin consumo</span><span><b>${number.format(sinVinculo)}</b> sin vinculo</span>`;
-}
-
-function riskLabel(type) {
-    return {
-        incremento: 'Subio mucho',
-        consumo_bajo: 'Consume poco',
-        pago_minimo: 'Pago minimo',
-        sin_consumo: 'Sin consumo',
-        mixto: 'Doble alerta'
-    }[type] || 'Revision';
-}
-
-function renderRiskPage() {
-    renderRiskSummary(riskRows);
-    const totalPages = Math.max(1, Math.ceil(riskRows.length / riskPageSize));
-    riskPage = Math.min(Math.max(1, riskPage), totalPages);
-    const start = (riskPage - 1) * riskPageSize;
-    const rows = riskRows.slice(start, start + riskPageSize);
-    riskList.innerHTML = rows.length
+function renderCatalog(data) {
+    const rows = data.rpus || [];
+    catalogStatus.textContent = `${number.format(data.total || 0)} RPUs encontrados en reportes CFE cargados.`;
+    catalogBody.innerHTML = rows.length
         ? rows.map((row) => {
-            const linked = Boolean(row.cct);
-            const type = row.riesgo_tipo || 'incremento';
-            const label = riskLabel(type);
-            const schoolName = linked ? `${row.cct} - ${row.escuela || 'Escuela sin nombre'}` : 'Sin escuela vinculada';
-            const history = (row.historial_periodos || []).map((item) => `<span>${escapeHtml(item.periodo)}<b>${money.format(item.total || 0)}</b><small>${number.format(item.consumo || 0)} kWh</small></span>`).join('');
-            const mainMetric = type === 'incremento' || type === 'mixto'
-                ? `${escapeHtml(row.incremento_porcentaje || 0)}%`
-                : `${number.format(row.consumo || 0)} kWh`;
-            const simpleReason = type === 'pago_minimo'
-                ? `Pago minimo en ${escapeHtml(row.periodos_pago_minimo || 0)} periodos`
-                : type === 'sin_consumo'
-                    ? 'No registra consumo actual'
-                    : type === 'consumo_bajo'
-                        ? `Consumo de 50 kWh o menos en ${escapeHtml(row.periodos_bajo_consumo || 0)} periodos`
-                        : `Subio de ${money.format(row.total_anterior || 0)} a ${money.format(row.total || 0)}`;
-            return `<button class="risk-rpu-item risk-type-${escapeHtml(type)} ${linked ? 'is-linked' : 'is-unlinked'}" type="button" data-rpu="${escapeHtml(row.rpu)}">
-            <span class="risk-score">${escapeHtml(row.score)}</span>
-            <span>
-                <strong>${escapeHtml(row.rpu)} - ${escapeHtml(schoolName)}</strong>
-                <small>${escapeHtml(row.nombre || 'Recibo CFE sin nombre')} - ${escapeHtml(row.poblacion || 'Sin poblacion')} - Tarifa ${escapeHtml(row.tarifa || 'N/D')}</small>
-                <span class="risk-simple"><b>${escapeHtml(label)}</b><strong>${mainMetric}</strong><small>${escapeHtml(simpleReason)}</small></span>
-                <span class="risk-history">${history || '<span>Sin historial suficiente</span>'}</span>
-            </span>
-            <em class="${linked ? 'risk-linked' : 'risk-unlinked'}">${linked ? 'Vinculado' : 'Sin vinculo'}</em>
-            <i class="bi bi-chevron-right"></i>
-        </button>`;
+            const linked = row.ccts && String(row.ccts).trim() !== '';
+            return `<tr data-rpu="${escapeHtml(row.RPU)}">
+                <td><strong>${escapeHtml(row.division_cfe || 'Sin division')}</strong><small>${escapeHtml(row.anio)}-${String(row.mes).padStart(2, '0')}</small></td>
+                <td><button class="link-button" type="button" data-rpu="${escapeHtml(row.RPU)}">${escapeHtml(row.RPU)}</button></td>
+                <td><strong>${escapeHtml(row.nombre_cfe || 'Sin nombre')}</strong><small>Total ${money.format(row.total || 0)} - ${number.format(row.consumo || 0)} kWh</small></td>
+                <td>${escapeHtml(row.direccion_cfe || 'Sin direccion')}</td>
+                <td>${escapeHtml(row.poblacion_cfe || 'Sin poblacion')}</td>
+                <td><span class="status-pill">${escapeHtml(row.tarifa_cfe || 'N/D')}</span></td>
+                <td><span class="status-pill ${linked ? 'status-ok' : 'status-warn'}">${linked ? escapeHtml(row.ccts) : 'Sin vinculo'}</span></td>
+            </tr>`;
         }).join('')
-        : '<div class="empty-state"><i class="bi bi-check2-circle"></i><strong>Sin RPUs criticos</strong><span>No se encontraron casos prioritarios en los ultimos periodos.</span></div>';
-    riskPager.hidden = riskRows.length <= riskPageSize;
-    riskPager.innerHTML = riskRows.length > riskPageSize
-        ? `<button type="button" data-risk-page="prev" ${riskPage === 1 ? 'disabled' : ''}>Anterior</button><span>Pagina ${riskPage} de ${totalPages} - ${riskRows.length} casos</span><button type="button" data-risk-page="next" ${riskPage === totalPages ? 'disabled' : ''}>Siguiente</button>`
+        : '<tr><td colspan="7" class="empty-state"><i class="bi bi-search"></i><strong>Sin resultados</strong><span>Cambia los filtros o desactiva "solo sin vinculo".</span></td></tr>';
+    catalogPager.hidden = Number(data.paginas || 1) <= 1;
+    catalogPager.innerHTML = Number(data.paginas || 1) > 1
+        ? `<button type="button" data-catalog-page="prev" ${Number(data.pagina || 1) <= 1 ? 'disabled' : ''}>Anterior</button><span>Pagina ${number.format(data.pagina || 1)} de ${number.format(data.paginas || 1)}</span><button type="button" data-catalog-page="next" ${Number(data.pagina || 1) >= Number(data.paginas || 1) ? 'disabled' : ''}>Siguiente</button>`
         : '';
 }
 
-async function loadRiskRpus() {
-    riskPeriods.textContent = 'Calculando los ultimos 6 periodos: aumentos fuertes, consumos en cero y consumos muy bajos repetidos...';
-    const body = new URLSearchParams({accion: 'sugerir_rpus_malos', csrf: token});
-    const response = await fetch('../controllers/rpuController.php', {method: 'POST', body});
-    const data = await response.json();
-    if (!data.ok) {
-        throw new Error(data.error || 'No fue posible calcular sugerencias.');
+async function searchCatalog(page = 1) {
+    catalogPage = page;
+    catalogStatus.textContent = 'Buscando en reportes CFE cargados...';
+    const data = new FormData(catalogForm);
+    const body = new URLSearchParams();
+    body.set('accion', 'buscar_catalogo_cfe');
+    body.set('csrf', token);
+    body.set('pagina', String(catalogPage));
+    for (const [key, value] of data.entries()) {
+        body.set(key, value);
     }
-    renderRiskRpus(data);
+    if (!catalogForm.sin_vinculo.checked) {
+        body.delete('sin_vinculo');
+    }
+    const response = await fetch('../controllers/rpuController.php', {method: 'POST', body});
+    const result = await response.json();
+    if (!result.ok) {
+        throw new Error(result.error || 'No fue posible buscar en CFE.');
+    }
+    renderCatalog(result);
 }
 
 async function searchRpu(rpu) {
@@ -372,8 +334,8 @@ form.addEventListener('submit', async (event) => {
     }
 });
 
-riskList.addEventListener('click', async (event) => {
-    const button = event.target.closest('button[data-rpu]');
+catalogBody.addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-rpu]');
     if (!button) {
         return;
     }
@@ -385,37 +347,29 @@ riskList.addEventListener('click', async (event) => {
     }
 });
 
-riskFilterBar.addEventListener('click', (event) => {
-    const button = event.target.closest('button[data-risk-filter]');
-    if (!button) {
-        return;
-    }
-    riskFilter = button.dataset.riskFilter;
-    riskRows = applyRiskFilter(riskRowsAll);
-    riskPage = 1;
-    updateRiskFilterButtons();
-    renderRiskPage();
-});
-
-riskPager.addEventListener('click', (event) => {
-    const button = event.target.closest('button[data-risk-page]');
-    if (!button) {
-        return;
-    }
-    riskPage += button.dataset.riskPage === 'next' ? 1 : -1;
-    renderRiskPage();
-});
-
-reloadRisk.addEventListener('click', async () => {
+catalogForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
     try {
-        await loadRiskRpus();
+        await searchCatalog(1);
     } catch (error) {
-        riskPeriods.textContent = error.message;
+        catalogStatus.textContent = error.message;
     }
 });
 
-loadRiskRpus().catch((error) => {
-    riskPeriods.textContent = error.message;
+catalogPager.addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-catalog-page]');
+    if (!button) {
+        return;
+    }
+    try {
+        await searchCatalog(catalogPage + (button.dataset.catalogPage === 'next' ? 1 : -1));
+    } catch (error) {
+        catalogStatus.textContent = error.message;
+    }
+});
+
+searchCatalog(1).catch((error) => {
+    catalogStatus.textContent = error.message;
 });
 </script>
 </body>

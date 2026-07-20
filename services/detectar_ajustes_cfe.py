@@ -81,6 +81,15 @@ def cargar_reporte(ruta):
     return datos
 
 
+def valor_opcional(fila, *columnas):
+    for columna in columnas:
+        if columna in fila.index:
+            valor = limpiar(fila[columna])
+            if valor != "":
+                return valor
+    return ""
+
+
 def mes_desde_nombre(ruta):
     coincidencia = re.search(r"(20\d{2})[-_](\d{2})", ruta.name)
     if not coincidencia:
@@ -194,8 +203,10 @@ def analizar(ruta, anio=None, mes=None, modo_periodo="automatico"):
         if severidad >= 4:
             severos += 1
         registros.append({
+            "division": valor_opcional(fila, "DIVISION"),
             "rpu": limpiar(fila["RPU"]),
             "nombre": limpiar(fila["NOMBRE"]),
+            "direccion": valor_opcional(fila, "DIRECCION", "DOMICILIO"),
             "poblacion": limpiar(fila["POBLACION"]),
             "tarifa": limpiar(fila["TARIFA"]),
             "desde": desde.strftime("%Y-%m-%d") if desde else "",

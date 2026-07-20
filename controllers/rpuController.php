@@ -207,6 +207,89 @@ class RpuController
         }
     }
 
+    public function buscarCatalogoCfe(): void
+    {
+        $this->validarToken();
+        try {
+            $conexion = Conexion::conectar();
+            $this->prepararTablas($conexion);
+            $q = trim((string) ($_POST['q'] ?? ''));
+            $poblacion = trim((string) ($_POST['poblacion'] ?? ''));
+            $tarifa = trim((string) ($_POST['tarifa'] ?? ''));
+            $soloSinVinculo = (string) ($_POST['sin_vinculo'] ?? '') === '1';
+            $pagina = max(1, (int) ($_POST['pagina'] ?? 1));
+            $porPagina = 25;
+            $offset = ($pagina - 1) * $porPagina;
+            $condiciones = [];
+            $parametros = [];
+
+            if ($q !== '') {
+                $valor = '%' . $q . '%';
+                $columnas = ['u.RPU', 'u.division_cfe', 'u.nombre_cfe', 'u.direccion_cfe', 'u.poblacion_cfe', 'u.tarifa_cfe'];
+                $partes = [];
+                foreach ($columnas as $indice => $columna) {
+                    $clave = 'q_' . $indice;
+                    $partes[] = $columna . ' LIKE :' . $clave;
+                    $parametros[$clave] = $valor;
+                }
+                $condiciones[] = '(' . implode(' OR ', $partes) . ')';
+            }
+
+            if ($poblacion !== '') {
+                $condiciones[] = 'u.poblacion_cfe LIKE :poblacion';
+                $parametros['poblacion'] = '%' . $poblacion . '%';
+            }
+
+            if ($tarifa !== '') {
+                $condiciones[] = 'u.tarifa_cfe = :tarifa';
+                $parametros['tarifa'] = $tarifa;
+            }
+
+            if ($soloSinVinculo) {
+                $condiciones[] = 'v.RPU IS NULL';
+            }
+
+            $where = $condiciones ? 'WHERE ' . implode(' AND ', $condiciones) : '';
+            $base = "FROM cfe_consumos u
+                INNER JOIN (
+                    SELECT RPU, MAX(id) ultimo_id
+                    FROM cfe_consumos
+                    GROUP BY RPU
+                ) ult ON ult.ultimo_id = u.id
+                INNER JOIN cfe_reportes cr ON cr.id = u.reporte_id
+                LEFT JOIN (
+                    SELECT RPU, GROUP_CONCAT(DISTINCT CCT ORDER BY CCT SEPARATOR ' / ') ccts
+                    FROM escuelas_rpu
+                    GROUP BY RPU
+                ) v ON v.RPU = u.RPU
+                $where";
+            $conteo = $conexion->prepare('SELECT COUNT(*) ' . $base);
+            $conteo->execute($parametros);
+            $total = (int) $conteo->fetchColumn();
+            $consulta = $conexion->prepare(
+                "SELECT u.RPU, u.division_cfe, u.nombre_cfe, u.direccion_cfe, u.poblacion_cfe, u.tarifa_cfe, u.total, u.consumo, cr.anio, cr.mes, v.ccts
+                 $base
+                 ORDER BY cr.anio DESC, cr.mes DESC, u.nombre_cfe, u.RPU
+                 LIMIT :limite OFFSET :offset"
+            );
+            foreach ($parametros as $clave => $valor) {
+                $consulta->bindValue(':' . $clave, $valor, PDO::PARAM_STR);
+            }
+            $consulta->bindValue(':limite', $porPagina, PDO::PARAM_INT);
+            $consulta->bindValue(':offset', $offset, PDO::PARAM_INT);
+            $consulta->execute();
+            $this->responder([
+                'ok' => true,
+                'total' => $total,
+                'pagina' => $pagina,
+                'paginas' => max(1, (int) ceil($total / $porPagina)),
+                'rpus' => $consulta->fetchAll()
+            ]);
+        } catch (Throwable $e) {
+            $this->responder(['ok' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
     public function vincular(): void
     {
         $this->validarToken();
@@ -268,7 +351,9 @@ class RpuController
                 reporte_id INT NOT NULL,
                 RPU VARCHAR(20) NOT NULL,
                 CCT VARCHAR(50) NULL,
+                division_cfe VARCHAR(80) NULL,
                 nombre_cfe VARCHAR(255) NULL,
+                direccion_cfe VARCHAR(255) NULL,
                 poblacion_cfe VARCHAR(255) NULL,
                 tarifa_cfe VARCHAR(10) NULL,
                 tipo_periodo VARCHAR(20) NULL,
@@ -289,6 +374,19 @@ class RpuController
                 INDEX idx_cfe_consumos_reporte (reporte_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'division_cfe', 'VARCHAR(80) NULL');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'direccion_cfe', 'VARCHAR(255) NULL');
+    }
+
+    private function asegurarColumna(PDO $conexion, string $tabla, string $columna, string $definicion): void
+    {
+        $consulta = $conexion->prepare(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?'
+        );
+        $consulta->execute([$tabla, $columna]);
+        if ((int) $consulta->fetchColumn() === 0) {
+            $conexion->exec('ALTER TABLE `' . $tabla . '` ADD COLUMN `' . $columna . '` ' . $definicion);
+        }
     }
 
     private function prepararTablaEscuelas(PDO $conexion): void
@@ -591,6 +689,10 @@ if ($accion === 'buscar_rpu') {
 
 if ($accion === 'sugerir_rpus_malos') {
     $controlador->sugerirMalos();
+}
+
+if ($accion === 'buscar_catalogo_cfe') {
+    $controlador->buscarCatalogoCfe();
 }
 
 if ($accion === 'vincular_rpu') {
