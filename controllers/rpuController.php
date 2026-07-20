@@ -191,7 +191,9 @@ class RpuController
                 'ultimo' => $ultimo,
                 'cfe' => [
                     'rpu' => $rpu,
+                    'division' => $ultimo['division_cfe'] ?? '',
                     'nombre' => $ultimo['nombre_cfe'] ?? ($vinculos[0]['nombre_recibo_cfe'] ?? ''),
+                    'direccion' => $ultimo['direccion_cfe'] ?? '',
                     'poblacion' => $ultimo['poblacion_cfe'] ?? ($vinculos[0]['poblacion_cfe'] ?? ''),
                     'tarifa' => $ultimo['tarifa_cfe'] ?? ($vinculos[0]['tarifa_cfe'] ?? ''),
                     'periodo' => $ultimo ? sprintf('%04d-%02d', (int) $ultimo['anio'], (int) $ultimo['mes']) : ''

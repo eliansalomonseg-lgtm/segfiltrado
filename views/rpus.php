@@ -191,6 +191,8 @@ function cfePanel(cfe) {
     return `<div class="compare-panel cfe-panel">
         <span class="compare-label">RECIBO CFE</span>
         <strong>${escapeHtml(cfe.rpu || currentRpu)} - ${escapeHtml(cfe.nombre || 'Sin nombre CFE')}</strong>
+        <small><b>Division CFE:</b> ${escapeHtml(cfe.division || 'Sin division')}</small>
+        <small><b>Direccion CFE:</b> ${escapeHtml(cfe.direccion || 'Sin direccion')}</small>
         <small><b>Poblacion CFE:</b> ${escapeHtml(cfe.poblacion || 'Sin poblacion')}</small>
         <small><b>Tarifa:</b> ${escapeHtml(cfe.tarifa || 'Sin tarifa')} ${cfe.periodo ? `- <b>Periodo:</b> ${escapeHtml(cfe.periodo)}` : ''}</small>
     </div>`;
