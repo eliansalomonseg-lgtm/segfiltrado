@@ -216,8 +216,10 @@ class RpuController
             $conexion = Conexion::conectar();
             $this->prepararTablas($conexion);
             $q = trim((string) ($_POST['q'] ?? ''));
+            $nombre = trim((string) ($_POST['nombre'] ?? ''));
             $poblacion = trim((string) ($_POST['poblacion'] ?? ''));
             $tarifa = trim((string) ($_POST['tarifa'] ?? ''));
+            $division = trim((string) ($_POST['division'] ?? ''));
             $soloSinVinculo = (string) ($_POST['sin_vinculo'] ?? '') === '1';
             $pagina = max(1, (int) ($_POST['pagina'] ?? 1));
             $porPagina = 25;
@@ -237,6 +239,11 @@ class RpuController
                 $condiciones[] = '(' . implode(' OR ', $partes) . ')';
             }
 
+            if ($nombre !== '') {
+                $condiciones[] = 'u.nombre_cfe LIKE :nombre';
+                $parametros['nombre'] = '%' . $nombre . '%';
+            }
+
             if ($poblacion !== '') {
                 $condiciones[] = 'u.poblacion_cfe LIKE :poblacion';
                 $parametros['poblacion'] = '%' . $poblacion . '%';
@@ -245,6 +252,11 @@ class RpuController
             if ($tarifa !== '') {
                 $condiciones[] = 'u.tarifa_cfe = :tarifa';
                 $parametros['tarifa'] = $tarifa;
+            }
+
+            if ($division !== '') {
+                $condiciones[] = 'u.division_cfe LIKE :division';
+                $parametros['division'] = '%' . $division . '%';
             }
 
             if ($soloSinVinculo) {
@@ -287,6 +299,46 @@ class RpuController
                 'paginas' => max(1, (int) ceil($total / $porPagina)),
                 'rpus' => $consulta->fetchAll()
             ]);
+        } catch (Throwable $e) {
+            $this->responder(['ok' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function opcionesCatalogoCfe(): void
+    {
+        $this->validarToken();
+        try {
+            $conexion = Conexion::conectar();
+            $this->prepararTablas($conexion);
+            $campo = (string) ($_POST['campo'] ?? '');
+            $q = trim((string) ($_POST['q'] ?? ''));
+            $columnas = [
+                'nombre' => 'nombre_cfe',
+                'poblacion' => 'poblacion_cfe',
+                'tarifa' => 'tarifa_cfe',
+                'division' => 'division_cfe'
+            ];
+            if (!isset($columnas[$campo])) {
+                $this->responder(['ok' => true, 'opciones' => []]);
+            }
+
+            $columna = $columnas[$campo];
+            $parametros = [];
+            $where = "$columna IS NOT NULL AND $columna <> ''";
+            if ($q !== '') {
+                $where .= " AND $columna LIKE :q";
+                $parametros['q'] = '%' . $q . '%';
+            }
+
+            $consulta = $conexion->prepare(
+                "SELECT DISTINCT $columna valor
+                 FROM cfe_consumos
+                 WHERE $where
+                 ORDER BY $columna
+                 LIMIT 80"
+            );
+            $consulta->execute($parametros);
+            $this->responder(['ok' => true, 'opciones' => $consulta->fetchAll(PDO::FETCH_COLUMN)]);
         } catch (Throwable $e) {
             $this->responder(['ok' => false, 'error' => $e->getMessage()], 500);
         }
@@ -695,6 +747,10 @@ if ($accion === 'sugerir_rpus_malos') {
 
 if ($accion === 'buscar_catalogo_cfe') {
     $controlador->buscarCatalogoCfe();
+}
+
+if ($accion === 'opciones_catalogo_cfe') {
+    $controlador->opcionesCatalogoCfe();
 }
 
 if ($accion === 'vincular_rpu') {

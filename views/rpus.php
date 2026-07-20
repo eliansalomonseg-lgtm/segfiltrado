@@ -56,15 +56,23 @@ if (empty($_SESSION['seg_csrf'])) {
         <form id="cfe-catalog-form" class="import-filters">
             <label class="search-field">
                 <i class="bi bi-search"></i>
-                <input type="search" name="q" placeholder="RPU, nombre del servicio, direccion o division">
+                <input type="search" name="q" placeholder="RPU o direccion">
+            </label>
+            <label class="search-field">
+                <i class="bi bi-building"></i>
+                <input type="search" name="nombre" list="cfe-nombre-options" data-cfe-option="nombre" placeholder="Nombre del servicio">
             </label>
             <label class="search-field">
                 <i class="bi bi-geo-alt"></i>
-                <input type="search" name="poblacion" placeholder="Municipio o poblacion CFE">
+                <input type="search" name="poblacion" list="cfe-poblacion-options" data-cfe-option="poblacion" placeholder="Municipio o poblacion CFE">
             </label>
             <label class="search-field">
                 <i class="bi bi-lightning"></i>
-                <input type="search" name="tarifa" placeholder="Tarifa">
+                <input type="search" name="tarifa" list="cfe-tarifa-options" data-cfe-option="tarifa" placeholder="Tarifa">
+            </label>
+            <label class="search-field">
+                <i class="bi bi-diagram-3"></i>
+                <input type="search" name="division" list="cfe-division-options" data-cfe-option="division" placeholder="Division">
             </label>
             <label class="search-field">
                 <input type="checkbox" name="sin_vinculo" value="1" checked>
@@ -72,6 +80,10 @@ if (empty($_SESSION['seg_csrf'])) {
             </label>
             <button class="btn-seg compact-action" type="submit"><i class="bi bi-search me-2"></i>Buscar</button>
         </form>
+        <datalist id="cfe-nombre-options"></datalist>
+        <datalist id="cfe-poblacion-options"></datalist>
+        <datalist id="cfe-tarifa-options"></datalist>
+        <datalist id="cfe-division-options"></datalist>
         <div id="cfe-catalog-status" class="adjustment-status">Usa los filtros para localizar medidores de escuelas que todavia no tienen RPU confirmado.</div>
         <div class="table-wrap">
             <table class="control-table">
@@ -169,6 +181,7 @@ const catalogBody = document.getElementById('cfe-catalog-body');
 const catalogPager = document.getElementById('cfe-catalog-pager');
 let currentRpu = '';
 let catalogPage = 1;
+const optionTimers = {};
 
 const money = new Intl.NumberFormat('es-MX', {style: 'currency', currency: 'MXN'});
 const number = new Intl.NumberFormat('es-MX');
@@ -314,6 +327,26 @@ async function searchCatalog(page = 1) {
     renderCatalog(result);
 }
 
+async function loadCfeOptions(input) {
+    const campo = input.dataset.cfeOption;
+    const list = document.getElementById(input.getAttribute('list'));
+    if (!campo || !list) {
+        return;
+    }
+    const body = new URLSearchParams({
+        accion: 'opciones_catalogo_cfe',
+        csrf: token,
+        campo,
+        q: input.value.trim()
+    });
+    const response = await fetch('../controllers/rpuController.php', {method: 'POST', body});
+    const data = await response.json();
+    if (!data.ok) {
+        return;
+    }
+    list.innerHTML = (data.opciones || []).map((value) => `<option value="${escapeHtml(value)}"></option>`).join('');
+}
+
 async function searchRpu(rpu) {
     currentRpu = rpu;
     statusBox.textContent = 'Consultando vinculos, historial y sugerencias...';
@@ -356,6 +389,14 @@ catalogForm.addEventListener('submit', async (event) => {
     } catch (error) {
         catalogStatus.textContent = error.message;
     }
+});
+
+catalogForm.querySelectorAll('[data-cfe-option]').forEach((input) => {
+    input.addEventListener('focus', () => loadCfeOptions(input));
+    input.addEventListener('input', () => {
+        clearTimeout(optionTimers[input.name]);
+        optionTimers[input.name] = setTimeout(() => loadCfeOptions(input), 250);
+    });
 });
 
 catalogPager.addEventListener('click', async (event) => {
