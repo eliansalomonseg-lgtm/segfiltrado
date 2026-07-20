@@ -42,8 +42,15 @@ $condiciones = [];
 $parametros = [];
 
 if ($busqueda !== '') {
-    $condiciones[] = '(er.RPU LIKE :busqueda OR er.CCT LIKE :busqueda OR er.nombre_recibo_cfe LIKE :busqueda OR er.poblacion_cfe LIKE :busqueda OR e.NOMBRECT LIKE :busqueda OR e.NOMBREMUN LIKE :busqueda OR e.NOMBRELOC LIKE :busqueda OR e.DOMICILIO LIKE :busqueda)';
-    $parametros['busqueda'] = '%' . $busqueda . '%';
+    $valorBusqueda = '%' . $busqueda . '%';
+    $columnasBusqueda = ['er.RPU', 'er.CCT', 'er.nombre_recibo_cfe', 'er.poblacion_cfe', 'e.NOMBRECT', 'e.NOMBREMUN', 'e.NOMBRELOC', 'e.DOMICILIO'];
+    $partesBusqueda = [];
+    foreach ($columnasBusqueda as $indice => $columna) {
+        $clave = 'busqueda_' . $indice;
+        $partesBusqueda[] = $columna . ' LIKE :' . $clave;
+        $parametros[$clave] = $valorBusqueda;
+    }
+    $condiciones[] = '(' . implode(' OR ', $partesBusqueda) . ')';
 }
 
 if ($tarifa !== '') {
@@ -119,9 +126,9 @@ $queryBase = $_GET;
         <div>
             <span class="eyebrow">ESCUELAS_RPU</span>
             <h1>Vinculos RPU-CCT</h1>
-            <p>Relaciones confirmadas entre medidores CFE y escuelas oficiales.</p>
+            <p>Consulta y exporta las relaciones confirmadas entre medidores de luz (RPU) y escuelas oficiales (CCT). Filtra por tarifa, subnivel educativo o estatus.</p>
         </div>
-        <span class="alert-gold"><?= number_format($totalFiltrado) ?> visibles</span>
+        <span class="alert-gold"><i class="bi bi-eye me-1"></i><?= number_format($totalFiltrado) ?> visibles</span>
     </section>
     <section class="quick-actions">
         <article class="quick-card">

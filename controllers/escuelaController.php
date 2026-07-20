@@ -332,16 +332,28 @@ class EscuelaController
             $parametros = [];
             if (mb_strlen($termino) >= 2) {
                 $busqueda = '%' . str_replace(['%', '_'], ['\%', '\_'], $termino) . '%';
-                $condiciones[] = '(CCT LIKE :busqueda OR NOMBRECT LIKE :busqueda OR DOMICILIO LIKE :busqueda OR NOMBREMUN LIKE :busqueda OR NOMBRELOC LIKE :busqueda OR HOMO LIKE :busqueda OR ZONA LIKE :busqueda OR SECTOR LIKE :busqueda)';
-                $parametros['busqueda'] = $busqueda;
+                $columnasBusqueda = ['CCT', 'NOMBRECT', 'DOMICILIO', 'NOMBREMUN', 'NOMBRELOC', 'HOMO', 'ZONA', 'SECTOR'];
+                $partesBusqueda = [];
+                foreach ($columnasBusqueda as $indice => $columna) {
+                    $clave = 'busqueda_' . $indice;
+                    $partesBusqueda[] = $columna . ' LIKE :' . $clave;
+                    $parametros[$clave] = $busqueda;
+                }
+                $condiciones[] = '(' . implode(' OR ', $partesBusqueda) . ')';
             }
             if ($nivel !== '') {
-                $condiciones[] = '(NIVEL LIKE :nivel OR SUBNIVEL LIKE :nivel)';
-                $parametros['nivel'] = '%' . str_replace(['%', '_'], ['\%', '\_'], $nivel) . '%';
+                $valorNivel = '%' . str_replace(['%', '_'], ['\%', '\_'], $nivel) . '%';
+                $condiciones[] = '(NIVEL LIKE :nivel_0 OR SUBNIVEL LIKE :nivel_1)';
+                $parametros['nivel_0'] = $valorNivel;
+                $parametros['nivel_1'] = $valorNivel;
             }
             if (mb_strlen($poblacion) >= 2) {
-                $condiciones[] = '(NOMBRELOC LIKE :poblacion OR NOMBREMUN LIKE :poblacion OR COLONIA LIKE :poblacion OR NOMBRECOL LIKE :poblacion)';
-                $parametros['poblacion'] = '%' . str_replace(['%', '_'], ['\%', '\_'], $poblacion) . '%';
+                $valorPoblacion = '%' . str_replace(['%', '_'], ['\%', '\_'], $poblacion) . '%';
+                $condiciones[] = '(NOMBRELOC LIKE :poblacion_0 OR NOMBREMUN LIKE :poblacion_1 OR COLONIA LIKE :poblacion_2 OR NOMBRECOL LIKE :poblacion_3)';
+                $parametros['poblacion_0'] = $valorPoblacion;
+                $parametros['poblacion_1'] = $valorPoblacion;
+                $parametros['poblacion_2'] = $valorPoblacion;
+                $parametros['poblacion_3'] = $valorPoblacion;
             }
             if ($origen !== '') {
                 $condiciones[] = 'ORIGEN LIKE :origen';
@@ -378,8 +390,15 @@ class EscuelaController
             $parametros = [];
 
             if ($busqueda !== '') {
-                $condiciones[] = '(er.RPU LIKE :busqueda OR er.CCT LIKE :busqueda OR er.nombre_recibo_cfe LIKE :busqueda OR er.poblacion_cfe LIKE :busqueda OR e.NOMBRECT LIKE :busqueda OR e.NOMBREMUN LIKE :busqueda OR e.NOMBRELOC LIKE :busqueda OR e.DOMICILIO LIKE :busqueda)';
-                $parametros['busqueda'] = '%' . $busqueda . '%';
+                $valorBusqueda = '%' . $busqueda . '%';
+                $columnasBusqueda = ['er.RPU', 'er.CCT', 'er.nombre_recibo_cfe', 'er.poblacion_cfe', 'e.NOMBRECT', 'e.NOMBREMUN', 'e.NOMBRELOC', 'e.DOMICILIO'];
+                $partesBusqueda = [];
+                foreach ($columnasBusqueda as $indice => $columna) {
+                    $clave = 'busqueda_' . $indice;
+                    $partesBusqueda[] = $columna . ' LIKE :' . $clave;
+                    $parametros[$clave] = $valorBusqueda;
+                }
+                $condiciones[] = '(' . implode(' OR ', $partesBusqueda) . ')';
             }
 
             if ($tarifa !== '') {
