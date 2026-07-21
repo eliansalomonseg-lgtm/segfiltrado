@@ -2090,6 +2090,7 @@ body {
 
 .seg-primary-nav-inner {
     display: flex;
+    justify-content: center;
     margin: 0 auto;
     max-width: 1440px;
     overflow-x: auto;
@@ -2284,6 +2285,7 @@ body {
     }
 
     .seg-primary-nav-inner {
+        justify-content: flex-start;
         padding: 0;
     }
 
