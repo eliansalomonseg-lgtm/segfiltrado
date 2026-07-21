@@ -20,6 +20,32 @@ $totalLecturasCfe = dashboardCount($conexion, 'SELECT COUNT(*) FROM cfe_consumos
 $casosCfe = dashboardCount($conexion, 'SELECT COUNT(*) FROM cfe_consumos WHERE severidad >= 3');
 $ultimoReporte = $conexion->query('SELECT anio, mes FROM cfe_reportes ORDER BY anio DESC, mes DESC, id DESC LIMIT 1')->fetch();
 $avance = $totalEscuelas > 0 ? min(100, round($totalVinculos / $totalEscuelas * 100, 1)) : 0;
+$meses = [1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril', 5 => 'Mayo', 6 => 'Junio', 7 => 'Julio', 8 => 'Agosto', 9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre'];
+$historialMensual = $conexion->query(
+    'SELECT anio, mes, SUM(importe_total) AS total_pagado, SUM(ajuste_muchos_dias) AS ajustes
+     FROM cfe_reportes
+     GROUP BY anio, mes
+     ORDER BY anio ASC, mes ASC'
+)->fetchAll(PDO::FETCH_ASSOC);
+$etiquetasMensuales = [];
+$pagosMensuales = [];
+$ajustesMensuales = [];
+$mesMayorPago = null;
+$mesMayorAjustes = null;
+foreach ($historialMensual as $registroMensual) {
+    $etiqueta = ($meses[(int) $registroMensual['mes']] ?? 'Mes') . ' ' . $registroMensual['anio'];
+    $totalPagado = (float) $registroMensual['total_pagado'];
+    $ajustes = (int) $registroMensual['ajustes'];
+    $etiquetasMensuales[] = $etiqueta;
+    $pagosMensuales[] = $totalPagado;
+    $ajustesMensuales[] = $ajustes;
+    if ($mesMayorPago === null || $totalPagado > $mesMayorPago['valor']) {
+        $mesMayorPago = ['etiqueta' => $etiqueta, 'valor' => $totalPagado];
+    }
+    if ($mesMayorAjustes === null || $ajustes > $mesMayorAjustes['valor']) {
+        $mesMayorAjustes = ['etiqueta' => $etiqueta, 'valor' => $ajustes];
+    }
+}
 ?>
 <!doctype html>
 <html lang="es">
@@ -70,6 +96,35 @@ $avance = $totalEscuelas > 0 ? min(100, round($totalVinculos / $totalEscuelas * 
             <small><?= number_format($totalLecturasCfe) ?> lecturas</small>
         </article>
     </section>
+    <section class="director-overview">
+        <article class="director-chart-card">
+            <div class="director-card-head">
+                <div><span class="eyebrow">PRESUPUESTO</span><h2>Pago total por mes</h2></div>
+                <i class="bi bi-cash-stack"></i>
+            </div>
+            <div class="chart-area"><canvas id="payments-chart"></canvas><p class="chart-empty" id="payments-empty">Carga reportes CFE para ver el comportamiento mensual.</p></div>
+        </article>
+        <article class="director-chart-card">
+            <div class="director-card-head">
+                <div><span class="eyebrow">REVISION</span><h2>Ajustes por mes</h2></div>
+                <i class="bi bi-calendar2-x"></i>
+            </div>
+            <div class="chart-area"><canvas id="adjustments-chart"></canvas><p class="chart-empty" id="adjustments-empty">Los ajustes apareceran al cargar reportes con periodos fuera de rango.</p></div>
+        </article>
+        <article class="director-insights">
+            <span class="eyebrow">PARA DIRECCION</span>
+            <h2>Lo mas importante</h2>
+            <div class="insight-row">
+                <i class="bi bi-graph-up-arrow"></i>
+                <span><small>Mes con mayor pago</small><strong><?= $mesMayorPago ? htmlspecialchars($mesMayorPago['etiqueta'], ENT_QUOTES, 'UTF-8') : 'Sin reportes' ?></strong><b><?= $mesMayorPago ? '$' . number_format($mesMayorPago['valor'], 2) : '$0.00' ?></b></span>
+            </div>
+            <div class="insight-row">
+                <i class="bi bi-exclamation-circle"></i>
+                <span><small>Mes con mas ajustes</small><strong><?= $mesMayorAjustes ? htmlspecialchars($mesMayorAjustes['etiqueta'], ENT_QUOTES, 'UTF-8') : 'Sin reportes' ?></strong><b><?= $mesMayorAjustes ? number_format($mesMayorAjustes['valor']) . ' recibos' : '0 recibos' ?></b></span>
+            </div>
+            <a href="ajustes.php" class="director-link">Ver reportes CFE <i class="bi bi-arrow-right"></i></a>
+        </article>
+    </section>
     <section class="dashboard-grid">
         <article class="panel-card">
             <div class="panel-head">
@@ -95,5 +150,34 @@ $avance = $totalEscuelas > 0 ? min(100, round($totalVinculos / $totalEscuelas * 
         </article>
     </section>
 </main>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+const dashboardLabels = <?= json_encode($etiquetasMensuales, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+const dashboardPayments = <?= json_encode($pagosMensuales, JSON_NUMERIC_CHECK | JSON_HEX_TAG) ?>;
+const dashboardAdjustments = <?= json_encode($ajustesMensuales, JSON_NUMERIC_CHECK | JSON_HEX_TAG) ?>;
+
+if (dashboardLabels.length && window.Chart) {
+    document.getElementById('payments-empty').hidden = true;
+    document.getElementById('adjustments-empty').hidden = true;
+    new Chart(document.getElementById('payments-chart'), {
+        type: 'bar',
+        data: {labels: dashboardLabels, datasets: [{data: dashboardPayments, backgroundColor: '#8b1827', borderRadius: 3, maxBarThickness: 38}]},
+        options: {
+            maintainAspectRatio: false,
+            plugins: {legend: {display: false}, tooltip: {callbacks: {label: context => new Intl.NumberFormat('es-MX', {style: 'currency', currency: 'MXN'}).format(context.raw)}}},
+            scales: {x: {grid: {display: false}, ticks: {color: '#6b6570', font: {size: 10}}}, y: {beginAtZero: true, grid: {color: '#eee9e4'}, ticks: {color: '#6b6570', font: {size: 10}, callback: value => '$' + new Intl.NumberFormat('es-MX', {notation: 'compact', maximumFractionDigits: 1}).format(value)}}}
+        }
+    });
+    new Chart(document.getElementById('adjustments-chart'), {
+        type: 'line',
+        data: {labels: dashboardLabels, datasets: [{data: dashboardAdjustments, borderColor: '#b17b20', backgroundColor: 'rgba(191, 162, 118, .18)', borderWidth: 3, fill: true, tension: .35, pointBackgroundColor: '#8b1827', pointRadius: 4}]},
+        options: {
+            maintainAspectRatio: false,
+            plugins: {legend: {display: false}, tooltip: {callbacks: {label: context => context.raw + ' ajustes'}}},
+            scales: {x: {grid: {display: false}, ticks: {color: '#6b6570', font: {size: 10}}}, y: {beginAtZero: true, ticks: {precision: 0, color: '#6b6570', font: {size: 10}}, grid: {color: '#eee9e4'}}}
+        }
+    });
+}
+</script>
 </body>
 </html>
