@@ -119,7 +119,7 @@ $segBasePath = '../';
                             <em class="file-name">Seleccionar archivo Excel</em>
                         </label>
                     </div>
-                    <button id="sync-catalogs" class="btn-sync-catalogs" type="button">📥 Sincronizar Catálogos en Base de Datos</button>
+                    <button id="sync-catalogs" class="btn-sync-catalogs" type="button">1. Actualizar padrón maestro</button>
                     <div id="sync-status" class="sync-status" hidden>
                         <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
                         <span>Guardando escuelas en base de datos local...</span>
@@ -130,25 +130,18 @@ $segBasePath = '../';
                 <section class="source-column">
                     <div class="source-title"><span>CFE</span>Reportes de consumo</div>
                     <div class="source-stack">
-                        <label class="drop-zone" data-input="archivo_cfe_a">
-                            <input id="archivo_cfe_a" name="archivo_cfe_a" type="file" accept=".xlsx,.xls" required>
+                        <label class="drop-zone" data-input="reportes_cfe">
+                            <input id="reportes_cfe" name="reportes_cfe[]" type="file" accept=".xlsx,.xls" multiple required>
                             <span class="file-icon">3</span>
-                            <strong>3. Reporte CFE - Periodo A</strong>
-                            <small>RPU, nombre, dirección, población y tarifa</small>
-                            <em class="file-name">Seleccionar archivo Excel</em>
-                        </label>
-                        <label class="drop-zone" data-input="archivo_cfe_b">
-                            <input id="archivo_cfe_b" name="archivo_cfe_b" type="file" accept=".xlsx,.xls">
-                            <span class="file-icon">4</span>
-                            <strong>4. Reporte CFE - Periodo B (opcional)</strong>
-                            <small>RPU, nombre, dirección, población y tarifa</small>
-                            <em class="file-name">Seleccionar archivo Excel</em>
+                            <strong>2. Reportes CFE</strong>
+                            <small>Selecciona todos los periodos que deseas guardar</small>
+                            <em class="file-name">Seleccionar uno o varios archivos Excel</em>
                         </label>
                     </div>
                 </section>
             </div>
         </div>
-        <button class="btn-seg" type="submit">Procesar Consolidación Masiva</button>
+        <button class="btn-seg" type="submit">2. Cargar reportes CFE seleccionados</button>
         <div id="progress" class="progress-box" hidden>
             <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
             <span id="progress-text" class="progress-text">Preparando archivos...</span>
@@ -182,6 +175,7 @@ $segBasePath = '../';
     const form = document.getElementById('cross-form');
     const token = document.querySelector('meta[name="csrf-token"]').content;
     const controller = '../../controllers/escuelaController.php';
+    const ajustesController = '../../controllers/ajustesController.php';
     const syncButton = document.getElementById('sync-catalogs');
     const syncStatus = document.getElementById('sync-status');
     const resultSearch = document.getElementById('result-search');
@@ -200,7 +194,10 @@ $segBasePath = '../';
         const input = document.getElementById(zone.dataset.input);
         const update = () => {
             zone.classList.toggle('ready', input.files.length > 0);
-            zone.querySelector('.file-name').textContent = input.files[0]?.name || (input.id === 'archivo_seg' ? 'Seleccionar CSV o Excel' : 'Seleccionar archivo Excel');
+            const fallback = input.id === 'archivo_seg' ? 'Seleccionar CSV o Excel' : 'Seleccionar archivo Excel';
+            zone.querySelector('.file-name').textContent = input.files.length
+                ? (input.multiple ? `${input.files.length} reportes seleccionados` : input.files[0].name)
+                : fallback;
         };
         input.addEventListener('change', update);
         ['dragenter','dragover'].forEach(name => zone.addEventListener(name, event => {
@@ -246,6 +243,41 @@ $segBasePath = '../';
     });
     form.addEventListener('submit', event => {
         event.preventDefault();
+        (async () => {
+            const reportes = document.getElementById('reportes_cfe').files;
+            if (!reportes.length) {
+                Swal.fire({icon:'warning',title:'Sin reportes CFE',text:'Selecciona uno o varios archivos Excel de CFE.',confirmButtonColor:'#6c1d24'});
+                return;
+            }
+            const button = form.querySelector('.btn-seg');
+            const progress = document.getElementById('progress');
+            const bar = document.getElementById('progress-bar');
+            const text = document.getElementById('progress-text');
+            button.disabled = true;
+            progress.hidden = false;
+            bar.style.width = '12%';
+            text.textContent = `Preparando ${reportes.length} reportes CFE...`;
+            const body = new FormData();
+            body.append('accion', 'importar_reportes_masivos');
+            body.append('csrf', token);
+            Array.from(reportes).forEach(reporte => body.append('reportes_cfe[]', reporte));
+            try {
+                const response = await fetch(ajustesController, {method:'POST',headers:{'X-CSRF-Token':token},body});
+                const data = parseServerJson(await response.text());
+                if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible guardar los reportes CFE.');
+                bar.style.width = '100%';
+                text.textContent = `${data.reportes} reportes guardados con ${Number(data.registros || 0).toLocaleString('es-MX')} registros.`;
+                const errores = (data.errores || []).length ? ` ${data.errores.length} archivos no se procesaron.` : '';
+                Swal.fire({icon:'success',title:'Carga CFE terminada',text:`Se guardaron ${data.reportes} reportes.${errores}`,confirmButtonColor:'#6c1d24'});
+            } catch (error) {
+                bar.style.width = '0%';
+                text.textContent = 'No se completó la carga.';
+                Swal.fire({icon:'error',title:'Error al cargar reportes',text:error.message,confirmButtonColor:'#6c1d24'});
+            } finally {
+                button.disabled = false;
+            }
+        })();
+        return;
         const button = form.querySelector('.btn-seg');
         const progress = document.getElementById('progress');
         const bar = document.getElementById('progress-bar');

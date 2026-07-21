@@ -8,6 +8,81 @@ require_once dirname(__DIR__) . '/services/conexion.php';
 
 class AjustesController
 {
+    public function importarReportesMasivos(): void
+    {
+        set_time_limit(0);
+        $this->validarToken();
+        $archivos = $_FILES['reportes_cfe'] ?? null;
+        if (!is_array($archivos) || !is_array($archivos['name'] ?? null) || !$archivos['name']) {
+            $this->responder(['ok' => false, 'error' => 'Selecciona uno o mas reportes CFE.'], 422);
+        }
+
+        $conexion = Conexion::conectar();
+        $this->prepararHistorialCfe($conexion);
+        $python = $this->localizarPython();
+        $script = dirname(__DIR__) . '/services/detectar_ajustes_cfe.py';
+        $procesados = [];
+        $errores = [];
+        $totalRegistros = 0;
+
+        foreach ($archivos['name'] as $indice => $nombreOriginal) {
+            if (($archivos['error'][$indice] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                $errores[] = ['archivo' => $nombreOriginal, 'error' => 'No fue posible recibir el archivo.'];
+                continue;
+            }
+            $extension = strtolower(pathinfo((string) $nombreOriginal, PATHINFO_EXTENSION));
+            if (!in_array($extension, ['xlsx', 'xls'], true)) {
+                $errores[] = ['archivo' => $nombreOriginal, 'error' => 'Solo se admiten archivos XLSX o XLS.'];
+                continue;
+            }
+            if (!preg_match('/(20\d{2})[-_](0[1-9]|1[0-2])/', (string) $nombreOriginal, $periodo)) {
+                $errores[] = ['archivo' => $nombreOriginal, 'error' => 'El nombre debe incluir el periodo AAAA-MM.'];
+                continue;
+            }
+            $ruta = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'cfe_masivo_' . bin2hex(random_bytes(12)) . '.' . $extension;
+            try {
+                if (!move_uploaded_file($archivos['tmp_name'][$indice], $ruta)) {
+                    throw new RuntimeException('No fue posible preparar el archivo.');
+                }
+                $anio = (int) $periodo[1];
+                $mes = (int) $periodo[2];
+                $comando = escapeshellarg($python)
+                    . ' ' . escapeshellarg($script)
+                    . ' ' . escapeshellarg($ruta)
+                    . ' ' . escapeshellarg((string) $anio)
+                    . ' ' . escapeshellarg((string) $mes)
+                    . ' automatico 2>&1';
+                $salida = shell_exec($comando);
+                $lineas = is_string($salida) ? array_values(array_filter(array_map('trim', preg_split('/\R/', $salida)))) : [];
+                $resultado = json_decode($lineas ? end($lineas) : '', true);
+                if (!is_array($resultado) || empty($resultado['ok'])) {
+                    throw new RuntimeException((string) ($resultado['error'] ?? 'El analizador no devolvio una respuesta valida.'));
+                }
+                $resultado['archivo'] = (string) $nombreOriginal;
+                $conexion->prepare('DELETE FROM cfe_reportes WHERE anio = ? AND mes = ?')->execute([$anio, $mes]);
+                $guardado = $this->guardarHistorial($conexion, $resultado, $anio, $mes, 'automatico');
+                $this->anexarSugerencias($conexion, $guardado);
+                $registros = (int) ($guardado['historial_guardado'] ?? 0);
+                $totalRegistros += $registros;
+                $procesados[] = ['archivo' => $nombreOriginal, 'periodo' => sprintf('%04d-%02d', $anio, $mes), 'registros' => $registros];
+            } catch (Throwable $e) {
+                $errores[] = ['archivo' => $nombreOriginal, 'error' => $e->getMessage()];
+            } finally {
+                if (is_file($ruta)) {
+                    unlink($ruta);
+                }
+            }
+        }
+
+        $this->responder([
+            'ok' => $procesados !== [],
+            'reportes' => count($procesados),
+            'registros' => $totalRegistros,
+            'procesados' => $procesados,
+            'errores' => $errores
+        ], $procesados !== [] ? 200 : 422);
+    }
+
     public function analizar(): void
     {
         $this->validarToken();
@@ -817,6 +892,10 @@ $controlador = new AjustesController();
 
 if ($accion === 'analizar_ajustes_cfe') {
     $controlador->analizar();
+}
+
+if ($accion === 'importar_reportes_masivos') {
+    $controlador->importarReportesMasivos();
 }
 
 if ($accion === 'exportar_excel_directores') {
