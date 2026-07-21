@@ -15,6 +15,10 @@ function dashboardCount(PDO $conexion, string $query): int
 $totalEscuelas = dashboardCount($conexion, 'SELECT COUNT(*) FROM escuelas');
 $totalVinculos = dashboardCount($conexion, 'SELECT COUNT(*) FROM escuelas_rpu');
 $rpusVinculados = dashboardCount($conexion, 'SELECT COUNT(DISTINCT RPU) FROM escuelas_rpu');
+$totalReportesCfe = dashboardCount($conexion, 'SELECT COUNT(*) FROM cfe_reportes');
+$totalLecturasCfe = dashboardCount($conexion, 'SELECT COUNT(*) FROM cfe_consumos');
+$casosCfe = dashboardCount($conexion, 'SELECT COUNT(*) FROM cfe_consumos WHERE severidad >= 3');
+$ultimoReporte = $conexion->query('SELECT anio, mes FROM cfe_reportes ORDER BY anio DESC, mes DESC, id DESC LIMIT 1')->fetch();
 $avance = $totalEscuelas > 0 ? min(100, round($totalVinculos / $totalEscuelas * 100, 1)) : 0;
 ?>
 <!doctype html>
@@ -34,16 +38,16 @@ $avance = $totalEscuelas > 0 ? min(100, round($totalVinculos / $totalEscuelas * 
     <section class="heading">
         <div>
             <span class="eyebrow">SISTEMA INTEGRAL SEG</span>
-            <h1>Panel de Control</h1>
-            <p>Resumen general del sistema: escuelas registradas, medidores RPU vinculados y avance de consolidacion. Usa los modulos de la izquierda para navegar.</p>
+            <h1>Resumen de operacion</h1>
+            <p>Consulta en un vistazo las escuelas cargadas, los medidores vinculados y el historial de cobros CFE.</p>
         </div>
-        <a class="btn-seg compact-action" href="consolidacion/consolidacion.php"><i class="bi bi-lightning-charge me-2"></i>Iniciar consolidacion</a>
+        <a class="btn-seg compact-action" href="consolidacion/consolidacion.php"><i class="bi bi-lightning-charge me-2"></i>Consolidar archivos</a>
     </section>
     <section class="quick-actions">
         <article class="quick-card">
             <span class="quick-icon"><i class="bi bi-building-check"></i></span>
             <div><strong><?= number_format($totalEscuelas) ?></strong><span>Escuelas insertadas</span></div>
-            <small>Catalogo</small>
+            <small>Catalogos</small>
         </article>
         <article class="quick-card">
             <span class="quick-icon"><i class="bi bi-diagram-3"></i></span>
@@ -55,6 +59,16 @@ $avance = $totalEscuelas > 0 ? min(100, round($totalVinculos / $totalEscuelas * 
             <div><strong><?= number_format($avance, 1) ?>%</strong><span>Avance de vinculacion</span></div>
             <small><?= number_format($rpusVinculados) ?> RPU</small>
         </article>
+        <article class="quick-card">
+            <span class="quick-icon"><i class="bi bi-file-earmark-bar-graph"></i></span>
+            <div><strong><?= number_format($totalReportesCfe) ?></strong><span>Reportes CFE cargados</span></div>
+            <small><?= $ultimoReporte ? htmlspecialchars(sprintf('%02d/%d', $ultimoReporte['mes'], $ultimoReporte['anio']), ENT_QUOTES, 'UTF-8') : 'Sin carga' ?></small>
+        </article>
+        <article class="quick-card <?= $casosCfe > 0 ? 'quick-card-warning' : '' ?>">
+            <span class="quick-icon"><i class="bi bi-exclamation-triangle"></i></span>
+            <div><strong><?= number_format($casosCfe) ?></strong><span>Casos CFE por revisar</span></div>
+            <small><?= number_format($totalLecturasCfe) ?> lecturas</small>
+        </article>
     </section>
     <section class="dashboard-grid">
         <article class="panel-card">
@@ -63,10 +77,9 @@ $avance = $totalEscuelas > 0 ? min(100, round($totalVinculos / $totalEscuelas * 
             </div>
             <div class="process-list">
                 <div><b>1</b><span><strong>Sincroniza catalogos</strong><small>Carga SEG y Oficializacion para poblar escuelas.</small></span></div>
-                <div><b>2</b><span><strong>Procesa reportes CFE</strong><small>Analiza uno o dos periodos de recibos.</small></span></div>
+                <div><b>2</b><span><strong>Carga un reporte CFE</strong><small>Guarda cada RPU con sus importes y periodo facturado.</small></span></div>
                 <div><b>3</b><span><strong>Confirma vinculos</strong><small>Guarda coincidencias seguras o revisadas.</small></span></div>
-                <div><b>4</b><span><strong>Audita ajustes</strong><small>Detecta cobros no bimestrales y cargos atipicos.</small></span></div>
-                <div><b>5</b><span><strong>Consulta RPU</strong><small>Revisa mapa, escuela e historial de pagos.</small></span></div>
+                <div><b>4</b><span><strong>Revisa cobros</strong><small>Identifica ajustes, consumo bajo y aumentos importantes.</small></span></div>
             </div>
         </article>
         <article class="panel-card">

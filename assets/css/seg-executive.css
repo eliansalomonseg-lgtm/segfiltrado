@@ -1811,3 +1811,223 @@ body {
 .quick-actions { animation-delay: 0.05s; }
 .dashboard-grid { animation-delay: 0.1s; }
 .results-card { animation-delay: 0.12s; }
+
+:root {
+    --seg-bg: #f8f9fa;
+    --seg-card: #ffffff;
+    --seg-border: #e5e7eb;
+    --seg-text: #242b35;
+    --seg-muted: #667085;
+    --seg-shadow: 0 5px 18px rgba(31, 41, 55, 0.05);
+}
+
+body {
+    background: var(--seg-bg) !important;
+}
+
+.seg-sidebar {
+    background: #5d1725 !important;
+    border-radius: 0 20px 0 0;
+    box-shadow: 4px 0 18px rgba(66, 16, 26, 0.16) !important;
+    padding: 16px 12px !important;
+}
+
+.seg-sidebar.collapsed {
+    padding: 16px 8px !important;
+}
+
+.seg-sidebar-toggle {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.18);
+    margin-bottom: 8px;
+}
+
+.seg-logo-box {
+    border-radius: 10px !important;
+    height: 82px !important;
+    margin-bottom: 16px !important;
+    padding: 10px 14px !important;
+}
+
+.seg-logo-box img {
+    max-height: 58px !important;
+    max-width: 100% !important;
+    object-fit: contain !important;
+}
+
+.seg-menu {
+    gap: 4px;
+}
+
+.seg-menu a {
+    border-radius: 9px;
+    min-height: 46px;
+    padding: 7px 9px;
+}
+
+.seg-menu a i {
+    border-radius: 9px;
+    height: 32px;
+    width: 32px;
+}
+
+.seg-menu a:hover,
+.seg-menu a.active {
+    background: rgba(255, 255, 255, 0.12) !important;
+    box-shadow: inset 3px 0 0 var(--seg-gold) !important;
+    transform: none !important;
+}
+
+.seg-sidebar-foot {
+    border-radius: 9px !important;
+    padding: 10px !important;
+}
+
+.seg-navbar {
+    background: #ffffff !important;
+    border-bottom: 1px solid var(--seg-border) !important;
+    box-shadow: 0 2px 10px rgba(31, 41, 55, 0.04) !important;
+    height: 64px !important;
+    padding: 0 24px !important;
+}
+
+.seg-navbar-burger {
+    background: #f8f9fa;
+    border-color: var(--seg-border);
+    color: var(--seg-guinda);
+}
+
+.seg-navbar-burger:hover {
+    background: var(--seg-gold-light);
+}
+
+.seg-navbar-title strong {
+    color: var(--seg-text) !important;
+    font-size: 16px;
+}
+
+.seg-navbar-actions {
+    background: #f8f9fa !important;
+    border-color: var(--seg-border) !important;
+    padding: 6px 11px !important;
+}
+
+.seg-badge {
+    color: var(--seg-guinda) !important;
+}
+
+.content,
+.workspace {
+    padding: 84px 24px 28px !important;
+}
+
+.heading {
+    border-radius: 12px !important;
+    margin-bottom: 16px !important;
+    padding: 18px 22px !important;
+}
+
+.heading h1,
+.hero h1 {
+    font-size: 25px !important;
+}
+
+.heading p,
+.hero p {
+    font-size: 13px !important;
+}
+
+.quick-actions {
+    grid-template-columns: repeat(auto-fit, minmax(205px, 1fr));
+    margin-bottom: 16px;
+}
+
+.quick-card {
+    border-radius: 12px !important;
+    min-height: 74px;
+    padding: 13px;
+}
+
+.quick-card-warning .quick-icon {
+    background: #fff4df;
+    color: #9a6700;
+}
+
+.quick-card-warning small {
+    color: #9a6700;
+}
+
+.dashboard-grid {
+    grid-template-columns: minmax(0, 1.12fr) minmax(300px, .88fr);
+}
+
+.panel-card {
+    border-radius: 12px !important;
+    padding: 16px;
+}
+
+.process-list div,
+.module-list a {
+    border-radius: 9px;
+    padding: 9px;
+}
+
+@media (max-width: 900px) {
+    .seg-sidebar,
+    .seg-sidebar.collapsed {
+        padding: 16px 12px !important;
+    }
+
+    .seg-navbar {
+        height: 60px !important;
+        padding: 0 14px !important;
+    }
+
+    .seg-navbar-title span {
+        font-size: 9px;
+    }
+
+    .seg-navbar-title strong {
+        font-size: 13px;
+    }
+
+    .content,
+    .workspace {
+        padding: 76px 14px 22px !important;
+    }
+
+    .heading {
+        padding: 16px !important;
+    }
+
+    .heading h1,
+    .hero h1 {
+        font-size: 22px !important;
+    }
+
+    .quick-actions {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .quick-card {
+        grid-template-columns: 36px minmax(0, 1fr);
+    }
+
+    .quick-card small {
+        display: none;
+    }
+}
+
+@media (max-width: 540px) {
+    .seg-navbar-actions {
+        padding: 6px 8px !important;
+    }
+
+    .seg-badge {
+        font-size: 10px !important;
+    }
+
+    .quick-actions {
+        grid-template-columns: 1fr;
+    }
+}

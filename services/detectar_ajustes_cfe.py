@@ -223,11 +223,17 @@ def analizar(ruta, anio=None, mes=None, modo_periodo="automatico"):
             "dias": dias if dias is not None else "",
             "tipo_periodo": tipo_periodo,
             "consumo": consumo,
+            "demanda": numero(valor_opcional(fila, "DEMANDA")),
+            "reactivos": numero(valor_opcional(fila, "REACTIVOS")),
+            "factor_potencia": numero(valor_opcional(fila, "FACTORPOTENCIA")),
+            "factor_carga": numero(valor_opcional(fila, "FACTORCARGA")),
             "energia": energia,
+            "iva": numero(valor_opcional(fila, "IVA")),
             "dap": dap,
             "cargos_depositos": cargos,
             "creditos_redondeos": creditos,
             "total": total,
+            "formula_validacion": numero(valor_opcional(fila, "FORMULAVALIDACION")),
             "diferencia": diferencia,
             "alertas": alertas,
             "severidad": severidad
@@ -253,11 +259,13 @@ def analizar(ruta, anio=None, mes=None, modo_periodo="automatico"):
 def exportar_csv(resultado, ruta_salida):
     with open(ruta_salida, "w", newline="", encoding="utf-8-sig") as archivo:
         escritor = csv.writer(archivo)
-        escritor.writerow(["RPU", "NOMBRE", "POBLACION", "TARIFA", "TIPO_PERIODO", "DESDE", "HASTA", "DIAS", "CONSUMO", "ENERGIA", "DAP", "CARGOS_DEPOSITOS", "CREDITOS_REDONDEOS", "TOTAL", "DIFERENCIA", "SEVERIDAD", "ALERTAS"])
+        escritor.writerow(["DIVISION", "RPU", "NOMBRE", "DIRECCION", "POBLACION", "TARIFA", "TIPO_PERIODO", "DESDE", "HASTA", "DIAS", "CONSUMO", "DEMANDA", "REACTIVOS", "FACTOR_POTENCIA", "FACTOR_CARGA", "ENERGIA", "IVA", "DAP", "CARGOS_DEPOSITOS", "CREDITOS_REDONDEOS", "TOTAL", "FORMULA_VALIDACION", "DIFERENCIA", "SEVERIDAD", "ALERTAS"])
         for fila in resultado["registros"]:
             escritor.writerow([
+                fila["division"],
                 fila["rpu"],
                 fila["nombre"],
+                fila["direccion"],
                 fila["poblacion"],
                 fila["tarifa"],
                 fila["tipo_periodo"],
@@ -265,11 +273,17 @@ def exportar_csv(resultado, ruta_salida):
                 fila["hasta"],
                 fila["dias"],
                 fila["consumo"],
+                fila["demanda"],
+                fila["reactivos"],
+                fila["factor_potencia"],
+                fila["factor_carga"],
                 fila["energia"],
+                fila["iva"],
                 fila["dap"],
                 fila["cargos_depositos"],
                 fila["creditos_redondeos"],
                 fila["total"],
+                fila["formula_validacion"],
                 fila["diferencia"],
                 fila["severidad"],
                 " | ".join(fila["alertas"])

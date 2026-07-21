@@ -477,11 +477,17 @@ class RpuController
                 hasta DATE NULL,
                 dias INT NULL,
                 consumo DECIMAL(14,2) NOT NULL DEFAULT 0,
+                demanda DECIMAL(14,2) NOT NULL DEFAULT 0,
+                reactivos DECIMAL(14,2) NOT NULL DEFAULT 0,
+                factor_potencia DECIMAL(14,4) NOT NULL DEFAULT 0,
+                factor_carga DECIMAL(14,4) NOT NULL DEFAULT 0,
                 energia DECIMAL(14,2) NOT NULL DEFAULT 0,
+                iva DECIMAL(14,2) NOT NULL DEFAULT 0,
                 dap DECIMAL(14,2) NOT NULL DEFAULT 0,
                 cargos_depositos DECIMAL(14,2) NOT NULL DEFAULT 0,
                 creditos_redondeos DECIMAL(14,2) NOT NULL DEFAULT 0,
                 total DECIMAL(14,2) NOT NULL DEFAULT 0,
+                formula_validacion DECIMAL(14,2) NOT NULL DEFAULT 0,
                 diferencia DECIMAL(14,2) NOT NULL DEFAULT 0,
                 severidad INT NOT NULL DEFAULT 0,
                 alertas TEXT NULL,
@@ -492,6 +498,12 @@ class RpuController
         );
         $this->asegurarColumna($conexion, 'cfe_consumos', 'division_cfe', 'VARCHAR(80) NULL');
         $this->asegurarColumna($conexion, 'cfe_consumos', 'direccion_cfe', 'VARCHAR(255) NULL');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'demanda', 'DECIMAL(14,2) NOT NULL DEFAULT 0');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'reactivos', 'DECIMAL(14,2) NOT NULL DEFAULT 0');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'factor_potencia', 'DECIMAL(14,4) NOT NULL DEFAULT 0');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'factor_carga', 'DECIMAL(14,4) NOT NULL DEFAULT 0');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'iva', 'DECIMAL(14,2) NOT NULL DEFAULT 0');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'formula_validacion', 'DECIMAL(14,2) NOT NULL DEFAULT 0');
     }
 
     private function asegurarColumna(PDO $conexion, string $tabla, string $columna, string $definicion): void

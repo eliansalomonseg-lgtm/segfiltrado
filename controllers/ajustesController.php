@@ -134,11 +134,17 @@ class AjustesController
                 hasta DATE NULL,
                 dias INT NULL,
                 consumo DECIMAL(14,2) NOT NULL DEFAULT 0,
+                demanda DECIMAL(14,2) NOT NULL DEFAULT 0,
+                reactivos DECIMAL(14,2) NOT NULL DEFAULT 0,
+                factor_potencia DECIMAL(14,4) NOT NULL DEFAULT 0,
+                factor_carga DECIMAL(14,4) NOT NULL DEFAULT 0,
                 energia DECIMAL(14,2) NOT NULL DEFAULT 0,
+                iva DECIMAL(14,2) NOT NULL DEFAULT 0,
                 dap DECIMAL(14,2) NOT NULL DEFAULT 0,
                 cargos_depositos DECIMAL(14,2) NOT NULL DEFAULT 0,
                 creditos_redondeos DECIMAL(14,2) NOT NULL DEFAULT 0,
                 total DECIMAL(14,2) NOT NULL DEFAULT 0,
+                formula_validacion DECIMAL(14,2) NOT NULL DEFAULT 0,
                 diferencia DECIMAL(14,2) NOT NULL DEFAULT 0,
                 severidad INT NOT NULL DEFAULT 0,
                 alertas TEXT NULL,
@@ -151,6 +157,12 @@ class AjustesController
         );
         $this->asegurarColumna($conexion, 'cfe_consumos', 'division_cfe', 'VARCHAR(80) NULL');
         $this->asegurarColumna($conexion, 'cfe_consumos', 'direccion_cfe', 'VARCHAR(255) NULL');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'demanda', 'DECIMAL(14,2) NOT NULL DEFAULT 0');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'reactivos', 'DECIMAL(14,2) NOT NULL DEFAULT 0');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'factor_potencia', 'DECIMAL(14,4) NOT NULL DEFAULT 0');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'factor_carga', 'DECIMAL(14,4) NOT NULL DEFAULT 0');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'iva', 'DECIMAL(14,2) NOT NULL DEFAULT 0');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'formula_validacion', 'DECIMAL(14,2) NOT NULL DEFAULT 0');
         $this->asegurarColumna($conexion, 'cfe_reportes', 'ajuste_muchos_dias', 'INT NOT NULL DEFAULT 0');
         $this->asegurarColumna($conexion, 'cfe_reportes', 'periodo_correcto_con_aumento', 'INT NOT NULL DEFAULT 0');
         $this->asegurarColumna($conexion, 'cfe_reportes', 'sin_alerta_con_aumento', 'INT NOT NULL DEFAULT 0');
@@ -252,8 +264,8 @@ class AjustesController
             $reporteId = (int) $conexion->lastInsertId();
             $vinculos = $this->obtenerVinculosPorRpu($conexion, array_column($registros, 'rpu'));
             $consultaConsumo = $conexion->prepare(
-                'INSERT INTO cfe_consumos (reporte_id, RPU, CCT, division_cfe, nombre_cfe, direccion_cfe, poblacion_cfe, tarifa_cfe, tipo_periodo, desde, hasta, dias, consumo, energia, dap, cargos_depositos, creditos_redondeos, total, diferencia, severidad, alertas)
-                 VALUES (:reporte_id, :rpu, :cct, :division, :nombre, :direccion, :poblacion, :tarifa, :tipo_periodo, :desde, :hasta, :dias, :consumo, :energia, :dap, :cargos, :creditos, :total, :diferencia, :severidad, :alertas)'
+                'INSERT INTO cfe_consumos (reporte_id, RPU, CCT, division_cfe, nombre_cfe, direccion_cfe, poblacion_cfe, tarifa_cfe, tipo_periodo, desde, hasta, dias, consumo, demanda, reactivos, factor_potencia, factor_carga, energia, iva, dap, cargos_depositos, creditos_redondeos, total, formula_validacion, diferencia, severidad, alertas)
+                 VALUES (:reporte_id, :rpu, :cct, :division, :nombre, :direccion, :poblacion, :tarifa, :tipo_periodo, :desde, :hasta, :dias, :consumo, :demanda, :reactivos, :factor_potencia, :factor_carga, :energia, :iva, :dap, :cargos, :creditos, :total, :formula_validacion, :diferencia, :severidad, :alertas)'
             );
             foreach ($registros as $registro) {
                 if (!is_array($registro)) {
@@ -277,11 +289,17 @@ class AjustesController
                     'hasta' => $this->fechaONulo($registro['hasta'] ?? null),
                     'dias' => is_numeric($registro['dias'] ?? null) ? (int) $registro['dias'] : null,
                     'consumo' => (float) ($registro['consumo'] ?? 0),
+                    'demanda' => (float) ($registro['demanda'] ?? 0),
+                    'reactivos' => (float) ($registro['reactivos'] ?? 0),
+                    'factor_potencia' => (float) ($registro['factor_potencia'] ?? 0),
+                    'factor_carga' => (float) ($registro['factor_carga'] ?? 0),
                     'energia' => (float) ($registro['energia'] ?? 0),
+                    'iva' => (float) ($registro['iva'] ?? 0),
                     'dap' => (float) ($registro['dap'] ?? 0),
                     'cargos' => (float) ($registro['cargos_depositos'] ?? 0),
                     'creditos' => (float) ($registro['creditos_redondeos'] ?? 0),
                     'total' => (float) ($registro['total'] ?? 0),
+                    'formula_validacion' => (float) ($registro['formula_validacion'] ?? 0),
                     'diferencia' => (float) ($registro['diferencia'] ?? 0),
                     'severidad' => (int) ($registro['severidad'] ?? 0),
                     'alertas' => implode(' | ', array_map('strval', is_array($registro['alertas'] ?? null) ? $registro['alertas'] : []))
