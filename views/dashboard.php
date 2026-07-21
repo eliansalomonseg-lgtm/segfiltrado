@@ -35,9 +35,9 @@ $avance = $totalEscuelas > 0 ? min(100, round($totalVinculos / $totalEscuelas * 
         <div>
             <span class="eyebrow">SISTEMA INTEGRAL SEG</span>
             <h1>Panel de Control</h1>
-            <p>Administra la consolidacion de escuelas, medidores RPU y catalogos institucionales de la base seg.</p>
+            <p>Resumen general del sistema: escuelas registradas, medidores RPU vinculados y avance de consolidacion. Usa los modulos de la izquierda para navegar.</p>
         </div>
-        <a class="btn-seg compact-action" href="consolidacion/consolidacion.php">Iniciar consolidacion</a>
+        <a class="btn-seg compact-action" href="consolidacion/consolidacion.php"><i class="bi bi-lightning-charge me-2"></i>Iniciar consolidacion</a>
     </section>
     <section class="quick-actions">
         <article class="quick-card">
