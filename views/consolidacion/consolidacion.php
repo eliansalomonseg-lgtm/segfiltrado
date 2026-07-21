@@ -108,14 +108,14 @@ $segBasePath = '../';
                             <input id="archivo_seg" name="archivo_seg" type="file" accept=".csv,.xlsx,.xls" required>
                             <span class="file-icon seg">1</span>
                             <strong>1. Catálogo Institucional SEG</strong>
-                            <small>CCT, plantel, municipio, localidad, status y nivel</small>
+                            <small>66 columnas de inmuebles, ubicacion, directorio y contacto</small>
                             <em class="file-name">Seleccionar CSV o Excel</em>
                         </label>
                         <label class="drop-zone" data-input="archivo_oficializacion">
                             <input id="archivo_oficializacion" name="archivo_oficializacion" type="file" accept=".xlsx,.xls" required>
                             <span class="file-icon seg">2</span>
                             <strong>2. Oficialización Básica (Datos 911)</strong>
-                            <small>CV_CCT, plantel, municipio, localidad y tipo</small>
+                            <small>169 columnas de estadistica, nivel, turno y matricula</small>
                             <em class="file-name">Seleccionar archivo Excel</em>
                         </label>
                     </div>
@@ -221,8 +221,8 @@ $segBasePath = '../';
     syncButton.addEventListener('click', async () => {
         const catalogo = document.getElementById('archivo_seg').files[0];
         const oficializacion = document.getElementById('archivo_oficializacion').files[0];
-        if (!catalogo && !oficializacion) {
-            Swal.fire({icon:'warning',title:'Sin catálogos',text:'Carga al menos un catálogo para sincronizar.',confirmButtonColor:'#6c1d24'});
+        if (!catalogo || !oficializacion) {
+            Swal.fire({icon:'warning',title:'Faltan catálogos',text:'Para actualizar el padrón maestro carga CCT SEG y Oficialización 911.',confirmButtonColor:'#6c1d24'});
             return;
         }
         const body = new FormData();
@@ -236,7 +236,7 @@ $segBasePath = '../';
             const response = await fetch(controller,{method:'POST',headers:{'X-CSRF-Token':token},body});
             const data = parseServerJson(await response.text());
             if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible sincronizar los catálogos.');
-            Swal.fire({icon:'success',title:'Catálogos sincronizados',text:`Se guardaron ${data.total} escuelas en la base local.`,confirmButtonColor:'#6c1d24'});
+            Swal.fire({icon:'success',title:'Padrón maestro actualizado',text:`Se consolidaron ${data.total} registros.`,confirmButtonColor:'#6c1d24'});
         } catch (error) {
             Swal.fire({icon:'error',title:'Error de sincronización',text:error.message,confirmButtonColor:'#6c1d24'});
         } finally {

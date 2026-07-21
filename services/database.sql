@@ -83,8 +83,18 @@ CREATE TABLE IF NOT EXISTS `escuelas` (
   `TOTAL` TEXT NULL,
   `GRUPOS` TEXT NULL,
   `LENGUA` TEXT NULL,
+  `CLASIFICACION` VARCHAR(120) NULL,
   `DATOS_SEG_JSON` LONGTEXT NULL,
   `DATOS_OFICIALIZACION_JSON` LONGTEXT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `catalogo_columnas` (
+  `fuente` VARCHAR(40) NOT NULL,
+  `posicion` INT NOT NULL,
+  `columna_original` VARCHAR(255) NOT NULL,
+  `columna_bd` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (`fuente`, `posicion`),
+  UNIQUE KEY `uniq_catalogo_columna` (`fuente`, `columna_bd`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `cfe_precarga` (

@@ -57,11 +57,6 @@ try:
                 return datos[columna]
         return None
 
-    def filtrar_publico(datos, columna, origen):
-        if columna not in datos.columns:
-            raise ValueError(f"Faltan columnas {origen}: {columna}")
-        return datos[datos[columna].map(normalizar) == "PUBLICO"].copy()
-
     def mapear_homo(valor):
         homo = normalizar_codigo(valor)
         if homo.startswith("F"):
@@ -79,12 +74,12 @@ try:
 
     def cargar_excel_seg(ruta, columnas):
         datos = preparar_columnas(pd.read_excel(ruta, dtype=object))
-        requeridas = ["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "HOMO", "SOSTCONTROL"]
+        requeridas = ["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "HOMO", "TIPOCT"]
         faltantes = [columna for columna in requeridas if columna not in datos.columns]
         if faltantes:
             raise ValueError(f"Faltan columnas SEG: {', '.join(faltantes)}")
-        datos = filtrar_publico(datos, "SOSTCONTROL", "SEG")
         datos = aplicar_homo(datos)
+        datos["ADMINISTRATIVO"] = datos["ADMINISTRATIVO"] | (datos["TIPOCT"].map(normalizar) != "ESCUELA")
         direccion = columna_direccion(datos)
         datos["DOMICILIO"] = direccion if direccion is not None else None
         datos["ORIGEN"] = "Catalogo SEG"
@@ -94,7 +89,7 @@ try:
         try:
             crudos = pd.read_excel(ruta_oficializacion, header=None, dtype=object)
             datos = None
-            columnas_requeridas = ["CVCCT", "NOMBRECT", "CNOMMUN", "CNOMLOC", "HOMO", "CONTROL"]
+            columnas_requeridas = ["CVCCT", "NOMBRECT", "CNOMMUN", "CNOMLOC", "HOMO"]
             for indice, fila in crudos.iterrows():
                 valores = [normalizar_codigo(valor) for valor in fila.values]
                 if "CVCCT" in valores and "NOMBRECT" in valores:
@@ -108,7 +103,6 @@ try:
         except Exception as e:
             raise ValueError(f"Error al procesar Oficializacion: {str(e)}") from e
 
-        datos = filtrar_publico(datos, "CONTROL", "Oficializacion 911")
         datos = aplicar_homo(datos)
         direccion = columna_direccion(datos)
         datos = datos[columnas_requeridas + ["NIVEL", "SUBNIVEL", "ADMINISTRATIVO"]].rename(columns={
@@ -181,7 +175,7 @@ try:
         return similitud, similitud + prioridad, nivel_coincide
 
     def procesar(ruta_seg, ruta_oficializacion, ruta_cfe_a, ruta_cfe_b=None):
-        columnas_seg = ["CCT", "NOMBRECT", "DOMICILIO", "NOMBREMUN", "NOMBRELOC", "STATUS", "NIVEL", "SUBNIVEL", "HOMO", "ADMINISTRATIVO", "ORIGEN"]
+        columnas_seg = ["CCT", "NOMBRECT", "DOMICILIO", "NOMBREMUN", "NOMBRELOC", "STATUS", "NIVEL", "SUBNIVEL", "HOMO", "TIPOCT", "ADMINISTRATIVO", "ORIGEN"]
         columnas_cfe = ["RPU", "NOMBRE", "DIRECCION", "POBLACION", "TARIFA"]
         catalogo_seg = cargar_excel_seg(ruta_seg, columnas_seg)
         oficializacion = cargar_excel_oficializacion(ruta_oficializacion)

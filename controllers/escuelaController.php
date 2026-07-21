@@ -82,16 +82,12 @@ class EscuelaController
         set_time_limit(0);
         $this->validarToken();
         $campos = ['catalogo_seg', 'oficializacion_911'];
-        $archivos = [];
         foreach ($campos as $campo) {
-            if (isset($_FILES[$campo]) && $_FILES[$campo]['error'] === UPLOAD_ERR_OK) {
-                $archivos[] = $campo;
+            if (!isset($_FILES[$campo]) || $_FILES[$campo]['error'] !== UPLOAD_ERR_OK) {
+                $this->responder(['ok' => false, 'error' => 'Para actualizar el padron maestro carga CCT SEG y Oficializacion 911.'], 422);
             }
         }
-        if (!$archivos) {
-            $this->responder(['ok' => false, 'error' => 'Carga al menos un catalogo para sincronizar.'], 422);
-        }
-        foreach ($archivos as $campo) {
+        foreach ($campos as $campo) {
             $extension = strtolower(pathinfo($_FILES[$campo]['name'], PATHINFO_EXTENSION));
             $permitidas = $campo === 'catalogo_seg' ? ['csv', 'xlsx', 'xls'] : ['xlsx', 'xls'];
             if (!in_array($extension, $permitidas, true)) {
@@ -100,7 +96,7 @@ class EscuelaController
         }
         $rutas = [];
         try {
-            foreach ($archivos as $campo) {
+            foreach ($campos as $campo) {
                 $extension = strtolower(pathinfo($_FILES[$campo]['name'], PATHINFO_EXTENSION));
                 $ruta = sys_get_temp_dir() . DIRECTORY_SEPARATOR . $campo . '_' . bin2hex(random_bytes(16)) . '.' . $extension;
                 if (!move_uploaded_file($_FILES[$campo]['tmp_name'], $ruta)) {
@@ -108,14 +104,13 @@ class EscuelaController
                 }
                 $rutas[$campo] = $ruta;
             }
-            $this->prepararTablaEscuelas(Conexion::conectar());
             $python = $this->localizarPython();
             $script = dirname(__DIR__) . '/services/guardar_escuelas_bd.py';
-            $comando = escapeshellarg($python) . ' ' . escapeshellarg($script);
-            foreach ($rutas as $ruta) {
-                $comando .= ' ' . escapeshellarg($ruta);
-            }
-            $comando .= ' 2>&1';
+            $comando = escapeshellarg($python)
+                . ' ' . escapeshellarg($script)
+                . ' ' . escapeshellarg($rutas['catalogo_seg'])
+                . ' ' . escapeshellarg($rutas['oficializacion_911'])
+                . ' 2>&1';
             $salida = shell_exec($comando);
             $lineas = is_string($salida)
                 ? array_values(array_filter(array_map('trim', preg_split('/\R/', $salida))))
@@ -566,6 +561,7 @@ class EscuelaController
             'TOTAL' => 'TEXT NULL',
             'GRUPOS' => 'TEXT NULL',
             'LENGUA' => 'TEXT NULL',
+            'CLASIFICACION' => 'VARCHAR(120) NULL',
             'DATOS_SEG_JSON' => 'LONGTEXT NULL',
             'DATOS_OFICIALIZACION_JSON' => 'LONGTEXT NULL'
         ];

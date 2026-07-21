@@ -1,291 +1,305 @@
-import sys
 import json
+import math
+import re
+import sys
+import unicodedata
+from pathlib import Path
+
+import mysql.connector
+import pandas as pd
+
+TAMANO_LOTE = 20
+
+
+def limpiar(valor):
+    if valor is None or pd.isna(valor):
+        return None
+    if isinstance(valor, float) and math.isfinite(valor) and valor.is_integer():
+        return str(int(valor))
+    texto = str(valor).strip()
+    return texto or None
+
+
+def normalizar(valor):
+    texto = limpiar(valor) or ""
+    texto = unicodedata.normalize("NFKD", texto)
+    texto = "".join(letra for letra in texto if not unicodedata.combining(letra))
+    return re.sub(r"\s+", " ", re.sub(r"[^A-Z0-9 ]", " ", texto.upper())).strip()
+
+
+def codigo(valor):
+    return normalizar(valor).replace(" ", "")
+
+
+def columna_db(valor, usados):
+    base = re.sub(r"[^A-Z0-9_]", "_", normalizar(valor).replace(" ", "_")) or "COLUMNA"
+    base = base[:54]
+    nombre = base
+    indice = 2
+    while nombre in usados:
+        sufijo = f"_{indice}"
+        nombre = base[:64 - len(sufijo)] + sufijo
+        indice += 1
+    usados.add(nombre)
+    return nombre
+
+
+def cabeceras_unicas(datos):
+    usados = set()
+    columnas_logicas = []
+    metadatos = []
+    for posicion, original in enumerate(datos.columns, start=1):
+        columna = columna_db(original, usados)
+        columnas_logicas.append(columna)
+        metadatos.append((posicion, str(original), columna))
+    datos = datos.copy()
+    datos.columns = columnas_logicas
+    return datos, columnas_logicas, metadatos
+
+
+def buscar_cabecera_oficializacion(ruta):
+    crudos = pd.read_excel(ruta, header=None, dtype=object)
+    for indice, fila in crudos.iterrows():
+        if "CVCCT" in [codigo(valor) for valor in fila.values]:
+            return indice
+    raise ValueError("No se encontro la cabecera CV_CCT en Oficializacion.")
+
+
+def leer_seg(ruta):
+    if ruta.suffix.lower() == ".csv":
+        try:
+            datos = pd.read_csv(ruta, dtype=object, sep=None, engine="python", encoding="utf-8-sig")
+        except UnicodeDecodeError:
+            datos = pd.read_csv(ruta, dtype=object, sep=None, engine="python", encoding="latin1")
+    else:
+        datos = pd.read_excel(ruta, dtype=object)
+    datos, columnas, metadatos = cabeceras_unicas(datos)
+    requeridas = ["CCT", "NOMBRECT", "TIPOCT"]
+    faltantes = [campo for campo in requeridas if campo not in datos.columns]
+    if faltantes:
+        raise ValueError("Faltan columnas en CCT SEG: " + ", ".join(faltantes))
+    return datos, columnas, metadatos
+
+
+def leer_oficializacion(ruta):
+    cabecera = buscar_cabecera_oficializacion(ruta)
+    datos = pd.read_excel(ruta, header=cabecera, dtype=object)
+    datos, columnas, metadatos = cabeceras_unicas(datos)
+    requeridas = ["CV_CCT", "NOMBRECT", "C_NOM_MUN", "C_NOM_LOC"]
+    faltantes = [campo for campo in requeridas if campo not in datos.columns]
+    if faltantes:
+        raise ValueError("Faltan columnas en Oficializacion: " + ", ".join(faltantes))
+    return datos, columnas, metadatos
+
+
+def valor(fila, *campos):
+    for campo in campos:
+        dato = limpiar(fila.get(campo))
+        if dato is not None:
+            return dato
+    return None
+
+
+def direccion_oficial(fila):
+    directa = valor(fila, "DOMICILIO", "DIRECCION", "UBICACION")
+    if directa:
+        return directa
+    partes = [valor(fila, "C_NOM_VIALIDAD"), valor(fila, "N_EXTNUM")]
+    return " ".join(parte for parte in partes if parte) or None
+
+
+def filas_catalogo(datos, cct_columna):
+    filas = []
+    for _, serie in datos.iterrows():
+        fila = {campo: limpiar(dato) for campo, dato in serie.items()}
+        fila["_CCT"] = codigo(fila.get(cct_columna))
+        filas.append(fila)
+    return filas
+
+
+def clasificacion(seg, oficial):
+    if oficial:
+        return "ESCUELA BASICA OFICIALIZADA (ACTIVA)"
+    tipo = normalizar(valor(seg, "TIPOCT"))
+    estado = normalizar(valor(seg, "STA_DES", "STATUS"))
+    if tipo != "ESCUELA":
+        return "EDIFICIO ADMINISTRATIVO / INMUEBLE SEG"
+    if "INACTIVO" in estado or "CLAUSUR" in estado:
+        return "ESCUELA INACTIVA / CLAUSURADA"
+    return "SERVICIO SIN COINCIDENCIA (Revision Manual / Verificacion en Campo)"
+
+
+def perfil_maestro(seg_filas, oficial_filas):
+    seg_por_cct = {}
+    oficial_por_cct = {}
+    for fila in seg_filas:
+        if fila["_CCT"]:
+            seg_por_cct.setdefault(fila["_CCT"], fila)
+    for fila in oficial_filas:
+        if fila["_CCT"]:
+            oficial_por_cct.setdefault(fila["_CCT"], fila)
+    perfiles = []
+    for cct in sorted(set(seg_por_cct) | set(oficial_por_cct)):
+        seg = seg_por_cct.get(cct)
+        oficial = oficial_por_cct.get(cct)
+        prioritario = oficial or seg
+        nombre = valor(oficial or {}, "NOMBRECT") or valor(seg or {}, "NOMBRECT")
+        domicilio = direccion_oficial(oficial or {}) or valor(seg or {}, "DOMICILIO", "DIRECCION")
+        municipio = valor(oficial or {}, "C_NOM_MUN") or valor(seg or {}, "NOMBREMUN")
+        localidad = valor(oficial or {}, "C_NOM_LOC") or valor(seg or {}, "NOMBRELOC")
+        origen = "Oficializacion 911 + CCT SEG" if oficial and seg else "Oficializacion 911" if oficial else "CCT SEG"
+        perfiles.append((
+            cct,
+            nombre or cct,
+            domicilio,
+            municipio,
+            localidad,
+            valor(oficial or {}, "STATUS") or valor(seg or {}, "STA_DES", "STATUS") or "ACTIVO",
+            valor(oficial or {}, "SUBNIVEL") or valor(seg or {}, "SUBNIVEL"),
+            valor(oficial or {}, "NIVEL") or valor(seg or {}, "NIVEL"),
+            valor(oficial or {}, "HOMO") or valor(seg or {}, "HOMO"),
+            valor(oficial or {}, "TURNO") or valor(seg or {}, "TURNO_DES", "TURNO"),
+            valor(oficial or {}, "ZONA") or valor(seg or {}, "CCT_ZONA"),
+            valor(oficial or {}, "REGION") or valor(seg or {}, "SERREG"),
+            valor(seg or {}, "TIPOCT"),
+            valor(seg or {}, "LATITUD"),
+            valor(seg or {}, "LONGITUD"),
+            valor(seg or {}, "NOM_DIR"),
+            valor(seg or {}, "APELLIDO1"),
+            valor(seg or {}, "APELLIDO2"),
+            valor(seg or {}, "TELEFONO1"),
+            valor(seg or {}, "CORREOELE"),
+            clasificacion(seg, oficial),
+            origen,
+            json.dumps(seg, ensure_ascii=False) if seg else None,
+            json.dumps(oficial, ensure_ascii=False) if oficial else None,
+        ))
+    return perfiles
+
+
+def crear_catalogo(cursor, tabla, columnas):
+    cursor.execute(f"DROP TABLE IF EXISTS `{tabla}`")
+    definiciones = ["`id` BIGINT AUTO_INCREMENT PRIMARY KEY", "`CCT_NORMALIZADO` VARCHAR(50) NULL"]
+    definiciones.extend(f"`{columna}` LONGTEXT NULL" for columna in columnas)
+    definiciones.append("`DATOS_JSON` LONGTEXT NULL")
+    definiciones.append("INDEX `idx_cct_normalizado` (`CCT_NORMALIZADO`)")
+    cursor.execute(f"CREATE TABLE `{tabla}` ({', '.join(definiciones)}) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4")
+
+
+def guardar_catalogo(cursor, tabla, columnas, filas):
+    campos = ["CCT_NORMALIZADO"] + columnas + ["DATOS_JSON"]
+    marcadores = ", ".join(["%s"] * len(campos))
+    consulta = f"INSERT INTO `{tabla}` ({', '.join('`' + campo + '`' for campo in campos)}) VALUES ({marcadores})"
+    registros = []
+    for fila in filas:
+        datos_json = {campo: fila.get(campo) for campo in columnas if fila.get(campo) is not None}
+        registros.append(tuple([fila.get("_CCT")] + [fila.get(campo) for campo in columnas] + [json.dumps(datos_json, ensure_ascii=False)]))
+    for inicio in range(0, len(registros), TAMANO_LOTE):
+        cursor.executemany(consulta, registros[inicio:inicio + TAMANO_LOTE])
+
+
+def guardar_metadatos(cursor, fuente, metadatos):
+    cursor.execute(
+        "CREATE TABLE IF NOT EXISTS catalogo_columnas ("
+        "fuente VARCHAR(40) NOT NULL, posicion INT NOT NULL, columna_original VARCHAR(255) NOT NULL, "
+        "columna_bd VARCHAR(64) NOT NULL, PRIMARY KEY (fuente, posicion), UNIQUE KEY uniq_catalogo_columna (fuente, columna_bd)"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    )
+    cursor.execute("DELETE FROM catalogo_columnas WHERE fuente = %s", (fuente,))
+    cursor.executemany(
+        "INSERT INTO catalogo_columnas (fuente, posicion, columna_original, columna_bd) VALUES (%s, %s, %s, %s)",
+        [(fuente, posicion, original, columna) for posicion, original, columna in metadatos]
+    )
+
+
+def preparar_maestro(cursor):
+    cursor.execute(
+        "CREATE TABLE IF NOT EXISTS escuelas ("
+        "CCT VARCHAR(50) NOT NULL PRIMARY KEY, NOMBRECT VARCHAR(255) NOT NULL, DOMICILIO TEXT NULL, "
+        "NOMBREMUN VARCHAR(255) NULL, NOMBRELOC VARCHAR(255) NULL, STATUS VARCHAR(100) NULL, "
+        "SUBNIVEL VARCHAR(150) NULL, NIVEL VARCHAR(150) NULL, HOMO VARCHAR(50) NULL, TURNO VARCHAR(150) NULL, "
+        "ZONA VARCHAR(100) NULL, REGION VARCHAR(150) NULL, TIPOCT VARCHAR(255) NULL, LATITUD VARCHAR(80) NULL, "
+        "LONGITUD VARCHAR(80) NULL, NOM_DIR VARCHAR(255) NULL, APELLIDO1 VARCHAR(255) NULL, APELLIDO2 VARCHAR(255) NULL, "
+        "TELEFONO1 VARCHAR(100) NULL, CORREOELE VARCHAR(255) NULL, CLASIFICACION VARCHAR(120) NOT NULL, "
+        "ORIGEN VARCHAR(100) NOT NULL, DATOS_SEG_JSON LONGTEXT NULL, DATOS_OFICIALIZACION_JSON LONGTEXT NULL, "
+        "INDEX idx_escuelas_clasificacion (CLASIFICACION), INDEX idx_escuelas_municipio (NOMBREMUN), INDEX idx_escuelas_localidad (NOMBRELOC)"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    )
+    columnas = {fila[0].upper() for fila in cursor.execute("SHOW COLUMNS FROM escuelas") or cursor.fetchall()}
+    adicionales = {
+        "CLASIFICACION": "VARCHAR(120) NOT NULL DEFAULT 'SERVICIO SIN COINCIDENCIA (Revision Manual / Verificacion en Campo)'",
+        "REGION": "VARCHAR(150) NULL",
+        "DATOS_SEG_JSON": "LONGTEXT NULL",
+        "DATOS_OFICIALIZACION_JSON": "LONGTEXT NULL",
+    }
+    for columna, definicion in adicionales.items():
+        if columna not in columnas:
+            cursor.execute(f"ALTER TABLE escuelas ADD COLUMN `{columna}` {definicion}")
+
+
+def guardar_maestro(cursor, perfiles):
+    cursor.execute("CREATE TABLE IF NOT EXISTS escuelas_rpu_respaldo_catalogo LIKE escuelas_rpu")
+    cursor.execute("DELETE FROM escuelas_rpu_respaldo_catalogo")
+    cursor.execute("INSERT INTO escuelas_rpu_respaldo_catalogo SELECT * FROM escuelas_rpu")
+    cursor.execute("DELETE FROM escuelas")
+    consulta = (
+        "INSERT INTO escuelas (CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL, NIVEL, HOMO, TURNO, ZONA, REGION, TIPOCT, LATITUD, LONGITUD, NOM_DIR, APELLIDO1, APELLIDO2, TELEFONO1, CORREOELE, CLASIFICACION, ORIGEN, DATOS_SEG_JSON, DATOS_OFICIALIZACION_JSON) "
+        "VALUES (" + ", ".join(["%s"] * 24) + ")"
+    )
+    for inicio in range(0, len(perfiles), TAMANO_LOTE):
+        cursor.executemany(consulta, perfiles[inicio:inicio + TAMANO_LOTE])
+    cursor.execute(
+        "INSERT IGNORE INTO escuelas_rpu (CCT, RPU, nombre_recibo_cfe, poblacion_cfe, tarifa_cfe) "
+        "SELECT respaldo.CCT, respaldo.RPU, respaldo.nombre_recibo_cfe, respaldo.poblacion_cfe, respaldo.tarifa_cfe "
+        "FROM escuelas_rpu_respaldo_catalogo respaldo INNER JOIN escuelas e ON e.CCT = respaldo.CCT"
+    )
+    cursor.execute(
+        "UPDATE cfe_consumos cc INNER JOIN ("
+        "SELECT RPU, MIN(CCT) AS CCT FROM escuelas_rpu GROUP BY RPU HAVING COUNT(DISTINCT CCT) = 1"
+        ") vinculo ON vinculo.RPU = cc.RPU SET cc.CCT = vinculo.CCT WHERE cc.CCT IS NULL"
+    )
+
+
+def sincronizar(ruta_seg, ruta_oficializacion):
+    datos_seg, columnas_seg, metadatos_seg = leer_seg(ruta_seg)
+    datos_oficializacion, columnas_oficializacion, metadatos_oficializacion = leer_oficializacion(ruta_oficializacion)
+    filas_seg = filas_catalogo(datos_seg, "CCT")
+    filas_oficializacion = filas_catalogo(datos_oficializacion, "CV_CCT")
+    perfiles = perfil_maestro(filas_seg, filas_oficializacion)
+    conexion = mysql.connector.connect(host="localhost", user="root", password="", database="seg")
+    try:
+        cursor = conexion.cursor()
+        preparar_maestro(cursor)
+        crear_catalogo(cursor, "catalogo_seg", columnas_seg)
+        crear_catalogo(cursor, "catalogo_oficializacion", columnas_oficializacion)
+        guardar_catalogo(cursor, "catalogo_seg", columnas_seg, filas_seg)
+        guardar_catalogo(cursor, "catalogo_oficializacion", columnas_oficializacion, filas_oficializacion)
+        guardar_metadatos(cursor, "CCT SEG", metadatos_seg)
+        guardar_metadatos(cursor, "OFICIALIZACION 911", metadatos_oficializacion)
+        guardar_maestro(cursor, perfiles)
+        conexion.commit()
+        cursor.close()
+    except Exception:
+        conexion.rollback()
+        raise
+    finally:
+        conexion.close()
+    conteo = {
+        "ESCUELA BASICA OFICIALIZADA (ACTIVA)": 0,
+        "EDIFICIO ADMINISTRATIVO / INMUEBLE SEG": 0,
+        "ESCUELA INACTIVA / CLAUSURADA": 0,
+        "SERVICIO SIN COINCIDENCIA (Revision Manual / Verificacion en Campo)": 0,
+    }
+    for perfil in perfiles:
+        conteo[perfil[20]] = conteo.get(perfil[20], 0) + 1
+    return {"ok": True, "total": len(perfiles), "seg": len(filas_seg), "oficializacion": len(filas_oficializacion), "clasificacion": conteo}
+
 
 try:
-    sys.stdout.reconfigure(encoding="utf-8")
-
-    import math
-    import re
-    import unicodedata
-    from pathlib import Path
-
-    import pandas as pd
-    import mysql.connector
-
-    TAMANO_LOTE = 100
-    COLUMNAS_BASE = ["CCT", "NOMBRECT", "DOMICILIO", "NOMBREMUN", "NOMBRELOC", "STATUS", "SUBNIVEL", "NIVEL", "HOMO", "TURNO", "ZONA", "SECTOR", "ORIGEN"]
-    COLUMNAS_DETALLE = [
-        "TIPOCT", "TURNO_CV", "TURNO2", "TURNO2_DES", "STATUS_DES", "MPIO", "LOC", "AMBITO",
-        "COLONIA", "NOMBRECOL", "ENTRECALLE", "YCALLE", "CALLEPOST", "CODPOST", "LATITUD", "LONGITUD",
-        "CV_INMUEBLE", "MARGINACION", "CCT_ZONA", "CCT_SECTOR", "SERREG", "CCT_SERREG", "TIPO",
-        "SERVICIO", "SERVICIO_DES", "CV_CARACT", "CARACTERISTICA", "SOST_CONTROL", "SOSTENIMIENTO",
-        "SOSTENIMIENTO_DES", "NOM_DIR", "APELLIDO1", "APELLIDO2", "CURP", "RFC", "TELEFONO1", "CELULAR1",
-        "CORREOELE", "PAGINAWEB", "ADM_DES", "NOR_DES", "OPERAT_DES", "FECHAFUNDA", "FECHAALTA",
-        "FECHACLAUS", "FECHAREAPE", "FECHAACTUA", "CLAVE_ALTERNA", "CV_TURNO", "CV_MUN", "CV_LOC",
-        "C_NOM_VIALIDAD", "N_EXTNUM", "CONTROL", "SUBCONTROL", "C_CARACTERIZAN2", "JEFSEC", "SERVREG",
-        "REGION", "CV_ESTATUS_CAPTURA", "HOMBRE", "MUJER", "TOTAL", "GRUPOS", "LENGUA",
-        "DATOS_SEG_JSON", "DATOS_OFICIALIZACION_JSON"
-    ]
-    COLUMNAS_ESCUELAS = COLUMNAS_BASE + COLUMNAS_DETALLE
-    QUERY_INSERTAR_ESCUELAS = (
-        "INSERT INTO escuelas (" + ", ".join("`" + columna + "`" for columna in COLUMNAS_ESCUELAS) + ") VALUES (" + ", ".join(["%s"] * len(COLUMNAS_ESCUELAS)) + ") "
-        "ON DUPLICATE KEY UPDATE " + ", ".join(["`" + columna + "`=VALUES(`" + columna + "`)" for columna in COLUMNAS_ESCUELAS if columna != "CCT"])
-    )
-    COLUMNAS_DIRECCION = ["DOMICILIO", "DOMICILIOCT", "DOMICILIOCCT", "DOMICILIODELCT", "DIRECCION", "DIRECCIONCT", "UBICACION", "CALLE"]
-    COLUMNAS_EXTRA = {
-        "NIVEL": "VARCHAR(100) NULL",
-        "HOMO": "VARCHAR(30) NULL",
-        "TURNO": "VARCHAR(100) NULL",
-        "ZONA": "VARCHAR(50) NULL",
-        "SECTOR": "VARCHAR(50) NULL",
-        "ORIGEN": "VARCHAR(80) NULL",
-    }
-    for columna in COLUMNAS_DETALLE:
-        COLUMNAS_EXTRA[columna] = "LONGTEXT NULL" if columna.endswith("_JSON") else "TEXT NULL"
-
-    def normalizar(valor):
-        if valor is None or pd.isna(valor):
-            return ""
-        texto = unicodedata.normalize("NFKD", str(valor))
-        texto = "".join(letra for letra in texto if not unicodedata.combining(letra))
-        return re.sub(r"\s+", " ", re.sub(r"[^A-Z0-9 ]", " ", texto.upper())).strip()
-
-    def normalizar_codigo(valor):
-        return normalizar(valor).replace(" ", "")
-
-    def normalizar_cabecera(valor):
-        texto = str(valor).replace("\ufeff", "").replace("ï»¿", "").replace("Ã¯Â»Â¿", "").strip()
-        return normalizar_codigo(texto)
-
-    def limpiar(valor):
-        if valor is None or pd.isna(valor):
-            return None
-        if isinstance(valor, float) and math.isfinite(valor) and valor.is_integer():
-            return str(int(valor))
-        texto = str(valor).strip()
-        return texto if texto != "" else None
-
-    def primer_valor(*valores):
-        for valor in valores:
-            limpio = limpiar(valor)
-            if limpio is not None:
-                return limpio
-        return None
-
-    def preparar_columnas(datos):
-        columnas = []
-        conteo = {}
-        for columna in datos.columns:
-            nombre = normalizar_cabecera(columna)
-            conteo[nombre] = conteo.get(nombre, 0) + 1
-            columnas.append(nombre if conteo[nombre] == 1 else f"{nombre}_{conteo[nombre]}")
-        datos.columns = columnas
-        return datos
-
-    def columna_direccion(datos):
-        for columna in COLUMNAS_DIRECCION:
-            if columna in datos.columns:
-                return datos[columna]
-        return None
-
-    def serie(datos, columnas, valor=None):
-        for columna in columnas:
-            if columna in datos.columns:
-                return datos[columna]
-        return pd.Series([valor] * len(datos), index=datos.index)
-
-    def copiar_columnas(datos, mapa):
-        salida = {}
-        for destino, origenes in mapa.items():
-            salida[destino] = serie(datos, origenes if isinstance(origenes, list) else [origenes])
-        return salida
-
-    def json_fila(fila):
-        datos = {}
-        for columna, valor in fila.items():
-            limpio = limpiar(valor)
-            if limpio is not None:
-                datos[str(columna)] = limpio
-        return json.dumps(datos, ensure_ascii=False)
-
-    def direccion_oficializacion(datos):
-        directa = columna_direccion(datos)
-        if directa is not None:
-            return directa
-        vialidad = serie(datos, ["CNOMVIALIDAD"], "")
-        numero = serie(datos, ["NEXTNUM"], "")
-        return (vialidad.fillna("").astype(str).str.strip() + " " + numero.fillna("").astype(str).str.strip()).str.strip()
-
-    def leer_catalogo_seg(ruta):
-        ruta = Path(ruta)
-        if ruta.suffix.lower() == ".csv":
-            try:
-                datos = pd.read_csv(ruta, dtype=object, sep=None, engine="python", encoding="utf-8-sig")
-            except UnicodeDecodeError:
-                datos = pd.read_csv(ruta, dtype=object, sep=None, engine="python", encoding="latin1")
-        else:
-            datos = pd.read_excel(ruta, dtype=object)
-        datos = preparar_columnas(datos)
-        requeridas = ["CCT", "NOMBRECT", "NOMBREMUN", "NOMBRELOC", "STATUS", "SUBNIVEL", "SOSTCONTROL"]
-        faltantes = [columna for columna in requeridas if columna not in datos.columns]
-        if faltantes:
-            raise ValueError(f"Faltan columnas Catalogo SEG: {', '.join(faltantes)}")
-        datos = datos[datos["SOSTCONTROL"].map(normalizar) == "PUBLICO"].copy()
-        direccion = columna_direccion(datos)
-        datos["DOMICILIO"] = direccion if direccion is not None else None
-        datos["NIVEL"] = serie(datos, ["NIVEL"])
-        datos["HOMO"] = serie(datos, ["HOMO"])
-        datos["ORIGEN"] = "Catalogo SEG"
-        datos["TURNO"] = serie(datos, ["TURNODES", "TURNO"])
-        datos["ZONA"] = serie(datos, ["CCTZONA", "ZONA"])
-        datos["SECTOR"] = serie(datos, ["CCTSECTOR", "SECTOR"])
-        extras = copiar_columnas(datos, {
-            "TIPOCT": "TIPOCT", "TURNO_CV": "TURNO", "TURNO2": "TURNO2", "TURNO2_DES": "TUR2DES",
-            "STATUS_DES": "STADES", "MPIO": "MPIO", "LOC": "LOC", "AMBITO": "AMBITO", "COLONIA": "COLONIA",
-            "NOMBRECOL": "NOMBRECOL", "ENTRECALLE": "ENTRECALLE", "YCALLE": "YCALLE", "CALLEPOST": "CALLEPOST",
-            "CODPOST": "CODPOST", "LATITUD": "LATITUD", "LONGITUD": "LONGITUD", "CV_INMUEBLE": "CVINMUEBLE",
-            "MARGINACION": "MARGINACION", "CCT_ZONA": "CCTZONA", "CCT_SECTOR": "CCTSECTOR", "SERREG": "SERREG",
-            "CCT_SERREG": "CCTSERREG", "TIPO": "TIPO", "SERVICIO": "SERVICIO", "SERVICIO_DES": "SERDES",
-            "CV_CARACT": "CVCARACT", "CARACTERISTICA": "CARACTERISTICA", "SOST_CONTROL": "SOSTCONTROL",
-            "SOSTENIMIENTO": "SOSTENIMIE", "SOSTENIMIENTO_DES": "SOSDES", "NOM_DIR": "NOMDIR",
-            "APELLIDO1": "APELLIDO1", "APELLIDO2": "APELLIDO2", "CURP": "CURP", "RFC": "RFC",
-            "TELEFONO1": "TELEFONO1", "CELULAR1": "CELULAR1", "CORREOELE": "CORREOELE", "PAGINAWEB": "PAGINAWEB",
-            "ADM_DES": ["ADMDES", "ADMDES2"], "NOR_DES": ["NORDES", "NORDES4"], "OPERAT_DES": "OPERATDES",
-            "FECHAFUNDA": "FECHAFUNDA", "FECHAALTA": "FECHAALTA", "FECHACLAUS": "FECHACLAUS",
-            "FECHAREAPE": "FECHAREAPE", "FECHAACTUA": "FECHAACTUA"
-        })
-        for columna, valores in extras.items():
-            datos[columna] = valores
-        datos["DATOS_SEG_JSON"] = datos.apply(json_fila, axis=1)
-        datos["DATOS_OFICIALIZACION_JSON"] = None
-        datos["_PRIORIDAD_ORIGEN"] = 0
-        for columna in COLUMNAS_ESCUELAS:
-            if columna not in datos.columns:
-                datos[columna] = None
-        return datos[COLUMNAS_ESCUELAS + ["_PRIORIDAD_ORIGEN"]]
-
-    def leer_oficializacion(ruta):
-        crudos = pd.read_excel(ruta, header=None, dtype=object)
-        datos = None
-        for indice, fila in crudos.iterrows():
-            valores = [normalizar_codigo(valor) for valor in fila.values]
-            if "CVCCT" in valores:
-                datos = preparar_columnas(pd.read_excel(ruta, header=indice, dtype=object))
-                break
-        if datos is None:
-            raise ValueError("No se encontro la fila de cabeceras con CV_CCT en Oficializacion 911.")
-        requeridas = ["CVCCT", "NOMBRECT", "CNOMMUN", "CNOMLOC", "CONTROL"]
-        faltantes = [columna for columna in requeridas if columna not in datos.columns]
-        if faltantes:
-            raise ValueError(f"Faltan columnas Oficializacion 911: {', '.join(faltantes)}")
-        datos = datos[datos["CONTROL"].map(normalizar) == "PUBLICO"].copy()
-        direccion = direccion_oficializacion(datos)
-        salida = pd.DataFrame({
-            "CCT": datos["CVCCT"],
-            "NOMBRECT": datos["NOMBRECT"],
-            "DOMICILIO": direccion if direccion is not None else None,
-            "NOMBREMUN": datos["CNOMMUN"],
-            "NOMBRELOC": datos["CNOMLOC"],
-            "STATUS": datos["STATUS"] if "STATUS" in datos.columns else "ACTIVO",
-            "SUBNIVEL": datos["SUBNIVEL"] if "SUBNIVEL" in datos.columns else datos["TIPO"] if "TIPO" in datos.columns else datos["HOMO"] if "HOMO" in datos.columns else None,
-            "NIVEL": serie(datos, ["NIVEL"]),
-            "HOMO": serie(datos, ["HOMO"]),
-            "TURNO": serie(datos, ["TURNO"]),
-            "ZONA": serie(datos, ["ZONA"]),
-            "SECTOR": serie(datos, ["JEFSEC", "SECTOR"]),
-            "ORIGEN": "Oficializacion 911",
-            "_PRIORIDAD_ORIGEN": 1,
-        })
-        extras = copiar_columnas(datos, {
-            "CLAVE_ALTERNA": "CLAVEALTERNA", "CV_TURNO": "CVTURNO", "CV_MUN": "CVMUN", "CV_LOC": "CVLOC",
-            "C_NOM_VIALIDAD": "CNOMVIALIDAD", "N_EXTNUM": "NEXTNUM", "CONTROL": "CONTROL",
-            "SUBCONTROL": "SUBCONTROL", "TIPO": "TIPO", "C_CARACTERIZAN2": "CCARACTERIZAN2", "JEFSEC": "JEFSEC",
-            "SERVREG": "SERVREG", "REGION": "REGION", "CV_ESTATUS_CAPTURA": "CVESTATUSCAPTURA",
-            "HOMBRE": "HOMBRE", "MUJER": "MUJER", "TOTAL": "TOTAL", "GRUPOS": "GRUPOS", "LENGUA": "LENGUA"
-        })
-        for columna, valores in extras.items():
-            salida[columna] = valores
-        salida["DATOS_SEG_JSON"] = None
-        salida["DATOS_OFICIALIZACION_JSON"] = datos.apply(json_fila, axis=1)
-        for columna in COLUMNAS_ESCUELAS:
-            if columna not in salida.columns:
-                salida[columna] = None
-        return salida
-
-    def preparar_registros(conjuntos):
-        datos = pd.concat(conjuntos, ignore_index=True)
-        datos["CCT"] = datos["CCT"].map(normalizar_codigo)
-        datos = datos[datos["CCT"].notna() & (datos["CCT"] != "")]
-        datos = datos.sort_values("_PRIORIDAD_ORIGEN")
-        fusionados = []
-        for _, grupo in datos.groupby("CCT", sort=False):
-            filas = grupo.to_dict("records")
-            oficial = next((fila for fila in reversed(filas) if fila.get("ORIGEN") == "Oficializacion 911"), None)
-            seg = next((fila for fila in filas if fila.get("ORIGEN") == "Catalogo SEG"), None)
-            fila = {}
-            for columna in COLUMNAS_ESCUELAS:
-                fila[columna] = primer_valor(
-                    oficial.get(columna) if oficial else None,
-                    seg.get(columna) if seg else None,
-                    *(item.get(columna) for item in reversed(filas))
-                )
-            origenes = []
-            if seg:
-                origenes.append("Catalogo SEG")
-                fila["DATOS_SEG_JSON"] = primer_valor(seg.get("DATOS_SEG_JSON"), fila.get("DATOS_SEG_JSON"))
-            if oficial:
-                origenes.append("Oficializacion 911")
-                fila["DATOS_OFICIALIZACION_JSON"] = primer_valor(oficial.get("DATOS_OFICIALIZACION_JSON"), fila.get("DATOS_OFICIALIZACION_JSON"))
-            fila["ORIGEN"] = " + ".join(origenes) if origenes else fila.get("ORIGEN")
-            fusionados.append(fila)
-        datos = pd.DataFrame(fusionados)
-        registros = []
-        for _, fila in datos.iterrows():
-            registros.append(tuple(limpiar(fila[columna]) for columna in COLUMNAS_ESCUELAS))
-        return registros
-
-    def preparar_tabla(cursor):
-        cursor.execute("SHOW COLUMNS FROM escuelas")
-        existentes = {fila[0].upper(): str(fila[1]).lower() for fila in cursor.fetchall()}
-        for columna, definicion in COLUMNAS_EXTRA.items():
-            if columna not in existentes:
-                cursor.execute(f"ALTER TABLE escuelas ADD COLUMN `{columna}` {definicion}")
-            elif columna in COLUMNAS_DETALLE and existentes[columna].startswith("varchar"):
-                cursor.execute(f"ALTER TABLE escuelas MODIFY COLUMN `{columna}` {definicion}")
-
-    def guardar(registros):
-        if not registros:
-            return 0
-        conexion = mysql.connector.connect(host="localhost", user="root", password="", database="seg")
-        try:
-            cursor = conexion.cursor()
-            preparar_tabla(cursor)
-            for inicio in range(0, len(registros), TAMANO_LOTE):
-                cursor.executemany(QUERY_INSERTAR_ESCUELAS, registros[inicio:inicio + TAMANO_LOTE])
-            conexion.commit()
-            cursor.close()
-            return len(registros)
-        finally:
-            conexion.close()
-
-    if len(sys.argv) < 2:
-        raise ValueError("Se requiere al menos un catalogo escolar.")
-
-    conjuntos = []
-    for argumento in sys.argv[1:]:
-        ruta = Path(argumento)
-        nombre = ruta.name.lower()
-        if "oficial" in nombre or "911" in nombre:
-            conjuntos.append(leer_oficializacion(ruta))
-        else:
-            conjuntos.append(leer_catalogo_seg(ruta))
-    registros = preparar_registros(conjuntos)
-    total = guardar(registros)
-    print(json.dumps({"ok": True, "total": total}, ensure_ascii=False))
-
-except Exception as e:
-    print(json.dumps({
-        "ok": False,
-        "error": f"Fallo al guardar escuelas en base local: {str(e)}"
-    }, ensure_ascii=False))
+    if len(sys.argv) != 3:
+        raise ValueError("Se requieren los catalogos CCT SEG y Oficializacion 911.")
+    resultado = sincronizar(Path(sys.argv[1]), Path(sys.argv[2]))
+    print(json.dumps(resultado, ensure_ascii=False))
+except Exception as error:
+    print(json.dumps({"ok": False, "error": f"Fallo al guardar escuelas en base local: {error}"}, ensure_ascii=False))
     sys.exit(1)
