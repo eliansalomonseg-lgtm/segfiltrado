@@ -380,9 +380,9 @@ $segBasePath = '../';
         (window.currentResults || []).forEach(registro => {
             (registro.opciones || []).forEach(option => {
                 const score = Number(option.similitud ?? option.score ?? 0);
-                if (score >= 50 && !option.vinculado && registro.rpu && option.cct) {
-                    selected.set(`${option.cct}|${registro.rpu}`, {
-                        CCT: option.cct,
+                if (score >= 50 && !option.vinculado && registro.rpu && option.escuela_id) {
+                    selected.set(`${option.escuela_id}|${registro.rpu}`, {
+                        escuela_id: option.escuela_id,
                         RPU: registro.rpu,
                         nombre_recibo_cfe: registro.nombre_cfe || '',
                         poblacion_cfe: registro.poblacion_cfe || '',
@@ -407,14 +407,14 @@ $segBasePath = '../';
             const response = await fetch(controller,{method:'POST',headers:{'X-CSRF-Token':token},body});
             const data = parseServerJson(await response.text());
             if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible auto-vincular los casos seguros.');
-            const linkedKeys = new Set(vinculos.map(vinculo => `${vinculo.CCT}|${vinculo.RPU}`));
+            const linkedKeys = new Set(vinculos.map(vinculo => `${vinculo.escuela_id}|${vinculo.RPU}`));
             (window.currentResults || []).forEach(registro => {
                 registro.vinculos_confirmados = registro.vinculos_confirmados || [];
                 (registro.opciones || []).forEach(option => {
-                    if (linkedKeys.has(`${option.cct}|${registro.rpu}`)) {
+                    if (linkedKeys.has(`${option.escuela_id}|${registro.rpu}`)) {
                         option.vinculado = true;
-                        if (!registro.vinculos_confirmados.some(vinculo => vinculo.cct === option.cct)) {
-                            registro.vinculos_confirmados.push({cct:option.cct,nombre_escuela:option.nombre_escuela,direccion_escuela:option.direccion_escuela});
+                        if (!registro.vinculos_confirmados.some(vinculo => vinculo.escuela_id === option.escuela_id)) {
+                            registro.vinculos_confirmados.push({escuela_id:option.escuela_id,cct:option.cct,nombre_escuela:option.nombre_escuela,direccion_escuela:option.direccion_escuela});
                         }
                     }
                 });
@@ -430,6 +430,7 @@ $segBasePath = '../';
     }
     function optionFromSchool(escuela) {
         return {
+            escuela_id: escuela.id,
             cct: escuela.CCT,
             nombre_escuela: escuela.NOMBRECT,
             direccion_escuela: escuela.DOMICILIO || '',
@@ -524,19 +525,19 @@ $segBasePath = '../';
         const decision = await Swal.fire({icon:'question',title:'Confirmar vínculo',html:`<b>${escapeHtml(registro.rpu)}</b><br>${escapeHtml(option.cct)} · ${escapeHtml(option.nombre_escuela)}`,showCancelButton:true,confirmButtonText:'Confirmar Vínculo',cancelButtonText:'Cancelar',confirmButtonColor:'#6c1d24',cancelButtonColor:'#212529'});
         if (!decision.isConfirmed) return;
         if (button) button.disabled = true;
-        const body = new URLSearchParams({accion:'confirmar_vinculo',csrf:token,cct:option.cct,rpu:registro.rpu,nombre_recibo_cfe:registro.nombre_cfe || '',poblacion_cfe:registro.poblacion_cfe || '',tarifa_cfe:registro.tarifa_cfe || ''});
+        const body = new URLSearchParams({accion:'confirmar_vinculo',csrf:token,escuela_id:option.escuela_id,rpu:registro.rpu,nombre_recibo_cfe:registro.nombre_cfe || '',poblacion_cfe:registro.poblacion_cfe || '',tarifa_cfe:registro.tarifa_cfe || ''});
         try {
             const response = await fetch(controller,{method:'POST',headers:{'X-CSRF-Token':token},body});
             const data = parseServerJson(await response.text());
             if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible guardar el vínculo.');
             option.vinculado = true;
             registro.opciones = registro.opciones || [];
-            if (!registro.opciones.some(item => item.cct === option.cct)) {
+            if (!registro.opciones.some(item => item.escuela_id === option.escuela_id)) {
                 registro.opciones.unshift(option);
             }
             registro.vinculos_confirmados = registro.vinculos_confirmados || [];
-            if (!registro.vinculos_confirmados.some(vinculo => vinculo.cct === option.cct)) {
-                registro.vinculos_confirmados.push({cct:option.cct,nombre_escuela:option.nombre_escuela,direccion_escuela:option.direccion_escuela});
+            if (!registro.vinculos_confirmados.some(vinculo => vinculo.escuela_id === option.escuela_id)) {
+                registro.vinculos_confirmados.push({escuela_id:option.escuela_id,cct:option.cct,nombre_escuela:option.nombre_escuela,direccion_escuela:option.direccion_escuela});
             }
             registro.vinculo_confirmado = true;
             renderResults({resultados:window.currentResults,resumen:window.currentSummary}, false);
@@ -551,13 +552,13 @@ $segBasePath = '../';
         const decision = await Swal.fire({icon:'warning',title:'Quitar vinculo',html:`<b>${escapeHtml(registro.rpu)}</b><br>${escapeHtml(option.cct)} - ${escapeHtml(option.nombre_escuela)}`,showCancelButton:true,confirmButtonText:'Quitar',cancelButtonText:'Cancelar',confirmButtonColor:'#6c1d24',cancelButtonColor:'#212529'});
         if (!decision.isConfirmed) return;
         button.disabled = true;
-        const body = new URLSearchParams({accion:'eliminar_vinculo',csrf:token,cct:option.cct,rpu:registro.rpu});
+        const body = new URLSearchParams({accion:'eliminar_vinculo',csrf:token,escuela_id:option.escuela_id,rpu:registro.rpu});
         try {
             const response = await fetch(controller,{method:'POST',headers:{'X-CSRF-Token':token},body});
             const data = parseServerJson(await response.text());
             if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible quitar el vinculo.');
             option.vinculado = false;
-            registro.vinculos_confirmados = (registro.vinculos_confirmados || []).filter(vinculo => vinculo.cct !== option.cct);
+            registro.vinculos_confirmados = (registro.vinculos_confirmados || []).filter(vinculo => vinculo.escuela_id !== option.escuela_id);
             registro.vinculo_confirmado = registro.vinculos_confirmados.length > 0;
             renderResults({resultados:window.currentResults,resumen:window.currentSummary});
             Swal.fire({icon:'success',title:'Vinculo eliminado',text:data.mensaje,confirmButtonColor:'#6c1d24'});

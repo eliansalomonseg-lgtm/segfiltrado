@@ -5,7 +5,8 @@ CREATE DATABASE IF NOT EXISTS `seg`
 USE `seg`;
 
 CREATE TABLE IF NOT EXISTS `escuelas` (
-  `CCT` VARCHAR(50) NOT NULL PRIMARY KEY,
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `CCT` VARCHAR(50) NOT NULL UNIQUE,
   `NOMBRECT` VARCHAR(255) NOT NULL,
   `DOMICILIO` VARCHAR(255) NULL,
   `NOMBREMUN` VARCHAR(255) NULL,
@@ -109,12 +110,23 @@ CREATE TABLE IF NOT EXISTS `cfe_precarga` (
 CREATE TABLE IF NOT EXISTS `escuelas_rpu` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `CCT` VARCHAR(50) NOT NULL,
+  `escuela_id` BIGINT UNSIGNED NULL,
   `RPU` VARCHAR(20) NOT NULL,
   `nombre_recibo_cfe` VARCHAR(255) NULL,
   `poblacion_cfe` VARCHAR(255) NULL,
   `tarifa_cfe` VARCHAR(10) NULL,
   UNIQUE KEY `uniq_escuela_rpu` (`CCT`, `RPU`),
+  KEY `idx_escuelas_rpu_escuela_id` (`escuela_id`),
   FOREIGN KEY (`CCT`) REFERENCES `escuelas`(`CCT`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `escuelas_fuentes` (
+  `escuela_id` BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+  `catalogo_seg_id` BIGINT NULL,
+  `catalogo_oficializacion_id` BIGINT NULL,
+  KEY `idx_escuelas_fuentes_seg` (`catalogo_seg_id`),
+  KEY `idx_escuelas_fuentes_oficializacion` (`catalogo_oficializacion_id`),
+  FOREIGN KEY (`escuela_id`) REFERENCES `escuelas`(`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `cfe_reportes` (
@@ -140,6 +152,7 @@ CREATE TABLE IF NOT EXISTS `cfe_consumos` (
   `reporte_id` INT NOT NULL,
   `RPU` VARCHAR(20) NOT NULL,
   `CCT` VARCHAR(50) NULL,
+  `escuela_id` BIGINT UNSIGNED NULL,
   `division_cfe` VARCHAR(80) NULL,
   `nombre_cfe` VARCHAR(255) NULL,
   `direccion_cfe` VARCHAR(255) NULL,

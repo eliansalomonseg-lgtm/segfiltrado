@@ -154,16 +154,35 @@ class EscuelaController
         $conexion = Conexion::conectar();
         $this->prepararTablaEscuelas($conexion);
         $consulta = $conexion->prepare(
-            "SELECT er.RPU, er.CCT, e.NOMBRECT, e.DOMICILIO FROM escuelas_rpu er LEFT JOIN escuelas e ON e.CCT = er.CCT WHERE er.RPU IN ($marcadores) ORDER BY er.RPU, er.id"
+            "SELECT er.RPU, er.CCT, er.escuela_id, e.NOMBRECT, e.DOMICILIO FROM escuelas_rpu er LEFT JOIN escuelas e ON e.id = er.escuela_id WHERE er.RPU IN ($marcadores) ORDER BY er.RPU, er.id"
         );
         $consulta->execute($rpus);
         $vinculos = [];
         foreach ($consulta->fetchAll() as $fila) {
             $vinculos[(string) $fila['RPU']][] = [
                 'cct' => (string) $fila['CCT'],
+                'escuela_id' => isset($fila['escuela_id']) ? (int) $fila['escuela_id'] : null,
                 'nombre_escuela' => $fila['NOMBRECT'] ?? null,
                 'direccion_escuela' => $fila['DOMICILIO'] ?? null
             ];
+        }
+        $cctsOpciones = [];
+        foreach ($resultado['resultados'] as $registro) {
+            foreach (($registro['opciones'] ?? []) as $opcion) {
+                if (!empty($opcion['cct'])) {
+                    $cctsOpciones[] = (string) $opcion['cct'];
+                }
+            }
+        }
+        $cctsOpciones = array_values(array_unique($cctsOpciones));
+        $perfiles = [];
+        if ($cctsOpciones) {
+            $marcadoresOpciones = implode(',', array_fill(0, count($cctsOpciones), '?'));
+            $consultaPerfiles = $conexion->prepare("SELECT id, CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, NIVEL, SUBNIVEL, HOMO, ORIGEN, CLASIFICACION FROM escuelas WHERE CCT IN ($marcadoresOpciones)");
+            $consultaPerfiles->execute($cctsOpciones);
+            foreach ($consultaPerfiles->fetchAll() as $perfil) {
+                $perfiles[(string) $perfil['CCT']] = $perfil;
+            }
         }
         foreach ($resultado['resultados'] as &$registro) {
             $rpu = (string) ($registro['rpu'] ?? '');
@@ -175,6 +194,20 @@ class EscuelaController
             $registro['nombre_escuela_vinculada'] = $vinculosRpu[0]['nombre_escuela'] ?? null;
             if (!empty($registro['opciones']) && is_array($registro['opciones'])) {
                 foreach ($registro['opciones'] as &$opcion) {
+                    $perfil = $perfiles[(string) ($opcion['cct'] ?? '')] ?? null;
+                    if ($perfil) {
+                        $opcion['escuela_id'] = (int) $perfil['id'];
+                        $opcion['nombre_escuela'] = $perfil['NOMBRECT'];
+                        $opcion['direccion_escuela'] = $perfil['DOMICILIO'];
+                        $opcion['municipio'] = $perfil['NOMBREMUN'];
+                        $opcion['localidad'] = $perfil['NOMBRELOC'];
+                        $opcion['status'] = $perfil['STATUS'];
+                        $opcion['nivel'] = $perfil['NIVEL'];
+                        $opcion['subnivel'] = $perfil['SUBNIVEL'];
+                        $opcion['homo'] = $perfil['HOMO'];
+                        $opcion['origen'] = $perfil['ORIGEN'];
+                        $opcion['clasificacion'] = $perfil['CLASIFICACION'];
+                    }
                     $opcion['vinculado'] = in_array((string) ($opcion['cct'] ?? ''), $cctsVinculados, true);
                 }
                 unset($opcion);
@@ -211,7 +244,8 @@ class EscuelaController
         try {
             $conexion = Conexion::conectar();
             $this->prepararTablaVinculos($conexion);
-            $cct = trim((string) ($_POST['CCT'] ?? $_POST['cct'] ?? ''));
+            $escuela = $this->resolverEscuela($conexion, (int) ($_POST['escuela_id'] ?? 0), trim((string) ($_POST['CCT'] ?? $_POST['cct'] ?? '')));
+            $cct = $escuela['CCT'];
             $rpu = trim((string) ($_POST['RPU'] ?? $_POST['rpu'] ?? ''));
             $nombreRecibo = trim((string) ($_POST['nombre_recibo_cfe'] ?? ''));
             $poblacion = trim((string) ($_POST['poblacion_cfe'] ?? ''));
@@ -222,12 +256,13 @@ class EscuelaController
             }
 
             $consulta = $conexion->prepare(
-                'INSERT INTO escuelas_rpu (CCT, RPU, nombre_recibo_cfe, poblacion_cfe, tarifa_cfe)
-                 VALUES (:cct, :rpu, :nombre_recibo, :poblacion, :tarifa)
-                 ON DUPLICATE KEY UPDATE nombre_recibo_cfe = VALUES(nombre_recibo_cfe), poblacion_cfe = VALUES(poblacion_cfe), tarifa_cfe = VALUES(tarifa_cfe)'
+                'INSERT INTO escuelas_rpu (CCT, escuela_id, RPU, nombre_recibo_cfe, poblacion_cfe, tarifa_cfe)
+                 VALUES (:cct, :escuela_id, :rpu, :nombre_recibo, :poblacion, :tarifa)
+                 ON DUPLICATE KEY UPDATE escuela_id = VALUES(escuela_id), nombre_recibo_cfe = VALUES(nombre_recibo_cfe), poblacion_cfe = VALUES(poblacion_cfe), tarifa_cfe = VALUES(tarifa_cfe)'
             );
             $consulta->execute([
                 'cct' => $cct,
+                'escuela_id' => $escuela['id'],
                 'rpu' => $rpu,
                 'nombre_recibo' => $nombreRecibo !== '' ? $nombreRecibo : null,
                 'poblacion' => $poblacion !== '' ? $poblacion : null,
@@ -246,13 +281,14 @@ class EscuelaController
         try {
             $conexion = Conexion::conectar();
             $this->prepararTablaVinculos($conexion);
-            $cct = trim((string) ($_POST['CCT'] ?? $_POST['cct'] ?? ''));
+            $escuela = $this->resolverEscuela($conexion, (int) ($_POST['escuela_id'] ?? 0), trim((string) ($_POST['CCT'] ?? $_POST['cct'] ?? '')));
+            $cct = $escuela['CCT'];
             $rpu = trim((string) ($_POST['RPU'] ?? $_POST['rpu'] ?? ''));
             if ($cct === '' || $rpu === '') {
                 throw new RuntimeException('Faltan los parametros obligatorios CCT o RPU.');
             }
-            $consulta = $conexion->prepare('DELETE FROM escuelas_rpu WHERE CCT = :cct AND RPU = :rpu');
-            $consulta->execute(['cct' => $cct, 'rpu' => $rpu]);
+            $consulta = $conexion->prepare('DELETE FROM escuelas_rpu WHERE escuela_id = :escuela_id AND RPU = :rpu');
+            $consulta->execute(['escuela_id' => $escuela['id'], 'rpu' => $rpu]);
             $this->responder(['ok' => true, 'mensaje' => 'Vinculo eliminado correctamente.']);
         } catch (Throwable $e) {
             $this->responder(['ok' => false, 'error' => 'Fallo de base de datos: ' . $e->getMessage()], 500);
@@ -271,16 +307,17 @@ class EscuelaController
             $this->prepararTablaVinculos($conexion);
             $conexion->beginTransaction();
             $consulta = $conexion->prepare(
-                'INSERT INTO escuelas_rpu (CCT, RPU, nombre_recibo_cfe, poblacion_cfe, tarifa_cfe)
-                 VALUES (?, ?, ?, ?, ?)
-                 ON DUPLICATE KEY UPDATE nombre_recibo_cfe = VALUES(nombre_recibo_cfe), poblacion_cfe = VALUES(poblacion_cfe), tarifa_cfe = VALUES(tarifa_cfe)'
+                'INSERT INTO escuelas_rpu (CCT, escuela_id, RPU, nombre_recibo_cfe, poblacion_cfe, tarifa_cfe)
+                 VALUES (?, ?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE escuela_id = VALUES(escuela_id), nombre_recibo_cfe = VALUES(nombre_recibo_cfe), poblacion_cfe = VALUES(poblacion_cfe), tarifa_cfe = VALUES(tarifa_cfe)'
             );
             $total = 0;
             foreach ($vinculos as $vinculo) {
                 if (!is_array($vinculo)) {
                     continue;
                 }
-                $cct = trim((string) ($vinculo['CCT'] ?? $vinculo['cct'] ?? ''));
+                $escuela = $this->resolverEscuela($conexion, (int) ($vinculo['escuela_id'] ?? 0), trim((string) ($vinculo['CCT'] ?? $vinculo['cct'] ?? '')));
+                $cct = $escuela['CCT'];
                 $rpu = trim((string) ($vinculo['RPU'] ?? $vinculo['rpu'] ?? ''));
                 if ($cct === '' || $rpu === '') {
                     continue;
@@ -290,6 +327,7 @@ class EscuelaController
                 $tarifa = trim((string) ($vinculo['tarifa_cfe'] ?? ''));
                 $consulta->execute([
                     $cct,
+                    $escuela['id'],
                     $rpu,
                     $nombreRecibo !== '' ? $nombreRecibo : null,
                     $poblacion !== '' ? $poblacion : null,
@@ -356,7 +394,7 @@ class EscuelaController
             }
             $where = $condiciones ? 'WHERE ' . implode(' AND ', $condiciones) : '';
             $consulta = $conexion->prepare(
-                "SELECT CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL, NIVEL, HOMO, TURNO, ZONA, SECTOR, ORIGEN, CONTROL, SOST_CONTROL, C_NOM_VIALIDAD, N_EXTNUM
+                "SELECT id, CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL, NIVEL, HOMO, TURNO, ZONA, SECTOR, ORIGEN, CONTROL, SOST_CONTROL, C_NOM_VIALIDAD, N_EXTNUM
                  FROM escuelas
                  $where
                  ORDER BY CASE WHEN CCT = :termino_exacto THEN 0 WHEN CCT LIKE :termino_inicio THEN 1 ELSE 2 END, NOMBREMUN, NOMBRELOC, NOMBRECT
@@ -466,6 +504,22 @@ class EscuelaController
         } catch (Throwable $e) {
             $this->responder(['ok' => false, 'error' => 'Fallo al exportar vinculos: ' . $e->getMessage()], 500);
         }
+    }
+
+    private function resolverEscuela(PDO $conexion, int $escuelaId, string $cct): array
+    {
+        if ($escuelaId > 0) {
+            $consulta = $conexion->prepare('SELECT id, CCT FROM escuelas WHERE id = ?');
+            $consulta->execute([$escuelaId]);
+        } else {
+            $consulta = $conexion->prepare('SELECT id, CCT FROM escuelas WHERE CCT = ?');
+            $consulta->execute([$cct]);
+        }
+        $escuela = $consulta->fetch();
+        if (!$escuela) {
+            throw new RuntimeException('No se encontro la escuela o inmueble seleccionado.');
+        }
+        return ['id' => (int) $escuela['id'], 'CCT' => (string) $escuela['CCT']];
     }
 
     private function prepararTablaVinculos(PDO $conexion): void

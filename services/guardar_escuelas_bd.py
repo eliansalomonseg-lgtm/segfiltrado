@@ -215,7 +215,7 @@ def guardar_metadatos(cursor, fuente, metadatos):
 def preparar_maestro(cursor):
     cursor.execute(
         "CREATE TABLE IF NOT EXISTS escuelas ("
-        "CCT VARCHAR(50) NOT NULL PRIMARY KEY, NOMBRECT VARCHAR(255) NOT NULL, DOMICILIO TEXT NULL, "
+        "id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, CCT VARCHAR(50) NOT NULL UNIQUE, NOMBRECT VARCHAR(255) NOT NULL, DOMICILIO TEXT NULL, "
         "NOMBREMUN VARCHAR(255) NULL, NOMBRELOC VARCHAR(255) NULL, STATUS VARCHAR(100) NULL, "
         "SUBNIVEL VARCHAR(150) NULL, NIVEL VARCHAR(150) NULL, HOMO VARCHAR(50) NULL, TURNO VARCHAR(150) NULL, "
         "ZONA VARCHAR(100) NULL, REGION VARCHAR(150) NULL, TIPOCT VARCHAR(255) NULL, LATITUD VARCHAR(80) NULL, "
@@ -226,6 +226,9 @@ def preparar_maestro(cursor):
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     )
     columnas = {fila[0].upper() for fila in cursor.execute("SHOW COLUMNS FROM escuelas") or cursor.fetchall()}
+    if "ID" not in columnas:
+        cursor.execute("ALTER TABLE escuelas ADD COLUMN id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT UNIQUE FIRST")
+        columnas.add("ID")
     adicionales = {
         "CLASIFICACION": "VARCHAR(120) NOT NULL DEFAULT 'SERVICIO SIN COINCIDENCIA (Revision Manual / Verificacion en Campo)'",
         "REGION": "VARCHAR(150) NULL",
@@ -237,9 +240,40 @@ def preparar_maestro(cursor):
             cursor.execute(f"ALTER TABLE escuelas ADD COLUMN `{columna}` {definicion}")
 
 
+def preparar_referencias(cursor):
+    cursor.execute("SHOW COLUMNS FROM escuelas_rpu")
+    columnas_vinculos = {fila[0].upper() for fila in cursor.fetchall()}
+    if "ESCUELA_ID" not in columnas_vinculos:
+        cursor.execute("ALTER TABLE escuelas_rpu ADD COLUMN escuela_id BIGINT UNSIGNED NULL AFTER CCT")
+        cursor.execute("ALTER TABLE escuelas_rpu ADD INDEX idx_escuelas_rpu_escuela_id (escuela_id)")
+    cursor.execute("SHOW COLUMNS FROM cfe_consumos")
+    columnas_consumos = {fila[0].upper() for fila in cursor.fetchall()}
+    if "ESCUELA_ID" not in columnas_consumos:
+        cursor.execute("ALTER TABLE cfe_consumos ADD COLUMN escuela_id BIGINT UNSIGNED NULL AFTER CCT")
+        cursor.execute("ALTER TABLE cfe_consumos ADD INDEX idx_cfe_consumos_escuela_id (escuela_id)")
+
+
+def actualizar_fuentes(cursor):
+    cursor.execute(
+        "CREATE TABLE IF NOT EXISTS escuelas_fuentes ("
+        "escuela_id BIGINT UNSIGNED NOT NULL PRIMARY KEY, catalogo_seg_id BIGINT NULL, catalogo_oficializacion_id BIGINT NULL, "
+        "INDEX idx_escuelas_fuentes_seg (catalogo_seg_id), INDEX idx_escuelas_fuentes_oficializacion (catalogo_oficializacion_id), "
+        "FOREIGN KEY (escuela_id) REFERENCES escuelas(id) ON DELETE CASCADE"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    )
+    cursor.execute("DELETE FROM escuelas_fuentes")
+    cursor.execute(
+        "INSERT INTO escuelas_fuentes (escuela_id, catalogo_seg_id, catalogo_oficializacion_id) "
+        "SELECT e.id, MIN(s.id), MIN(o.id) FROM escuelas e "
+        "LEFT JOIN catalogo_seg s ON s.CCT_NORMALIZADO = e.CCT "
+        "LEFT JOIN catalogo_oficializacion o ON o.CCT_NORMALIZADO = e.CCT "
+        "GROUP BY e.id"
+    )
+
+
 def guardar_maestro(cursor, perfiles):
-    cursor.execute("CREATE TABLE IF NOT EXISTS escuelas_rpu_respaldo_catalogo LIKE escuelas_rpu")
-    cursor.execute("DELETE FROM escuelas_rpu_respaldo_catalogo")
+    cursor.execute("DROP TABLE IF EXISTS escuelas_rpu_respaldo_catalogo")
+    cursor.execute("CREATE TABLE escuelas_rpu_respaldo_catalogo LIKE escuelas_rpu")
     cursor.execute("INSERT INTO escuelas_rpu_respaldo_catalogo SELECT * FROM escuelas_rpu")
     cursor.execute("DELETE FROM escuelas")
     consulta = (
@@ -253,10 +287,12 @@ def guardar_maestro(cursor, perfiles):
         "SELECT respaldo.CCT, respaldo.RPU, respaldo.nombre_recibo_cfe, respaldo.poblacion_cfe, respaldo.tarifa_cfe "
         "FROM escuelas_rpu_respaldo_catalogo respaldo INNER JOIN escuelas e ON e.CCT = respaldo.CCT"
     )
+    cursor.execute("UPDATE escuelas_rpu er INNER JOIN escuelas e ON e.CCT = er.CCT SET er.escuela_id = e.id")
+    cursor.execute("UPDATE cfe_consumos cc INNER JOIN escuelas e ON e.CCT = cc.CCT SET cc.escuela_id = e.id")
     cursor.execute(
         "UPDATE cfe_consumos cc INNER JOIN ("
-        "SELECT RPU, MIN(CCT) AS CCT FROM escuelas_rpu GROUP BY RPU HAVING COUNT(DISTINCT CCT) = 1"
-        ") vinculo ON vinculo.RPU = cc.RPU SET cc.CCT = vinculo.CCT WHERE cc.CCT IS NULL"
+        "SELECT RPU, MIN(CCT) AS CCT, MIN(escuela_id) AS escuela_id FROM escuelas_rpu GROUP BY RPU HAVING COUNT(DISTINCT CCT) = 1"
+        ") vinculo ON vinculo.RPU = cc.RPU SET cc.CCT = vinculo.CCT, cc.escuela_id = vinculo.escuela_id WHERE cc.CCT IS NULL"
     )
 
 
@@ -270,6 +306,7 @@ def sincronizar(ruta_seg, ruta_oficializacion):
     try:
         cursor = conexion.cursor()
         preparar_maestro(cursor)
+        preparar_referencias(cursor)
         crear_catalogo(cursor, "catalogo_seg", columnas_seg)
         crear_catalogo(cursor, "catalogo_oficializacion", columnas_oficializacion)
         guardar_catalogo(cursor, "catalogo_seg", columnas_seg, filas_seg)
@@ -277,6 +314,7 @@ def sincronizar(ruta_seg, ruta_oficializacion):
         guardar_metadatos(cursor, "CCT SEG", metadatos_seg)
         guardar_metadatos(cursor, "OFICIALIZACION 911", metadatos_oficializacion)
         guardar_maestro(cursor, perfiles)
+        actualizar_fuentes(cursor)
         conexion.commit()
         cursor.close()
     except Exception:
