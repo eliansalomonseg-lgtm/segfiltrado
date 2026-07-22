@@ -659,6 +659,7 @@ class RpuController
         $porMunicipio = [];
         $porLocalidadMunicipio = [];
         $paresUbicacion = [];
+        $paresPorPrefijoLocalidad = [];
         foreach ($escuelas as $escuela) {
             $localidad = $this->normalizar((string) ($escuela['NOMBRELOC'] ?? ''));
             $municipio = $this->normalizar((string) ($escuela['NOMBREMUN'] ?? ''));
@@ -672,6 +673,7 @@ class RpuController
                 $llave = $localidad . '|' . $municipio;
                 $porLocalidadMunicipio[$llave][] = $escuela;
                 $paresUbicacion[$llave] = ['localidad' => $localidad, 'municipio' => $municipio];
+                $paresPorPrefijoLocalidad[substr($localidad, 0, 8)][$llave] = true;
             }
         }
 
@@ -694,6 +696,7 @@ class RpuController
                 $filas = $this->filasPorUbicacionCompatible(
                     $porLocalidadMunicipio,
                     $paresUbicacion,
+                    $paresPorPrefijoLocalidad,
                     $localidad,
                     $municipio
                 );
@@ -719,14 +722,16 @@ class RpuController
         return ['pendientes' => count($pendientes), 'vinculos' => $vinculos];
     }
 
-    private function filasPorUbicacionCompatible(array $porUbicacion, array $ubicaciones, string $localidad, string $municipio): array
+    private function filasPorUbicacionCompatible(array $porUbicacion, array $ubicaciones, array $paresPorPrefijoLocalidad, string $localidad, string $municipio): array
     {
         $filas = [];
-        foreach ($ubicaciones as $llave => $ubicacion) {
-            if ($localidad !== '' && !str_contains($ubicacion['localidad'], $localidad)) {
+        $llaves = $localidad !== '' ? array_keys($paresPorPrefijoLocalidad[substr($localidad, 0, 8)] ?? []) : array_keys($ubicaciones);
+        foreach ($llaves as $llave) {
+            $ubicacion = $ubicaciones[$llave];
+            if ($localidad !== '' && !$this->coincideTextoUbicacion($ubicacion['localidad'], $localidad)) {
                 continue;
             }
-            if ($municipio !== '' && !str_contains($ubicacion['municipio'], $municipio)) {
+            if ($municipio !== '' && !$this->coincideTextoUbicacion($ubicacion['municipio'], $municipio)) {
                 continue;
             }
             foreach ($porUbicacion[$llave] as $fila) {
@@ -734,6 +739,18 @@ class RpuController
             }
         }
         return $filas;
+    }
+
+    private function coincideTextoUbicacion(string $catalogo, string $referencia): bool
+    {
+        if (str_contains($catalogo, $referencia) || str_contains($referencia, $catalogo)) {
+            return true;
+        }
+        $longitud = min(strlen($catalogo), strlen($referencia));
+        if ($longitud < 8) {
+            return false;
+        }
+        return levenshtein($catalogo, $referencia) <= max(1, (int) floor($longitud * 0.12));
     }
 
     public function desvincular(): void
