@@ -177,7 +177,7 @@ $queryBase = $_GET;
                 <h2>RPUs sin vínculo con escuelas sugeridas</h2>
                 <p>El sistema toma el último recibo de cada RPU y prioriza coincidencias del padrón maestro.</p>
             </div>
-            <div class="d-flex flex-wrap gap-2"><button id="auto-link-suggestions" class="btn btn-success btn-sm" type="button"><i class="bi bi-lightning-charge me-2"></i>Auto-vincular ≥50%</button><button id="refresh-suggestions" class="btn-seg compact-action" type="button"><i class="bi bi-arrow-clockwise me-2"></i>Actualizar</button></div>
+            <div class="d-flex flex-wrap gap-2"><button id="auto-link-suggestions" class="btn btn-success btn-sm" type="button"><i class="bi bi-lightning-charge me-2"></i>Auto-vincular todas ≥50%</button><button id="refresh-suggestions" class="btn-seg compact-action" type="button"><i class="bi bi-arrow-clockwise me-2"></i>Actualizar</button></div>
         </div>
         <div id="suggestion-status" class="adjustment-status">Cargando RPUs pendientes de vincular.</div>
         <div id="suggestion-list" class="suggestion-list"></div>
@@ -443,22 +443,14 @@ refreshSuggestions.addEventListener('click', () => {
 });
 
 autoLinkSuggestions.addEventListener('click', async () => {
-    const seleccionados = currentSuggestionRows.map((item) => {
-        const escuela = (item.sugerencias || []).find((opcion) => Number(opcion.similitud || 0) >= 50);
-        return escuela ? {rpu: item.rpu, cct: escuela.cct} : null;
-    }).filter(Boolean);
-    if (!seleccionados.length) {
-        suggestionStatus.textContent = 'No hay coincidencias de 50% o más en esta página.';
-        return;
-    }
-    if (!window.confirm(`¿Confirmas auto-vincular ${seleccionados.length} RPUs con su mejor coincidencia de esta página?`)) return;
+    if (!window.confirm('¿Confirmas auto-vincular todos los RPUs pendientes con su mejor coincidencia de 50% o más?')) return;
     autoLinkSuggestions.disabled = true;
     try {
-        const body = new URLSearchParams({accion: 'vincular_rpus_masivo', csrf, vinculos: JSON.stringify(seleccionados)});
+        const body = new URLSearchParams({accion: 'auto_vincular_sugerencias', csrf});
         const response = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body});
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible auto-vincular.');
-        suggestionStatus.textContent = `${data.total} vínculos guardados automáticamente.`;
+        suggestionStatus.textContent = `${data.total} vínculos guardados automáticamente de ${data.pendientes} RPUs pendientes.`;
         await cargarSugerencias(suggestionPage);
     } catch (error) {
         suggestionStatus.textContent = error.message;

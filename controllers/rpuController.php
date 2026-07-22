@@ -578,6 +578,69 @@ class RpuController
         }
     }
 
+    public function autoVincularSugerencias(): void
+    {
+        $this->validarToken();
+        set_time_limit(0);
+        try {
+            $conexion = Conexion::conectar();
+            $this->prepararTablas($conexion);
+            $pendientes = $conexion->query(
+                'SELECT cc.RPU, cc.nombre_cfe, cc.direccion_cfe, cc.poblacion_cfe, cc.tarifa_cfe
+                 FROM (
+                    SELECT MAX(id) AS consumo_id
+                    FROM cfe_consumos
+                    GROUP BY RPU
+                 ) ultimos
+                 INNER JOIN cfe_consumos cc ON cc.id = ultimos.consumo_id
+                 LEFT JOIN (SELECT DISTINCT RPU FROM escuelas_rpu) er ON er.RPU = cc.RPU
+                 WHERE er.RPU IS NULL'
+            )->fetchAll();
+            $consultaEscuela = $conexion->prepare('SELECT id FROM escuelas WHERE CCT = ? LIMIT 1');
+            $consultaGuardar = $conexion->prepare(
+                'INSERT INTO escuelas_rpu (CCT, escuela_id, RPU, nombre_recibo_cfe, poblacion_cfe, tarifa_cfe)
+                 VALUES (:cct, :escuela_id, :rpu, :nombre, :poblacion, :tarifa)
+                 ON DUPLICATE KEY UPDATE escuela_id = VALUES(escuela_id), nombre_recibo_cfe = VALUES(nombre_recibo_cfe), poblacion_cfe = VALUES(poblacion_cfe), tarifa_cfe = VALUES(tarifa_cfe)'
+            );
+            $consultaActualizar = $conexion->prepare('UPDATE cfe_consumos SET CCT = :cct, escuela_id = :escuela_id WHERE RPU = :rpu AND CCT IS NULL');
+            $conexion->beginTransaction();
+            $guardados = 0;
+            foreach ($pendientes as $rpuCfe) {
+                $sugerencias = $this->sugerencias($conexion, (string) $rpuCfe['RPU'], $rpuCfe);
+                $escuelaSugerida = $sugerencias[0] ?? null;
+                if (!$escuelaSugerida || (float) ($escuelaSugerida['similitud'] ?? 0) < 50) {
+                    continue;
+                }
+                $consultaEscuela->execute([(string) $escuelaSugerida['cct']]);
+                $escuela = $consultaEscuela->fetch();
+                if (!$escuela) {
+                    continue;
+                }
+                $consultaGuardar->execute([
+                    'cct' => (string) $escuelaSugerida['cct'],
+                    'escuela_id' => (int) $escuela['id'],
+                    'rpu' => (string) $rpuCfe['RPU'],
+                    'nombre' => $this->nulo($rpuCfe['nombre_cfe'] ?? null),
+                    'poblacion' => $this->nulo($rpuCfe['poblacion_cfe'] ?? null),
+                    'tarifa' => $this->nulo($rpuCfe['tarifa_cfe'] ?? null)
+                ]);
+                $consultaActualizar->execute([
+                    'cct' => (string) $escuelaSugerida['cct'],
+                    'escuela_id' => (int) $escuela['id'],
+                    'rpu' => (string) $rpuCfe['RPU']
+                ]);
+                $guardados++;
+            }
+            $conexion->commit();
+            $this->responder(['ok' => true, 'total' => $guardados, 'pendientes' => count($pendientes), 'mensaje' => $guardados . ' vínculos guardados automáticamente.']);
+        } catch (Throwable $e) {
+            if (isset($conexion) && $conexion->inTransaction()) {
+                $conexion->rollBack();
+            }
+            $this->responder(['ok' => false, 'error' => 'No fue posible auto-vincular: ' . $e->getMessage()], 500);
+        }
+    }
+
     public function desvincular(): void
     {
         $this->validarToken();
@@ -1129,6 +1192,10 @@ if ($accion === 'vincular_rpu') {
 
 if ($accion === 'vincular_rpus_masivo') {
     $controlador->vincularMasivo();
+}
+
+if ($accion === 'auto_vincular_sugerencias') {
+    $controlador->autoVincularSugerencias();
 }
 
 if ($accion === 'desvincular_rpu') {
