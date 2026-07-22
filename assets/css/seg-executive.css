@@ -1042,6 +1042,14 @@ body {
     grid-template-columns: minmax(260px, 1fr) minmax(360px, .9fr) auto auto;
 }
 
+.saved-report-form {
+    grid-template-columns: minmax(320px, 1fr) auto;
+}
+
+.report-picker {
+    grid-template-columns: minmax(0, 1fr);
+}
+
 .adjustment-drop {
     align-items: center;
     background: #fbfcfd;

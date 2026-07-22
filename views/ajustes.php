@@ -11,10 +11,12 @@ $anioActual = (int) date('Y');
 $mesActual = (int) date('n');
 $anioExportacion = $anioActual;
 $mesExportacion = $mesActual;
+$reportesDisponibles = [];
 
 try {
     $conexionVista = Conexion::conectar();
     $ultimoReporte = $conexionVista->query('SELECT anio, mes FROM cfe_reportes ORDER BY anio DESC, mes DESC, id DESC LIMIT 1')->fetch();
+    $reportesDisponibles = $conexionVista->query('SELECT id, archivo, anio, mes, total_registros FROM cfe_reportes ORDER BY anio DESC, mes DESC, id DESC')->fetchAll();
     if ($ultimoReporte) {
         $anioExportacion = (int) $ultimoReporte['anio'];
         $mesExportacion = (int) $ultimoReporte['mes'];
@@ -45,46 +47,29 @@ if (empty($_SESSION['seg_csrf'])) {
         <div>
             <span class="eyebrow">AUDITORIA CFE</span>
             <h1>Ajustes y cobros atipicos</h1>
-                <p>Sube un reporte CFE para detectar cuando las fechas del recibo no coinciden con el periodo de pago esperado.</p>
+                <p>Consulta los reportes CFE ya guardados para revisar periodos, ajustes y cobros atipicos.</p>
         </div>
         <span class="alert-gold">Valida fechas contra calendario real del mes</span>
     </section>
 
     <section class="results-card adjustment-uploader">
-        <form id="adjustment-form" class="adjustment-form">
-            <input type="hidden" name="accion" value="analizar_ajustes_cfe">
+        <form id="adjustment-form" class="adjustment-form saved-report-form">
+            <input type="hidden" name="accion" value="consultar_reporte_guardado">
             <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['seg_csrf'], ENT_QUOTES, 'UTF-8') ?>">
-            <label class="adjustment-drop">
-                <input type="file" name="reporte_cfe" accept=".xlsx,.xls" required>
-                <span><i class="bi bi-file-earmark-spreadsheet"></i></span>
-                <strong id="adjustment-file-name">Selecciona reporte CFE</strong>
-                <small>Ejemplo: 2025-04_M061_Reporte.xlsx</small>
-            </label>
-            <div class="period-controls">
+            <div class="period-controls report-picker">
                 <label>
-                    <span>Mes</span>
-                    <select name="mes_reporte" required>
-                        <?php foreach ([1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril', 5 => 'Mayo', 6 => 'Junio', 7 => 'Julio', 8 => 'Agosto', 9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre'] as $numero => $nombre): ?>
-                            <option value="<?= $numero ?>" <?= $numero === $mesActual ? 'selected' : '' ?>><?= htmlspecialchars($nombre, ENT_QUOTES, 'UTF-8') ?></option>
+                    <span>Reporte CFE guardado</span>
+                    <select name="reporte_id" required <?= $reportesDisponibles ? '' : 'disabled' ?>>
+                        <option value="">Selecciona un reporte cargado</option>
+                        <?php foreach ($reportesDisponibles as $reporte): ?>
+                            <option value="<?= (int) $reporte['id'] ?>"><?= htmlspecialchars(sprintf('%04d-%02d | %s | %s registros', (int) $reporte['anio'], (int) $reporte['mes'], (string) $reporte['archivo'], number_format((int) $reporte['total_registros'])), ENT_QUOTES, 'UTF-8') ?></option>
                         <?php endforeach; ?>
                     </select>
                 </label>
-                <label>
-                    <span>Anio</span>
-                    <input type="number" name="anio_reporte" min="2020" max="2100" value="<?= $anioActual ?>" required>
-                </label>
-                <label>
-                    <span>Periodo</span>
-                    <select name="modo_periodo" required>
-                        <option value="automatico">Automatico segun tarifa</option>
-                        <option value="mensual">Todo mensual</option>
-                        <option value="bimestral">Todo bimestral</option>
-                    </select>
-                </label>
             </div>
-            <button class="btn-seg compact-action" type="submit"><i class="bi bi-search me-2"></i>Analizar ajustes</button>
+            <button class="btn-seg compact-action" type="submit" <?= $reportesDisponibles ? '' : 'disabled' ?>><i class="bi bi-search me-2"></i>Ver ajustes</button>
         </form>
-        <div id="adjustment-status" class="adjustment-status">Carga un reporte para iniciar la revision.</div>
+        <div id="adjustment-status" class="adjustment-status"><?= $reportesDisponibles ? 'Selecciona un reporte guardado para consultar su revision.' : 'Aun no hay reportes CFE guardados. Cargalos desde Consolidacion masiva.' ?></div>
     </section>
 
     <section class="results-card adjustment-uploader">
@@ -212,7 +197,6 @@ const summary = document.getElementById('adjustment-summary');
 const results = document.getElementById('adjustment-results');
 const body = document.getElementById('adjustment-body');
 const fileLabel = document.getElementById('adjustment-file');
-const fileName = document.getElementById('adjustment-file-name');
 let currentRows = [];
 let currentReport = {};
 
@@ -280,7 +264,7 @@ function render(data) {
 form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const data = new FormData(form);
-    statusBox.textContent = 'Analizando reporte CFE contra el mes, anio y periodo seleccionado...';
+    statusBox.textContent = 'Consultando ajustes y tendencias del reporte guardado...';
     try {
         const response = await fetch('../controllers/ajustesController.php', {
             method: 'POST',
@@ -291,16 +275,13 @@ form.addEventListener('submit', async (event) => {
         if (!json.ok) {
             throw new Error(json.error || 'No fue posible analizar el reporte.');
         }
-        statusBox.textContent = `Analisis completado y guardado: ${number.format(json.resumen.con_alerta)} registros con alerta, reporte #${json.reporte_id}.`;
+        statusBox.textContent = `Consulta lista: ${number.format(json.resumen.con_alerta)} registros con alerta en el reporte seleccionado.`;
         render(json);
     } catch (error) {
         statusBox.textContent = error.message;
     }
 });
 
-form.reporte_cfe.addEventListener('change', () => {
-    fileName.textContent = form.reporte_cfe.files[0]?.name || 'Selecciona reporte CFE';
-});
 </script>
 </body>
 </html>

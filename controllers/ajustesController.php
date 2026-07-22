@@ -172,6 +172,110 @@ class AjustesController
         return 'python';
     }
 
+    public function consultarReporteGuardado(): void
+    {
+        $this->validarToken();
+        $reporteId = (int) ($_POST['reporte_id'] ?? 0);
+        if ($reporteId <= 0) {
+            $this->responder(['ok' => false, 'error' => 'Selecciona un reporte CFE guardado.'], 422);
+        }
+
+        try {
+            $conexion = Conexion::conectar();
+            $this->prepararHistorialCfe($conexion);
+            $consultaReporte = $conexion->prepare(
+                'SELECT id, archivo, anio, mes, modo_periodo FROM cfe_reportes WHERE id = ? LIMIT 1'
+            );
+            $consultaReporte->execute([$reporteId]);
+            $reporte = $consultaReporte->fetch();
+            if (!$reporte) {
+                $this->responder(['ok' => false, 'error' => 'El reporte seleccionado ya no existe.'], 404);
+            }
+
+            $consultaConsumos = $conexion->prepare(
+                'SELECT RPU, division_cfe, nombre_cfe, direccion_cfe, poblacion_cfe, tarifa_cfe, tipo_periodo,
+                        desde, hasta, dias, consumo, demanda, reactivos, factor_potencia, factor_carga,
+                        energia, iva, dap, cargos_depositos, creditos_redondeos, total, formula_validacion,
+                        diferencia, severidad, alertas
+                 FROM cfe_consumos
+                 WHERE reporte_id = ?
+                 ORDER BY severidad DESC, total DESC, RPU'
+            );
+            $consultaConsumos->execute([$reporteId]);
+            $registros = [];
+            foreach ($consultaConsumos->fetchAll() as $fila) {
+                $alertas = array_values(array_filter(array_map('trim', explode('|', (string) ($fila['alertas'] ?? '')))));
+                $registros[] = [
+                    'rpu' => (string) $fila['RPU'],
+                    'division' => (string) ($fila['division_cfe'] ?? ''),
+                    'nombre' => (string) ($fila['nombre_cfe'] ?? ''),
+                    'direccion' => (string) ($fila['direccion_cfe'] ?? ''),
+                    'poblacion' => (string) ($fila['poblacion_cfe'] ?? ''),
+                    'tarifa' => (string) ($fila['tarifa_cfe'] ?? ''),
+                    'tipo_periodo' => (string) ($fila['tipo_periodo'] ?? ''),
+                    'desde' => (string) ($fila['desde'] ?? ''),
+                    'hasta' => (string) ($fila['hasta'] ?? ''),
+                    'dias' => $fila['dias'] !== null ? (int) $fila['dias'] : null,
+                    'consumo' => (float) $fila['consumo'],
+                    'demanda' => (float) $fila['demanda'],
+                    'reactivos' => (float) $fila['reactivos'],
+                    'factor_potencia' => (float) $fila['factor_potencia'],
+                    'factor_carga' => (float) $fila['factor_carga'],
+                    'energia' => (float) $fila['energia'],
+                    'iva' => (float) $fila['iva'],
+                    'dap' => (float) $fila['dap'],
+                    'cargos_depositos' => (float) $fila['cargos_depositos'],
+                    'creditos_redondeos' => (float) $fila['creditos_redondeos'],
+                    'total' => (float) $fila['total'],
+                    'formula_validacion' => (float) $fila['formula_validacion'],
+                    'diferencia' => (float) $fila['diferencia'],
+                    'severidad' => (int) $fila['severidad'],
+                    'alertas' => $alertas
+                ];
+            }
+
+            $periodoCorrecto = 0;
+            $conAlerta = 0;
+            $severos = 0;
+            $importeTotal = 0.0;
+            foreach ($registros as $registro) {
+                $tipo = $registro['tipo_periodo'] === 'mensual' ? 'mensual' : 'bimestral';
+                $minimo = $tipo === 'mensual' ? 25 : 50;
+                $maximo = $tipo === 'mensual' ? 35 : 75;
+                $dias = $registro['dias'];
+                if ($dias !== null && $dias >= $minimo && $dias <= $maximo) {
+                    $periodoCorrecto++;
+                }
+                if ($registro['alertas']) {
+                    $conAlerta++;
+                }
+                if ($registro['severidad'] >= 7) {
+                    $severos++;
+                }
+                $importeTotal += $registro['total'];
+            }
+
+            $resultado = [
+                'ok' => true,
+                'reporte_id' => $reporteId,
+                'archivo' => (string) $reporte['archivo'],
+                'mes_reporte' => sprintf('%04d-%02d', (int) $reporte['anio'], (int) $reporte['mes']),
+                'modo_periodo' => (string) $reporte['modo_periodo'],
+                'resumen' => [
+                    'registros' => count($registros),
+                    'con_alerta' => $conAlerta,
+                    'severos' => $severos,
+                    'periodo_bimestral' => $periodoCorrecto,
+                    'importe_total' => round($importeTotal, 2)
+                ],
+                'registros' => $registros
+            ];
+            $this->responder($this->anexarSugerencias($conexion, $resultado));
+        } catch (Throwable $e) {
+            $this->responder(['ok' => false, 'error' => 'No fue posible consultar el reporte guardado: ' . $e->getMessage()], 500);
+        }
+    }
+
     private function prepararHistorialCfe(PDO $conexion): void
     {
         $conexion->exec(
@@ -892,6 +996,10 @@ $controlador = new AjustesController();
 
 if ($accion === 'analizar_ajustes_cfe') {
     $controlador->analizar();
+}
+
+if ($accion === 'consultar_reporte_guardado') {
+    $controlador->consultarReporteGuardado();
 }
 
 if ($accion === 'importar_reportes_masivos') {
