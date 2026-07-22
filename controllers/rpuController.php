@@ -641,6 +641,37 @@ class RpuController
         }
     }
 
+    public function previsualizarAutoVinculos(): void
+    {
+        $this->validarToken();
+        set_time_limit(0);
+        try {
+            $conexion = Conexion::conectar();
+            $this->prepararTablas($conexion);
+            $pendientes = $conexion->query(
+                'SELECT cc.RPU, cc.nombre_cfe, cc.direccion_cfe, cc.poblacion_cfe, cc.tarifa_cfe
+                 FROM (
+                    SELECT MAX(id) AS consumo_id
+                    FROM cfe_consumos
+                    GROUP BY RPU
+                 ) ultimos
+                 INNER JOIN cfe_consumos cc ON cc.id = ultimos.consumo_id
+                 LEFT JOIN (SELECT DISTINCT RPU FROM escuelas_rpu) er ON er.RPU = cc.RPU
+                 WHERE er.RPU IS NULL'
+            )->fetchAll();
+            $total = 0;
+            foreach ($pendientes as $rpuCfe) {
+                $escuela = $this->sugerencias($conexion, (string) $rpuCfe['RPU'], $rpuCfe)[0] ?? null;
+                if ($escuela && (float) ($escuela['similitud'] ?? 0) >= 50) {
+                    $total++;
+                }
+            }
+            $this->responder(['ok' => true, 'total' => $total, 'pendientes' => count($pendientes)]);
+        } catch (Throwable $e) {
+            $this->responder(['ok' => false, 'error' => 'No fue posible calcular la auto-vinculación: ' . $e->getMessage()], 500);
+        }
+    }
+
     public function desvincular(): void
     {
         $this->validarToken();
@@ -1196,6 +1227,10 @@ if ($accion === 'vincular_rpus_masivo') {
 
 if ($accion === 'auto_vincular_sugerencias') {
     $controlador->autoVincularSugerencias();
+}
+
+if ($accion === 'previsualizar_auto_vinculos') {
+    $controlador->previsualizarAutoVinculos();
 }
 
 if ($accion === 'desvincular_rpu') {

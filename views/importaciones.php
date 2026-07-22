@@ -443,9 +443,22 @@ refreshSuggestions.addEventListener('click', () => {
 });
 
 autoLinkSuggestions.addEventListener('click', async () => {
-    if (!window.confirm('¿Confirmas auto-vincular todos los RPUs pendientes con su mejor coincidencia de 50% o más?')) return;
     autoLinkSuggestions.disabled = true;
     try {
+        suggestionStatus.textContent = 'Calculando coincidencias seguras de todos los RPUs pendientes...';
+        const previewBody = new URLSearchParams({accion: 'previsualizar_auto_vinculos', csrf});
+        const previewResponse = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body: previewBody});
+        const preview = await previewResponse.json();
+        if (!previewResponse.ok || !preview.ok) throw new Error(preview.error || 'No fue posible calcular la auto-vinculación.');
+        if (!preview.total) {
+            suggestionStatus.textContent = `No hay coincidencias de 50% o más entre ${preview.pendientes} RPUs pendientes.`;
+            return;
+        }
+        if (!window.confirm(`Se vincularán automáticamente ${preview.total} de ${preview.pendientes} RPUs pendientes. ¿Deseas continuar?`)) {
+            suggestionStatus.textContent = 'Auto-vinculación cancelada.';
+            return;
+        }
+        suggestionStatus.textContent = `Vinculando ${preview.total} RPUs...`;
         const body = new URLSearchParams({accion: 'auto_vincular_sugerencias', csrf});
         const response = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body});
         const data = await response.json();
