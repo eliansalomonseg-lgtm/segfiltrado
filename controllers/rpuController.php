@@ -675,22 +675,32 @@ class RpuController
             return [];
         }
         $consulta = $conexion->prepare(
-            'SELECT CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL, NIVEL, HOMO, TURNO, ZONA, SECTOR, ORIGEN, CLASIFICACION
+            'SELECT CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL, NIVEL, HOMO, TURNO, ZONA, SECTOR, ORIGEN, CLASIFICACION, TIPOCT
              FROM escuelas
              WHERE ' . implode(' OR ', $condiciones) . '
              ORDER BY CASE WHEN CLASIFICACION = \'ESCUELA BASICA OFICIALIZADA (ACTIVA)\' THEN 0 WHEN CLASIFICACION LIKE \'ESCUELA%\' THEN 1 ELSE 2 END, STATUS DESC
              LIMIT 250'
         );
         $consulta->execute($parametros);
+        $nivelCfe = $this->identificarNivelCfe($nombre);
         $sugerencias = [];
         foreach ($consulta->fetchAll() as $fila) {
-            $score = $this->puntaje($nombre, $poblacion, $direccion, $fila);
-            if ($score >= 25) {
-                $sugerencias[] = $this->escuelaDesdeFila($fila, $score, 'Sugerencia por nombre/localidad');
+            $evaluacion = $this->puntaje($nombre, $poblacion, $direccion, $nivelCfe, $fila);
+            if ($evaluacion['score'] >= 25) {
+                $sugerencias[] = $this->escuelaDesdeFila($fila, $evaluacion['score'], 'Sugerencia por padrón maestro', $evaluacion);
             }
         }
-        usort($sugerencias, fn (array $a, array $b): int => $b['score'] <=> $a['score']);
-        return array_slice($sugerencias, 0, 6);
+        $porNivel = array_values(array_filter($sugerencias, fn (array $escuela): bool => !($escuela['administrativa'] ?? false) && ($escuela['nivel_coincide'] ?? false)));
+        if ($nivelCfe !== null && $porNivel) {
+            $sugerencias = $porNivel;
+        } else {
+            $fisicas = array_values(array_filter($sugerencias, fn (array $escuela): bool => !($escuela['administrativa'] ?? false)));
+            if ($fisicas) {
+                $sugerencias = $fisicas;
+            }
+        }
+        usort($sugerencias, fn (array $a, array $b): int => [$b['score'], $b['similitud'], $b['activa']] <=> [$a['score'], $a['similitud'], $a['activa']]);
+        return array_slice($sugerencias, 0, 3);
     }
 
     private function sugerenciasHistoricas(PDO $conexion, string $rpu): array
@@ -711,7 +721,7 @@ class RpuController
         );
     }
 
-    private function escuelaDesdeFila(array $fila, int $score, string $origen): array
+    private function escuelaDesdeFila(array $fila, int $score, string $origen, array $evaluacion = []): array
     {
         return [
             'cct' => (string) ($fila['CCT'] ?? ''),
@@ -729,11 +739,16 @@ class RpuController
             'clasificacion' => (string) ($fila['CLASIFICACION'] ?? ''),
             'fuente' => (string) ($fila['ORIGEN'] ?? 'Catalogo local SEG/Oficializacion'),
             'score' => $score,
+            'similitud' => (float) ($evaluacion['similitud'] ?? $score),
+            'nivel_coincide' => (bool) ($evaluacion['nivel_coincide'] ?? false),
+            'ubicacion' => (string) ($evaluacion['ubicacion'] ?? ''),
+            'administrativa' => (bool) ($evaluacion['administrativa'] ?? false),
+            'activa' => (bool) ($evaluacion['activa'] ?? false),
             'origen' => $origen
         ];
     }
 
-    private function puntaje(string $nombreCfe, string $poblacionCfe, string $direccionCfe, array $escuela): int
+    private function puntaje(string $nombreCfe, string $poblacionCfe, string $direccionCfe, ?string $nivelCfe, array $escuela): array
     {
         $nombreBase = $this->normalizar($nombreCfe);
         $nombreEscuela = $this->normalizar((string) ($escuela['NOMBRECT'] ?? ''));
@@ -741,9 +756,15 @@ class RpuController
         $localidad = $this->normalizar((string) ($escuela['NOMBRELOC'] ?? ''));
         $municipio = $this->normalizar((string) ($escuela['NOMBREMUN'] ?? ''));
         $poblacion = $this->normalizar($poblacionCfe);
-        $score = (int) round($similitud * 0.6);
-        if ($poblacion !== '' && (($localidad !== '' && ($localidad === $poblacion || str_contains($poblacion, $localidad))) || ($municipio !== '' && $municipio === $poblacion))) {
-            $score += 30;
+        $coincideLocalidad = $poblacion !== '' && $localidad !== '' && ($localidad === $poblacion || str_contains($poblacion, $localidad) || str_contains($localidad, $poblacion));
+        $coincideMunicipio = $poblacion !== '' && $municipio !== '' && ($municipio === $poblacion || str_contains($poblacion, $municipio) || str_contains($municipio, $poblacion));
+        $ubicacion = $coincideLocalidad ? 'Misma localidad/población' : ($coincideMunicipio ? 'Municipio coincidente' : 'Nombre o domicilio cercano');
+        $nivelCoincide = $this->coincideNivelCfe($nivelCfe, $escuela);
+        $activa = $this->estaActiva((string) ($escuela['STATUS'] ?? ''));
+        $administrativa = $this->esAdministrativa($escuela);
+        $score = $similitud + ($nivelCoincide ? 60 : 0) + ($activa ? 10 : 0) + ($coincideLocalidad ? 35 : ($coincideMunicipio ? 18 : 0));
+        if ($administrativa) {
+            $score -= 1000;
         }
         $direccion = $this->normalizar($direccionCfe);
         $domicilio = $this->normalizar((string) ($escuela['DOMICILIO'] ?? ''));
@@ -753,13 +774,61 @@ class RpuController
             $coincidencias = count(array_intersect($palabrasCfe, $palabrasEscuela));
             $score += min(15, $coincidencias * 5);
         }
-        if ($this->normalizar((string) ($escuela['STATUS'] ?? '')) === '1' || $this->normalizar((string) ($escuela['STATUS'] ?? '')) === 'ACTIVO') {
-            $score += 5;
-        }
         if ($this->normalizar((string) ($escuela['CLASIFICACION'] ?? '')) === 'ESCUELA BASICA OFICIALIZADA ACTIVA') {
             $score += 8;
         }
-        return min(100, $score);
+        return [
+            'score' => max(0, min(100, (int) round($score))),
+            'similitud' => round($similitud, 2),
+            'nivel_coincide' => $nivelCoincide,
+            'ubicacion' => $ubicacion,
+            'administrativa' => $administrativa,
+            'activa' => $activa
+        ];
+    }
+
+    private function identificarNivelCfe(string $nombre): ?string
+    {
+        $texto = $this->normalizar($nombre);
+        if (str_contains($texto, 'TELE') || preg_match('/(^| )TV( |$)/', $texto) || preg_match('/(^| )TS( |$)/', $texto)) {
+            return 'TELESECUNDARIA';
+        }
+        if (preg_match('/(^| )JN( |$)/', $texto) || str_contains($texto, 'JARDIN') || str_contains($texto, 'KINDER') || str_contains($texto, 'PREES')) {
+            return 'PREESCOLAR';
+        }
+        if (str_contains($texto, 'PRIM') || str_contains($texto, 'FED REG')) {
+            return 'PRIMARIA';
+        }
+        if (str_contains($texto, 'SEC') || str_contains($texto, 'TEC') || str_contains($texto, 'GRAL')) {
+            return 'SECUNDARIA';
+        }
+        return null;
+    }
+
+    private function coincideNivelCfe(?string $nivelCfe, array $escuela): bool
+    {
+        if ($nivelCfe === null) {
+            return false;
+        }
+        $nivel = $this->normalizar((string) ($escuela['NIVEL'] ?? ''));
+        $subnivel = $this->normalizar((string) ($escuela['SUBNIVEL'] ?? ''));
+        if ($nivelCfe === 'TELESECUNDARIA') {
+            return $nivel === 'TELESECUNDARIA' || $subnivel === 'TELESECUNDARIA';
+        }
+        return $nivel === $nivelCfe || str_contains($subnivel, $nivelCfe);
+    }
+
+    private function estaActiva(string $status): bool
+    {
+        return in_array($this->normalizar($status), ['1', 'ACTIVO', 'ACTIVA'], true);
+    }
+
+    private function esAdministrativa(array $escuela): bool
+    {
+        $homo = $this->normalizar((string) ($escuela['HOMO'] ?? ''));
+        $tipo = $this->normalizar((string) ($escuela['TIPOCT'] ?? ''));
+        $clasificacion = $this->normalizar((string) ($escuela['CLASIFICACION'] ?? ''));
+        return str_starts_with($homo, 'F') || ($tipo !== '' && $tipo !== 'ESCUELA') || str_contains($clasificacion, 'EDIFICIO ADMINISTRATIVO');
     }
 
     private function resumen(array $historial): array
