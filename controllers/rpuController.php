@@ -658,6 +658,7 @@ class RpuController
         $porLocalidad = [];
         $porMunicipio = [];
         $porLocalidadMunicipio = [];
+        $paresUbicacion = [];
         foreach ($escuelas as $escuela) {
             $localidad = $this->normalizar((string) ($escuela['NOMBRELOC'] ?? ''));
             $municipio = $this->normalizar((string) ($escuela['NOMBREMUN'] ?? ''));
@@ -667,8 +668,10 @@ class RpuController
             if ($municipio !== '') {
                 $porMunicipio[$municipio][] = $escuela;
             }
-            if ($localidad !== '' && $municipio !== '') {
-                $porLocalidadMunicipio[$localidad . '|' . $municipio][] = $escuela;
+            if ($localidad !== '') {
+                $llave = $localidad . '|' . $municipio;
+                $porLocalidadMunicipio[$llave][] = $escuela;
+                $paresUbicacion[$llave] = ['localidad' => $localidad, 'municipio' => $municipio];
             }
         }
 
@@ -686,6 +689,14 @@ class RpuController
                 $filas = $porLocalidad[$localidad] ?? [];
             } else {
                 $filas = $porMunicipio[$municipio] ?? [];
+            }
+            if (!$filas) {
+                $filas = $this->filasPorUbicacionCompatible(
+                    $porLocalidadMunicipio,
+                    $paresUbicacion,
+                    $localidad,
+                    $municipio
+                );
             }
             $sugerida = $this->evaluarSugerencias(
                 $filas,
@@ -706,6 +717,23 @@ class RpuController
             ];
         }
         return ['pendientes' => count($pendientes), 'vinculos' => $vinculos];
+    }
+
+    private function filasPorUbicacionCompatible(array $porUbicacion, array $ubicaciones, string $localidad, string $municipio): array
+    {
+        $filas = [];
+        foreach ($ubicaciones as $llave => $ubicacion) {
+            if ($localidad !== '' && !str_contains($ubicacion['localidad'], $localidad)) {
+                continue;
+            }
+            if ($municipio !== '' && !str_contains($ubicacion['municipio'], $municipio)) {
+                continue;
+            }
+            foreach ($porUbicacion[$llave] as $fila) {
+                $filas[] = $fila;
+            }
+        }
+        return $filas;
     }
 
     public function desvincular(): void
