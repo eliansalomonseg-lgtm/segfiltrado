@@ -181,7 +181,11 @@ class RpuController
             $historial = $this->historial($conexion, $rpu);
             $vinculos = $this->vinculos($conexion, $rpu);
             $ultimo = $historial[0] ?? null;
-            $sugerencias = $vinculos ? [] : $this->sugerencias($conexion, $rpu, $ultimo);
+            $cctsVinculados = array_flip(array_map(static fn (array $vinculo): string => (string) $vinculo['cct'], $vinculos));
+            $sugerencias = array_values(array_filter(
+                $this->sugerencias($conexion, $rpu, $ultimo),
+                static fn (array $escuela): bool => !isset($cctsVinculados[(string) $escuela['cct']])
+            ));
             $mapa = $this->mapa($vinculos[0] ?? $sugerencias[0] ?? null);
 
             $this->responder([
@@ -646,10 +650,6 @@ class RpuController
 
     private function sugerencias(PDO $conexion, string $rpu, ?array $ultimo): array
     {
-        $historicas = $this->sugerenciasHistoricas($conexion, $rpu);
-        if ($historicas) {
-            return $historicas;
-        }
         if (!$ultimo) {
             return [];
         }
