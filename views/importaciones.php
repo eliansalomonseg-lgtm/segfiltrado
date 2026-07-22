@@ -445,7 +445,8 @@ refreshSuggestions.addEventListener('click', () => {
 autoLinkSuggestions.addEventListener('click', async () => {
     autoLinkSuggestions.disabled = true;
     try {
-        suggestionStatus.textContent = 'Calculando coincidencias seguras de todos los RPUs pendientes...';
+        suggestionStatus.textContent = 'Calculando el total de coincidencias seguras. Este proceso puede tardar unos segundos.';
+        await new Promise((resolve) => requestAnimationFrame(resolve));
         const previewBody = new URLSearchParams({accion: 'previsualizar_auto_vinculos', csrf});
         const previewResponse = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body: previewBody});
         const preview = await previewResponse.json();

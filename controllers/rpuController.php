@@ -585,18 +585,7 @@ class RpuController
         try {
             $conexion = Conexion::conectar();
             $this->prepararTablas($conexion);
-            $pendientes = $conexion->query(
-                'SELECT cc.RPU, cc.nombre_cfe, cc.direccion_cfe, cc.poblacion_cfe, cc.tarifa_cfe
-                 FROM (
-                    SELECT MAX(id) AS consumo_id
-                    FROM cfe_consumos
-                    GROUP BY RPU
-                 ) ultimos
-                 INNER JOIN cfe_consumos cc ON cc.id = ultimos.consumo_id
-                 LEFT JOIN (SELECT DISTINCT RPU FROM escuelas_rpu) er ON er.RPU = cc.RPU
-                 WHERE er.RPU IS NULL'
-            )->fetchAll();
-            $consultaEscuela = $conexion->prepare('SELECT id FROM escuelas WHERE CCT = ? LIMIT 1');
+            $calculo = $this->obtenerAutoVinculos($conexion);
             $consultaGuardar = $conexion->prepare(
                 'INSERT INTO escuelas_rpu (CCT, escuela_id, RPU, nombre_recibo_cfe, poblacion_cfe, tarifa_cfe)
                  VALUES (:cct, :escuela_id, :rpu, :nombre, :poblacion, :tarifa)
@@ -605,34 +594,24 @@ class RpuController
             $consultaActualizar = $conexion->prepare('UPDATE cfe_consumos SET CCT = :cct, escuela_id = :escuela_id WHERE RPU = :rpu AND CCT IS NULL');
             $conexion->beginTransaction();
             $guardados = 0;
-            foreach ($pendientes as $rpuCfe) {
-                $sugerencias = $this->sugerencias($conexion, (string) $rpuCfe['RPU'], $rpuCfe);
-                $escuelaSugerida = $sugerencias[0] ?? null;
-                if (!$escuelaSugerida || (float) ($escuelaSugerida['similitud'] ?? 0) < 50) {
-                    continue;
-                }
-                $consultaEscuela->execute([(string) $escuelaSugerida['cct']]);
-                $escuela = $consultaEscuela->fetch();
-                if (!$escuela) {
-                    continue;
-                }
+            foreach ($calculo['vinculos'] as $vinculo) {
                 $consultaGuardar->execute([
-                    'cct' => (string) $escuelaSugerida['cct'],
-                    'escuela_id' => (int) $escuela['id'],
-                    'rpu' => (string) $rpuCfe['RPU'],
-                    'nombre' => $this->nulo($rpuCfe['nombre_cfe'] ?? null),
-                    'poblacion' => $this->nulo($rpuCfe['poblacion_cfe'] ?? null),
-                    'tarifa' => $this->nulo($rpuCfe['tarifa_cfe'] ?? null)
+                    'cct' => $vinculo['cct'],
+                    'escuela_id' => $vinculo['escuela_id'],
+                    'rpu' => $vinculo['rpu'],
+                    'nombre' => $this->nulo($vinculo['nombre_cfe']),
+                    'poblacion' => $this->nulo($vinculo['poblacion_cfe']),
+                    'tarifa' => $this->nulo($vinculo['tarifa_cfe'])
                 ]);
                 $consultaActualizar->execute([
-                    'cct' => (string) $escuelaSugerida['cct'],
-                    'escuela_id' => (int) $escuela['id'],
-                    'rpu' => (string) $rpuCfe['RPU']
+                    'cct' => $vinculo['cct'],
+                    'escuela_id' => $vinculo['escuela_id'],
+                    'rpu' => $vinculo['rpu']
                 ]);
                 $guardados++;
             }
             $conexion->commit();
-            $this->responder(['ok' => true, 'total' => $guardados, 'pendientes' => count($pendientes), 'mensaje' => $guardados . ' vínculos guardados automáticamente.']);
+            $this->responder(['ok' => true, 'total' => $guardados, 'pendientes' => $calculo['pendientes'], 'mensaje' => $guardados . ' vínculos guardados automáticamente.']);
         } catch (Throwable $e) {
             if (isset($conexion) && $conexion->inTransaction()) {
                 $conexion->rollBack();
@@ -648,28 +627,85 @@ class RpuController
         try {
             $conexion = Conexion::conectar();
             $this->prepararTablas($conexion);
-            $pendientes = $conexion->query(
-                'SELECT cc.RPU, cc.nombre_cfe, cc.direccion_cfe, cc.poblacion_cfe, cc.tarifa_cfe
-                 FROM (
-                    SELECT MAX(id) AS consumo_id
-                    FROM cfe_consumos
-                    GROUP BY RPU
-                 ) ultimos
-                 INNER JOIN cfe_consumos cc ON cc.id = ultimos.consumo_id
-                 LEFT JOIN (SELECT DISTINCT RPU FROM escuelas_rpu) er ON er.RPU = cc.RPU
-                 WHERE er.RPU IS NULL'
-            )->fetchAll();
-            $total = 0;
-            foreach ($pendientes as $rpuCfe) {
-                $escuela = $this->sugerencias($conexion, (string) $rpuCfe['RPU'], $rpuCfe)[0] ?? null;
-                if ($escuela && (float) ($escuela['similitud'] ?? 0) >= 50) {
-                    $total++;
-                }
-            }
-            $this->responder(['ok' => true, 'total' => $total, 'pendientes' => count($pendientes)]);
+            $calculo = $this->obtenerAutoVinculos($conexion);
+            $this->responder(['ok' => true, 'total' => count($calculo['vinculos']), 'pendientes' => $calculo['pendientes']]);
         } catch (Throwable $e) {
             $this->responder(['ok' => false, 'error' => 'No fue posible calcular la auto-vinculación: ' . $e->getMessage()], 500);
         }
+    }
+
+    private function obtenerAutoVinculos(PDO $conexion): array
+    {
+        $pendientes = $conexion->query(
+            'SELECT cc.RPU, cc.nombre_cfe, cc.direccion_cfe, cc.poblacion_cfe, cc.tarifa_cfe
+             FROM (
+                SELECT MAX(id) AS consumo_id
+                FROM cfe_consumos
+                GROUP BY RPU
+             ) ultimos
+             INNER JOIN cfe_consumos cc ON cc.id = ultimos.consumo_id
+             LEFT JOIN (SELECT DISTINCT RPU FROM escuelas_rpu) er ON er.RPU = cc.RPU
+             WHERE er.RPU IS NULL'
+        )->fetchAll();
+        if (!$pendientes) {
+            return ['pendientes' => 0, 'vinculos' => []];
+        }
+
+        $escuelas = $conexion->query(
+            'SELECT id, CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL, NIVEL, HOMO, TURNO, ZONA, SECTOR, ORIGEN, CLASIFICACION, TIPOCT
+             FROM escuelas'
+        )->fetchAll();
+        $porLocalidad = [];
+        $porMunicipio = [];
+        $porLocalidadMunicipio = [];
+        foreach ($escuelas as $escuela) {
+            $localidad = $this->normalizar((string) ($escuela['NOMBRELOC'] ?? ''));
+            $municipio = $this->normalizar((string) ($escuela['NOMBREMUN'] ?? ''));
+            if ($localidad !== '') {
+                $porLocalidad[$localidad][] = $escuela;
+            }
+            if ($municipio !== '') {
+                $porMunicipio[$municipio][] = $escuela;
+            }
+            if ($localidad !== '' && $municipio !== '') {
+                $porLocalidadMunicipio[$localidad . '|' . $municipio][] = $escuela;
+            }
+        }
+
+        $vinculos = [];
+        foreach ($pendientes as $rpuCfe) {
+            $referencia = $this->referenciaGeograficaCfe((string) ($rpuCfe['poblacion_cfe'] ?? ''));
+            $localidad = $this->normalizar($referencia['localidad']);
+            $municipio = $this->normalizar($referencia['municipio']);
+            if ($localidad === '' && $municipio === '') {
+                continue;
+            }
+            if ($localidad !== '' && $municipio !== '') {
+                $filas = $porLocalidadMunicipio[$localidad . '|' . $municipio] ?? [];
+            } elseif ($localidad !== '') {
+                $filas = $porLocalidad[$localidad] ?? [];
+            } else {
+                $filas = $porMunicipio[$municipio] ?? [];
+            }
+            $sugerida = $this->evaluarSugerencias(
+                $filas,
+                (string) ($rpuCfe['nombre_cfe'] ?? ''),
+                $referencia,
+                (string) ($rpuCfe['direccion_cfe'] ?? '')
+            )[0] ?? null;
+            if (!$sugerida || (float) $sugerida['similitud'] < 50 || (int) $sugerida['escuela_id'] <= 0) {
+                continue;
+            }
+            $vinculos[] = [
+                'rpu' => (string) $rpuCfe['RPU'],
+                'cct' => (string) $sugerida['cct'],
+                'escuela_id' => (int) $sugerida['escuela_id'],
+                'nombre_cfe' => (string) ($rpuCfe['nombre_cfe'] ?? ''),
+                'poblacion_cfe' => (string) ($rpuCfe['poblacion_cfe'] ?? ''),
+                'tarifa_cfe' => (string) ($rpuCfe['tarifa_cfe'] ?? '')
+            ];
+        }
+        return ['pendientes' => count($pendientes), 'vinculos' => $vinculos];
     }
 
     public function desvincular(): void
@@ -864,7 +900,7 @@ class RpuController
         $filas = [];
         foreach ($filtrosGeograficos as [$filtro, $parametros]) {
             $consulta = $conexion->prepare(
-                'SELECT CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL, NIVEL, HOMO, TURNO, ZONA, SECTOR, ORIGEN, CLASIFICACION, TIPOCT
+                'SELECT id, CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL, NIVEL, HOMO, TURNO, ZONA, SECTOR, ORIGEN, CLASIFICACION, TIPOCT
                  FROM escuelas
                  WHERE ' . $filtro . '
                  ORDER BY CASE WHEN CLASIFICACION = \'ESCUELA BASICA OFICIALIZADA (ACTIVA)\' THEN 0 WHEN CLASIFICACION LIKE \'ESCUELA%\' THEN 1 ELSE 2 END, STATUS DESC
@@ -876,6 +912,11 @@ class RpuController
                 break;
             }
         }
+        return $this->evaluarSugerencias($filas, $nombre, $referencia, $direccion);
+    }
+
+    private function evaluarSugerencias(array $filas, string $nombre, array $referencia, string $direccion): array
+    {
         $nivelCfe = $this->identificarNivelCfe($nombre);
         $requiereIndigena = $this->requiereSubnivelIndigena($nombre);
         $sugerencias = [];
@@ -923,6 +964,7 @@ class RpuController
     private function escuelaDesdeFila(array $fila, int $score, string $origen, array $evaluacion = []): array
     {
         return [
+            'escuela_id' => (int) ($fila['id'] ?? 0),
             'cct' => (string) ($fila['CCT'] ?? ''),
             'nombre' => (string) ($fila['NOMBRECT'] ?? ''),
             'domicilio' => (string) ($fila['DOMICILIO'] ?? ''),
