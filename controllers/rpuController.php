@@ -687,6 +687,7 @@ class RpuController
             }
         }
         $nivelCfe = $this->identificarNivelCfe($nombre);
+        $requiereIndigena = $this->requiereSubnivelIndigena($nombre);
         $sugerencias = [];
         foreach ($filas as $fila) {
             $evaluacion = $this->puntaje($nombre, $referencia['localidad'], $referencia['municipio'], $direccion, $nivelCfe, $fila);
@@ -694,14 +695,18 @@ class RpuController
                 $sugerencias[] = $this->escuelaDesdeFila($fila, $evaluacion['score'], 'Sugerencia por padrón maestro', $evaluacion);
             }
         }
-        $porNivel = array_values(array_filter($sugerencias, fn (array $escuela): bool => !($escuela['administrativa'] ?? false) && ($escuela['nivel_coincide'] ?? false)));
+        $fisicas = array_values(array_filter($sugerencias, fn (array $escuela): bool => !($escuela['administrativa'] ?? false)));
+        if ($requiereIndigena) {
+            $fisicas = array_values(array_filter($fisicas, fn (array $escuela): bool => str_contains($this->normalizar((string) ($escuela['subnivel'] ?? '')), 'INDIGENA')));
+        }
+        if (!$fisicas) {
+            return [];
+        }
+        $porNivel = array_values(array_filter($fisicas, fn (array $escuela): bool => $escuela['nivel_coincide'] ?? false));
         if ($nivelCfe !== null && $porNivel) {
             $sugerencias = $porNivel;
         } else {
-            $fisicas = array_values(array_filter($sugerencias, fn (array $escuela): bool => !($escuela['administrativa'] ?? false)));
-            if ($fisicas) {
-                $sugerencias = $fisicas;
-            }
+            $sugerencias = $fisicas;
         }
         usort($sugerencias, fn (array $a, array $b): int => [$b['score'], $b['similitud'], $b['activa']] <=> [$a['score'], $a['similitud'], $a['activa']]);
         return array_slice($sugerencias, 0, 3);
@@ -823,6 +828,11 @@ class RpuController
             return 'SECUNDARIA';
         }
         return null;
+    }
+
+    private function requiereSubnivelIndigena(string $nombre): bool
+    {
+        return str_contains($this->normalizar($nombre), 'INDIGENA');
     }
 
     private function coincideNivelCfe(?string $nivelCfe, array $escuela): bool
