@@ -103,14 +103,14 @@ try {
                     <div class="source-title"><span>SEG</span>Estructura educativa</div>
                     <div class="source-stack">
                         <label class="drop-zone" data-input="archivo_seg">
-                            <input id="archivo_seg" name="archivo_seg" type="file" accept=".csv,.xlsx,.xls" required>
+                            <input id="archivo_seg" name="archivo_seg" type="file" accept=".csv,.xlsx,.xls">
                             <span class="file-icon seg">1</span>
                             <strong>1. Catálogo Institucional SEG</strong>
                             <small>66 columnas de inmuebles, ubicacion, directorio y contacto</small>
                             <em class="file-name">Seleccionar CSV o Excel</em>
                         </label>
                         <label class="drop-zone" data-input="archivo_oficializacion">
-                            <input id="archivo_oficializacion" name="archivo_oficializacion" type="file" accept=".xlsx,.xls" required>
+                            <input id="archivo_oficializacion" name="archivo_oficializacion" type="file" accept=".xlsx,.xls">
                             <span class="file-icon seg">2</span>
                             <strong>2. Oficialización Básica (Datos 911)</strong>
                             <small>169 columnas de estadistica, nivel, turno y matricula</small>
@@ -129,7 +129,7 @@ try {
                     <div class="source-title"><span>CFE</span>Reportes de consumo</div>
                     <div class="source-stack">
                         <label class="drop-zone cfe-drop" data-input="reportes_cfe">
-                            <input id="reportes_cfe" name="reportes_cfe[]" type="file" accept=".xlsx,.xls" multiple required>
+                            <input id="reportes_cfe" name="reportes_cfe[]" type="file" accept=".xlsx,.xls" multiple>
                             <span class="file-icon">3</span>
                             <strong>2. Reportes CFE</strong>
                             <small>Selecciona todos los periodos que deseas guardar</small>
@@ -216,7 +216,9 @@ try {
         }));
         zone.addEventListener('drop', event => {
             const files = new DataTransfer();
-            Array.from(event.dataTransfer.files).slice(0, 1).forEach(file => files.items.add(file));
+            const droppedFiles = Array.from(event.dataTransfer.files);
+            const selectedFiles = input.multiple ? droppedFiles : droppedFiles.slice(0, 1);
+            selectedFiles.forEach(file => files.items.add(file));
             input.files = files.files;
             update();
         });
