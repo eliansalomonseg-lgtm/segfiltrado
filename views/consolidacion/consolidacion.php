@@ -4,11 +4,22 @@ declare(strict_types=1);
 
 session_start();
 
+require_once dirname(__DIR__, 2) . '/services/conexion.php';
+
 if (empty($_SESSION['seg_csrf'])) {
     $_SESSION['seg_csrf'] = bin2hex(random_bytes(24));
 }
 
 $segBasePath = '../';
+$estadoCarga = ['escuelas' => 0, 'vinculos' => 0, 'reportes' => 0, 'consumos' => 0];
+try {
+    $conexionCarga = Conexion::conectar();
+    $estadoCarga['escuelas'] = (int) $conexionCarga->query('SELECT COUNT(*) FROM escuelas')->fetchColumn();
+    $estadoCarga['vinculos'] = (int) $conexionCarga->query('SELECT COUNT(*) FROM escuelas_rpu')->fetchColumn();
+    $estadoCarga['reportes'] = (int) $conexionCarga->query('SELECT COUNT(*) FROM cfe_reportes')->fetchColumn();
+    $estadoCarga['consumos'] = (int) $conexionCarga->query('SELECT COUNT(*) FROM cfe_consumos')->fetchColumn();
+} catch (Throwable) {
+}
 ?>
 <!doctype html>
 <html lang="es">
@@ -58,6 +69,9 @@ $segBasePath = '../';
         .btn-sync-catalogs{align-items:center;background:var(--seg-gold);border:0;border-radius:8px;color:#302719;cursor:pointer;display:flex;font-size:12px;font-weight:800;gap:8px;justify-content:center;margin-top:16px;padding:12px 14px;width:100%}
         .btn-sync-catalogs:disabled{cursor:wait;opacity:.7}
         .result-search{border:1px solid #dfe4ec;border-radius:11px;font-size:12px;min-width:280px;padding:10px 12px}
+        .load-state{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr));margin:0 0 18px}.load-state article{align-items:center;background:#fff;border:1px solid #e8e1da;border-radius:6px;display:flex;gap:11px;min-height:76px;padding:12px}.load-state i{align-items:center;background:#f5eadb;border-radius:50%;color:#7e1b2a;display:flex;font-size:17px;height:36px;justify-content:center;width:36px}.load-state strong,.load-state small{display:block}.load-state strong{color:#551522;font-size:19px;line-height:1}.load-state small{color:#736b70;font-size:10px;font-weight:700;margin-top:5px}.load-shell{background:#fff;border:1px solid #e8e1da;border-radius:6px;box-shadow:0 4px 14px rgba(48,39,43,.05);padding:20px}.load-shell .source-column{background:#fcfbf9;border:1px solid #ebe4dd;border-radius:5px;box-shadow:none}.load-shell .source-title{border-bottom:1px solid #ece5df;color:#551522;font-family:Georgia,"Times New Roman",serif;font-size:18px;margin-bottom:15px;padding-bottom:12px}.load-shell .source-title span{border-radius:50%;font-family:Inter,"Segoe UI",sans-serif;font-size:10px}.cfe-drop{min-height:232px!important}.selected-reports{background:#f8f5f1;border:1px solid #e9e1d9;border-radius:4px;color:#675e65;font-size:11px;line-height:1.5;margin-top:12px;max-height:106px;overflow:auto;padding:10px}.selected-reports strong{color:#5b1724;display:block;font-size:11px;margin-bottom:4px}.selected-reports ul{margin:0;padding-left:17px}.load-actions{align-items:center;border-top:1px solid #ece5df;display:flex;gap:12px;justify-content:flex-end;margin-top:18px;padding-top:16px}.load-actions .btn-seg{margin:0}.load-note{color:#736b70;font-size:11px;margin-right:auto}.load-note i{color:#b17b20;margin-right:4px}
+        @media(max-width:950px){.load-state{grid-template-columns:repeat(2,minmax(0,1fr))}.load-actions{align-items:stretch;flex-direction:column}.load-note{margin:0}.load-actions .btn-seg{width:100%}}
+        @media(max-width:520px){.load-state{grid-template-columns:1fr}}
         @media(max-width:900px){.drop-grid{gap:10px;grid-template-columns:1fr}.cross{margin:-19px auto}.options{min-width:360px}}
         @media(max-width:600px){.workflow{align-items:stretch;flex-direction:column}.workflow span{text-align:center}}
     </style>
@@ -68,35 +82,19 @@ $segBasePath = '../';
 <main class="workspace">
     <section class="heading">
         <div>
-            <span class="eyebrow">EMPAREJAMIENTO BILATERAL</span>
-            <h1>Consolidación Predictiva</h1>
-            <p>Consolida estructura educativa, movimientos 911 y dos periodos de consumo CFE.</p>
+            <span class="eyebrow">CENTRO DE CARGA</span>
+            <h1>Actualización de padrones y reportes CFE</h1>
+            <p>Actualiza el catálogo maestro y guarda todos los periodos CFE en un solo lugar.</p>
         </div>
-        <span class="alert-gold">STATUS activo y nivel educativo tienen prioridad</span>
+        <span class="alert-gold">Padrón maestro y CFE</span>
     </section>
-    <div class="workflow" aria-label="Flujo de consolidación">
-        <span>1. Cargar archivos</span>
-        <span>2. Revisar sugerencias</span>
-        <span>3. Confirmar vínculos</span>
-    </div>
-    <section class="quick-actions" aria-label="Metricas rapidas">
-        <article class="quick-card">
-            <span class="quick-icon"><i class="bi bi-building-check"></i></span>
-            <div><strong id="metric-schools">0</strong><span>Total Escuelas Publicas</span></div>
-            <small>Catalogos</small>
-        </article>
-        <article class="quick-card">
-            <span class="quick-icon"><i class="bi bi-graph-up-arrow"></i></span>
-            <div><strong id="metric-progress">0%</strong><span>Porcentaje de Avance</span></div>
-            <small>Vinculos</small>
-        </article>
-        <article class="quick-card">
-            <span class="quick-icon"><i class="bi bi-exclamation-triangle"></i></span>
-            <div><strong id="metric-alerts">0</strong><span>Casos con Alerta</span></div>
-            <small>Revision</small>
-        </article>
+    <section class="load-state" aria-label="Estado de información local">
+        <article><i class="bi bi-buildings"></i><span><strong><?= number_format($estadoCarga['escuelas']) ?></strong><small>Perfiles en padrón maestro</small></span></article>
+        <article><i class="bi bi-link-45deg"></i><span><strong><?= number_format($estadoCarga['vinculos']) ?></strong><small>Vínculos RPU conservados</small></span></article>
+        <article><i class="bi bi-file-earmark-bar-graph"></i><span><strong><?= number_format($estadoCarga['reportes']) ?></strong><small>Reportes CFE guardados</small></span></article>
+        <article><i class="bi bi-lightning-charge"></i><span><strong><?= number_format($estadoCarga['consumos']) ?></strong><small>Lecturas CFE acumuladas</small></span></article>
     </section>
-    <form id="cross-form" class="upload-card" enctype="multipart/form-data">
+    <form id="cross-form" class="load-shell" enctype="multipart/form-data">
         <input type="hidden" name="accion" value="procesar_archivos">
         <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['seg_csrf'], ENT_QUOTES, 'UTF-8') ?>">
         <div class="row g-3 align-items-stretch">
@@ -130,18 +128,19 @@ $segBasePath = '../';
                 <section class="source-column">
                     <div class="source-title"><span>CFE</span>Reportes de consumo</div>
                     <div class="source-stack">
-                        <label class="drop-zone" data-input="reportes_cfe">
+                        <label class="drop-zone cfe-drop" data-input="reportes_cfe">
                             <input id="reportes_cfe" name="reportes_cfe[]" type="file" accept=".xlsx,.xls" multiple required>
                             <span class="file-icon">3</span>
                             <strong>2. Reportes CFE</strong>
                             <small>Selecciona todos los periodos que deseas guardar</small>
                             <em class="file-name">Seleccionar uno o varios archivos Excel</em>
                         </label>
+                        <div id="selected-reports" class="selected-reports"><strong>Sin reportes seleccionados</strong><span>Los archivos deben incluir el periodo AAAA-MM en su nombre.</span></div>
                     </div>
                 </section>
             </div>
         </div>
-        <button class="btn-seg" type="submit">2. Cargar reportes CFE seleccionados</button>
+        <div class="load-actions"><span class="load-note"><i class="bi bi-info-circle"></i>Primero actualiza el padrón maestro cuando cambien los archivos SEG u Oficialización.</span><button class="btn-seg" type="submit">2. Cargar reportes CFE seleccionados</button></div>
         <div id="progress" class="progress-box" hidden>
             <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
             <span id="progress-text" class="progress-text">Preparando archivos...</span>
@@ -198,6 +197,13 @@ $segBasePath = '../';
             zone.querySelector('.file-name').textContent = input.files.length
                 ? (input.multiple ? `${input.files.length} reportes seleccionados` : input.files[0].name)
                 : fallback;
+            if (input.id === 'reportes_cfe') {
+                const preview = document.getElementById('selected-reports');
+                const archivos = Array.from(input.files);
+                preview.innerHTML = archivos.length
+                    ? `<strong>${archivos.length} reportes listos para cargar</strong><ul>${archivos.map(archivo => `<li>${escapeHtml(archivo.name)}</li>`).join('')}</ul>`
+                    : '<strong>Sin reportes seleccionados</strong><span>Los archivos deben incluir el periodo AAAA-MM en su nombre.</span>';
+            }
         };
         input.addEventListener('change', update);
         ['dragenter','dragover'].forEach(name => zone.addEventListener(name, event => {
