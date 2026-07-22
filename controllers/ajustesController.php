@@ -407,15 +407,15 @@ class AjustesController
             }
 
             $casos = $this->obtenerCasosExcelDirectores($conexion, array_map(static fn (array $reporte): int => (int) $reporte['id'], $reportes), $modo);
-            $html = $this->construirExcelDirectores($reportes, $casos, $titulo, $modo);
+            $csv = $this->construirCsvDirectores($reportes, $casos, $modo);
 
             http_response_code(200);
-            header('Content-Type: application/vnd.ms-excel; charset=utf-8');
-            header('Content-Disposition: attachment; filename="reporte_cfe_' . preg_replace('/[^a-z0-9_]+/i', '_', $tipo) . '_' . date('Ymd_His') . '.xls"');
-            echo "\xEF\xBB\xBF" . $html;
+            header('Content-Type: text/csv; charset=UTF-8');
+            header('Content-Disposition: attachment; filename="reporte_cfe_' . preg_replace('/[^a-z0-9_]+/i', '_', $tipo) . '_' . date('Ymd_His') . '.csv"');
+            echo "\xEF\xBB\xBF" . $csv;
             exit;
         } catch (Throwable $e) {
-            $this->responder(['ok' => false, 'error' => 'Fallo al exportar Excel: ' . $e->getMessage()], 500);
+            $this->responder(['ok' => false, 'error' => 'Fallo al exportar CSV: ' . $e->getMessage()], 500);
         }
     }
 
@@ -895,6 +895,52 @@ class AjustesController
         }
 
         return $html . '</table></body></html>';
+    }
+
+    private function construirCsvDirectores(array $reportes, array $casos, string $modo): string
+    {
+        $archivo = fopen('php://temp', 'r+');
+        fputcsv($archivo, [
+            'PERIODO_REPORTE', 'ARCHIVO_REPORTE', 'SECCION', 'SITUACION', 'ESCUELA_O_RPU', 'CCT', 'NIVEL', 'RPU',
+            'RECIBO_CFE', 'POBLACION_CFE', 'TARIFA', 'PERIODO_ESPERADO', 'PERIODO_CFE', 'DIAS', 'CONSUMO_KWH',
+            'TOTAL_ACTUAL', 'AUMENTO_VS_ANTERIOR', 'EXPLICACION'
+        ], ',', '"');
+        foreach ($reportes as $reporte) {
+            $reporteId = (int) $reporte['id'];
+            $periodo = sprintf('%04d-%02d', (int) $reporte['anio'], (int) $reporte['mes']);
+            foreach ($casos[$reporteId] ?? [] as $caso) {
+                if ($modo === 'bajo_consumo' && $caso['seccion'] !== 'bajo_consumo') {
+                    continue;
+                }
+                if ($modo !== 'bajo_consumo' && !in_array($caso['seccion'], ['ajustes', 'aumentos'], true)) {
+                    continue;
+                }
+                fputcsv($archivo, [
+                    $periodo,
+                    (string) $reporte['archivo'],
+                    (string) $caso['seccion'],
+                    (string) $caso['situacion'],
+                    (string) $caso['escuela'],
+                    (string) $caso['cct'],
+                    (string) $caso['nivel'],
+                    (string) $caso['rpu'],
+                    (string) $caso['recibo'],
+                    (string) $caso['poblacion'],
+                    (string) $caso['tarifa'],
+                    (string) ($caso['periodo_esperado'] ?? ''),
+                    (string) $caso['periodo'],
+                    $caso['dias'] ?? '',
+                    number_format((float) $caso['consumo'], 2, '.', ''),
+                    number_format((float) $caso['total'], 2, '.', ''),
+                    number_format((float) $caso['aumento'], 2, '.', ''),
+                    (string) $caso['mensaje']
+                ], ',', '"');
+            }
+        }
+        rewind($archivo);
+        $csv = stream_get_contents($archivo) ?: '';
+        fclose($archivo);
+        return $csv;
     }
 
     private function excelSeccionDirectores(array $grupo, string $seccion, string $titulo): string

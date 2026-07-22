@@ -98,8 +98,8 @@ if (empty($_SESSION['seg_csrf'])) {
                 </label>
             </div>
             <div class="d-flex flex-wrap gap-2">
-                <button class="btn-seg compact-action btn-sync-catalogs" type="submit" name="exportar_tipo" value="ajustes_mes"><i class="bi bi-file-earmark-excel me-2"></i>Ajustes por fechas</button>
-                <button class="btn-seg compact-action btn-sync-catalogs" type="submit" name="exportar_tipo" value="bajo_consumo_mes"><i class="bi bi-battery me-2"></i>Consumo muy bajo</button>
+                <button class="btn-seg compact-action btn-sync-catalogs" type="submit" name="exportar_tipo" value="ajustes_mes"><i class="bi bi-filetype-csv me-2"></i>Ajustes por fechas CSV</button>
+                <button class="btn-seg compact-action btn-sync-catalogs" type="submit" name="exportar_tipo" value="bajo_consumo_mes"><i class="bi bi-filetype-csv me-2"></i>Consumo muy bajo CSV</button>
             </div>
         </form>
     </section>
