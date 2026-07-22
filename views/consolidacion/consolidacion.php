@@ -132,7 +132,7 @@ try {
                             <input id="reportes_cfe" name="reportes_cfe[]" type="file" accept=".xlsx,.xls" multiple>
                             <span class="file-icon">3</span>
                             <strong>2. Reportes CFE</strong>
-                            <small>Selecciona todos los periodos que deseas guardar</small>
+                            <small>Selecciona uno o varios archivos para analizarlos automaticamente</small>
                             <em class="file-name">Seleccionar uno o varios archivos Excel</em>
                         </label>
                         <div id="selected-reports" class="selected-reports"><strong>Sin reportes seleccionados</strong><span>Los archivos deben incluir el periodo AAAA-MM en su nombre.</span></div>
@@ -140,7 +140,7 @@ try {
                 </section>
             </div>
         </div>
-        <div class="load-actions"><span class="load-note"><i class="bi bi-info-circle"></i>Primero actualiza el padrón maestro cuando cambien los archivos SEG u Oficialización.</span><button class="btn-seg" type="submit">2. Cargar reportes CFE seleccionados</button></div>
+        <div class="load-actions"><span class="load-note"><i class="bi bi-lightning-charge"></i>Al seleccionar reportes CFE, el análisis y guardado iniciarán automáticamente.</span></div>
         <div id="progress" class="progress-box" hidden>
             <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
             <span id="progress-text" class="progress-text">Preparando archivos...</span>
@@ -205,7 +205,12 @@ try {
                     : '<strong>Sin reportes seleccionados</strong><span>Los archivos deben incluir el periodo AAAA-MM en su nombre.</span>';
             }
         };
-        input.addEventListener('change', update);
+        input.addEventListener('change', () => {
+            update();
+            if (input.id === 'reportes_cfe' && input.files.length) {
+                form.requestSubmit();
+            }
+        });
         ['dragenter','dragover'].forEach(name => zone.addEventListener(name, event => {
             event.preventDefault();
             zone.classList.add('dragging');
@@ -221,6 +226,9 @@ try {
             selectedFiles.forEach(file => files.items.add(file));
             input.files = files.files;
             update();
+            if (input.id === 'reportes_cfe' && input.files.length) {
+                form.requestSubmit();
+            }
         });
     });
     syncButton.addEventListener('click', async () => {
@@ -257,7 +265,7 @@ try {
                 Swal.fire({icon:'warning',title:'Sin reportes CFE',text:'Selecciona uno o varios archivos Excel de CFE.',confirmButtonColor:'#6c1d24'});
                 return;
             }
-            const button = form.querySelector('.btn-seg');
+            const button = document.getElementById('reportes_cfe');
             const progress = document.getElementById('progress');
             const bar = document.getElementById('progress-bar');
             const text = document.getElementById('progress-text');
