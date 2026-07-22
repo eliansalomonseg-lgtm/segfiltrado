@@ -523,6 +523,102 @@ class RpuController
         }
     }
 
+    public function vincularMasivo(): void
+    {
+        $this->validarToken();
+        $vinculos = json_decode((string) ($_POST['vinculos'] ?? '[]'), true);
+        if (!is_array($vinculos) || !$vinculos) {
+            $this->responder(['ok' => false, 'error' => 'No hay vínculos para guardar.'], 422);
+        }
+
+        try {
+            $conexion = Conexion::conectar();
+            $this->prepararTablas($conexion);
+            $consultaEscuela = $conexion->prepare('SELECT id, CCT FROM escuelas WHERE CCT = ? LIMIT 1');
+            $consultaCfe = $conexion->prepare('SELECT nombre_cfe, poblacion_cfe, tarifa_cfe FROM cfe_consumos WHERE RPU = ? ORDER BY id DESC LIMIT 1');
+            $consultaGuardar = $conexion->prepare(
+                'INSERT INTO escuelas_rpu (CCT, escuela_id, RPU, nombre_recibo_cfe, poblacion_cfe, tarifa_cfe)
+                 VALUES (:cct, :escuela_id, :rpu, :nombre, :poblacion, :tarifa)
+                 ON DUPLICATE KEY UPDATE escuela_id = VALUES(escuela_id), nombre_recibo_cfe = VALUES(nombre_recibo_cfe), poblacion_cfe = VALUES(poblacion_cfe), tarifa_cfe = VALUES(tarifa_cfe)'
+            );
+            $consultaActualizar = $conexion->prepare('UPDATE cfe_consumos SET CCT = :cct, escuela_id = :escuela_id WHERE RPU = :rpu AND CCT IS NULL');
+            $conexion->beginTransaction();
+            $guardados = 0;
+            foreach ($vinculos as $vinculo) {
+                $rpu = trim((string) ($vinculo['rpu'] ?? ''));
+                $cct = trim((string) ($vinculo['cct'] ?? ''));
+                if ($rpu === '' || $cct === '') {
+                    continue;
+                }
+                $consultaEscuela->execute([$cct]);
+                $escuela = $consultaEscuela->fetch();
+                if (!$escuela) {
+                    continue;
+                }
+                $consultaCfe->execute([$rpu]);
+                $cfe = $consultaCfe->fetch() ?: [];
+                $consultaGuardar->execute([
+                    'cct' => $cct,
+                    'escuela_id' => (int) $escuela['id'],
+                    'rpu' => $rpu,
+                    'nombre' => $this->nulo($cfe['nombre_cfe'] ?? null),
+                    'poblacion' => $this->nulo($cfe['poblacion_cfe'] ?? null),
+                    'tarifa' => $this->nulo($cfe['tarifa_cfe'] ?? null)
+                ]);
+                $consultaActualizar->execute(['cct' => $cct, 'escuela_id' => (int) $escuela['id'], 'rpu' => $rpu]);
+                $guardados++;
+            }
+            $conexion->commit();
+            $this->responder(['ok' => true, 'total' => $guardados, 'mensaje' => $guardados . ' vínculos guardados.']);
+        } catch (Throwable $e) {
+            if (isset($conexion) && $conexion->inTransaction()) {
+                $conexion->rollBack();
+            }
+            $this->responder(['ok' => false, 'error' => 'No fue posible guardar los vínculos: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function desvincular(): void
+    {
+        $this->validarToken();
+        $rpu = trim((string) ($_POST['rpu'] ?? ''));
+        $cct = trim((string) ($_POST['cct'] ?? ''));
+        if ($rpu === '' || $cct === '') {
+            $this->responder(['ok' => false, 'error' => 'Faltan RPU o CCT para desvincular.'], 422);
+        }
+
+        try {
+            $conexion = Conexion::conectar();
+            $this->prepararTablas($conexion);
+            $conexion->beginTransaction();
+            $consulta = $conexion->prepare('DELETE FROM escuelas_rpu WHERE RPU = ? AND CCT = ?');
+            $consulta->execute([$rpu, $cct]);
+            if ($consulta->rowCount() === 0) {
+                throw new RuntimeException('El vínculo ya no existe.');
+            }
+            $siguiente = $conexion->prepare('SELECT CCT, escuela_id FROM escuelas_rpu WHERE RPU = ? ORDER BY id LIMIT 1');
+            $siguiente->execute([$rpu]);
+            $restante = $siguiente->fetch();
+            if ($restante) {
+                $conexion->prepare('UPDATE cfe_consumos SET CCT = :cct, escuela_id = :escuela_id WHERE RPU = :rpu AND CCT = :cct_anterior')->execute([
+                    'cct' => $restante['CCT'],
+                    'escuela_id' => $restante['escuela_id'],
+                    'rpu' => $rpu,
+                    'cct_anterior' => $cct
+                ]);
+            } else {
+                $conexion->prepare('UPDATE cfe_consumos SET CCT = NULL, escuela_id = NULL WHERE RPU = :rpu AND CCT = :cct')->execute(['rpu' => $rpu, 'cct' => $cct]);
+            }
+            $conexion->commit();
+            $this->responder(['ok' => true, 'mensaje' => 'Vínculo eliminado.']);
+        } catch (Throwable $e) {
+            if (isset($conexion) && $conexion->inTransaction()) {
+                $conexion->rollBack();
+            }
+            $this->responder(['ok' => false, 'error' => 'No fue posible desvincular: ' . $e->getMessage()], 500);
+        }
+    }
+
     private function prepararTablas(PDO $conexion): void
     {
         $this->prepararTablaEscuelas($conexion);
@@ -1029,6 +1125,14 @@ if ($accion === 'opciones_catalogo_cfe') {
 
 if ($accion === 'vincular_rpu') {
     $controlador->vincular();
+}
+
+if ($accion === 'vincular_rpus_masivo') {
+    $controlador->vincularMasivo();
+}
+
+if ($accion === 'desvincular_rpu') {
+    $controlador->desvincular();
 }
 
 http_response_code(400);

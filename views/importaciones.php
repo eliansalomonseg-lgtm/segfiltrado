@@ -177,7 +177,7 @@ $queryBase = $_GET;
                 <h2>RPUs sin vínculo con escuelas sugeridas</h2>
                 <p>El sistema toma el último recibo de cada RPU y prioriza coincidencias del padrón maestro.</p>
             </div>
-            <button id="refresh-suggestions" class="btn-seg compact-action" type="button"><i class="bi bi-arrow-clockwise me-2"></i>Actualizar</button>
+            <div class="d-flex flex-wrap gap-2"><button id="auto-link-suggestions" class="btn btn-success btn-sm" type="button"><i class="bi bi-lightning-charge me-2"></i>Auto-vincular ≥50%</button><button id="refresh-suggestions" class="btn-seg compact-action" type="button"><i class="bi bi-arrow-clockwise me-2"></i>Actualizar</button></div>
         </div>
         <div id="suggestion-status" class="adjustment-status">Cargando RPUs pendientes de vincular.</div>
         <div id="suggestion-list" class="suggestion-list"></div>
@@ -236,12 +236,13 @@ $queryBase = $_GET;
                         <th>Tarifa</th>
                         <th>Conteo</th>
                         <th>Estado</th>
+                        <th>Acción</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="links-body">
                 <?php if (!$vinculos): ?>
                     <tr>
-                        <td colspan="7" class="empty-state">
+                        <td colspan="8" class="empty-state">
                             <i class="bi bi-search"></i>
                             <strong>No se encontraron vinculos</strong>
                             <span>Ajusta los filtros para ampliar la busqueda.</span>
@@ -269,6 +270,7 @@ $queryBase = $_GET;
                         <td><span class="status-pill"><?= htmlspecialchars((string) ($vinculo['tarifa_cfe'] ?: 'N/D'), ENT_QUOTES, 'UTF-8') ?></span></td>
                         <td><span class="status-pill <?= (int) ($vinculo['total_rpu'] ?? 0) > 1 ? 'status-warn' : 'status-ok' ?>"><?= number_format((int) ($vinculo['total_rpu'] ?? 0)) ?> CCT</span></td>
                         <td><span class="status-pill status-ok">STATUS <?= htmlspecialchars((string) ($vinculo['STATUS'] ?: 'N/D'), ENT_QUOTES, 'UTF-8') ?></span></td>
+                        <td><button class="unlink-link" type="button" data-unlink-rpu="<?= htmlspecialchars((string) $vinculo['RPU'], ENT_QUOTES, 'UTF-8') ?>" data-unlink-cct="<?= htmlspecialchars((string) $vinculo['CCT'], ENT_QUOTES, 'UTF-8') ?>"><i class="bi bi-link-45deg"></i> Desvincular</button></td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
@@ -312,7 +314,10 @@ const suggestionStatus = document.getElementById('suggestion-status');
 const suggestionList = document.getElementById('suggestion-list');
 const suggestionPager = document.getElementById('suggestion-pager');
 const refreshSuggestions = document.getElementById('refresh-suggestions');
+const autoLinkSuggestions = document.getElementById('auto-link-suggestions');
+const linksBody = document.getElementById('links-body');
 let suggestionPage = 1;
+let currentSuggestionRows = [];
 const matchEscape = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character]));
 
 function renderRpuMatch(data) {
@@ -375,6 +380,7 @@ function cardEscuelaSugerida(escuela, rpu) {
 
 function renderSugerencias(data) {
     const coincidencias = data.coincidencias || [];
+    currentSuggestionRows = coincidencias;
     suggestionStatus.textContent = `${Number(data.total || 0).toLocaleString('es-MX')} RPUs sin vínculo. Página ${data.pagina} de ${data.paginas}.`;
     suggestionList.innerHTML = coincidencias.length ? coincidencias.map((item) => {
         const cfe = item.cfe || {};
@@ -434,6 +440,50 @@ refreshSuggestions.addEventListener('click', () => {
     cargarSugerencias(suggestionPage).catch((error) => {
         suggestionStatus.textContent = error.message;
     });
+});
+
+autoLinkSuggestions.addEventListener('click', async () => {
+    const seleccionados = currentSuggestionRows.map((item) => {
+        const escuela = (item.sugerencias || []).find((opcion) => Number(opcion.similitud || 0) >= 50);
+        return escuela ? {rpu: item.rpu, cct: escuela.cct} : null;
+    }).filter(Boolean);
+    if (!seleccionados.length) {
+        suggestionStatus.textContent = 'No hay coincidencias de 50% o más en esta página.';
+        return;
+    }
+    if (!window.confirm(`¿Confirmas auto-vincular ${seleccionados.length} RPUs con su mejor coincidencia de esta página?`)) return;
+    autoLinkSuggestions.disabled = true;
+    try {
+        const body = new URLSearchParams({accion: 'vincular_rpus_masivo', csrf, vinculos: JSON.stringify(seleccionados)});
+        const response = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body});
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible auto-vincular.');
+        suggestionStatus.textContent = `${data.total} vínculos guardados automáticamente.`;
+        await cargarSugerencias(suggestionPage);
+    } catch (error) {
+        suggestionStatus.textContent = error.message;
+    } finally {
+        autoLinkSuggestions.disabled = false;
+    }
+});
+
+linksBody.addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-unlink-rpu]');
+    if (!button) return;
+    const rpu = button.dataset.unlinkRpu;
+    const cct = button.dataset.unlinkCct;
+    if (!window.confirm(`¿Confirmas desvincular el RPU ${rpu} del CCT ${cct}?`)) return;
+    button.disabled = true;
+    try {
+        const body = new URLSearchParams({accion: 'desvincular_rpu', csrf, rpu, cct});
+        const response = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body});
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible desvincular.');
+        window.location.reload();
+    } catch (error) {
+        button.disabled = false;
+        window.alert(error.message);
+    }
 });
 
 cargarSugerencias().catch((error) => {

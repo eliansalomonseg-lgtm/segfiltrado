@@ -1181,6 +1181,23 @@ body {
     padding: 10px;
 }
 
+.unlink-link {
+    background: #fff;
+    border: 1px solid #b98b92;
+    border-radius: 6px;
+    color: var(--seg-guinda);
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 7px 9px;
+    white-space: nowrap;
+}
+
+.unlink-link:hover {
+    background: var(--seg-guinda);
+    color: #fff;
+}
+
 @media (max-width: 760px) {
     .link-match-form,
     .link-match-result,
