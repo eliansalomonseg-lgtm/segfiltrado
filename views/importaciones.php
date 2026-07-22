@@ -170,6 +170,19 @@ $queryBase = $_GET;
         <div id="rpu-match-status" class="adjustment-status">Consulta un RPU que ya exista en los reportes CFE cargados.</div>
         <div id="rpu-match-result" class="link-match-result" hidden></div>
     </section>
+    <section class="results-card suggestion-inbox">
+        <div class="results-head">
+            <div>
+                <span class="eyebrow">COINCIDENCIAS PENDIENTES</span>
+                <h2>RPUs sin vínculo con escuelas sugeridas</h2>
+                <p>El sistema toma el último recibo de cada RPU y prioriza coincidencias del padrón maestro.</p>
+            </div>
+            <button id="refresh-suggestions" class="btn-seg compact-action" type="button"><i class="bi bi-arrow-clockwise me-2"></i>Actualizar</button>
+        </div>
+        <div id="suggestion-status" class="adjustment-status">Cargando RPUs pendientes de vincular.</div>
+        <div id="suggestion-list" class="suggestion-list"></div>
+        <div id="suggestion-pager" class="pager" hidden></div>
+    </section>
     <section class="results-card import-control">
         <div class="results-head">
             <div>
@@ -295,6 +308,11 @@ const csrf = <?= json_encode($_SESSION['seg_csrf'], JSON_UNESCAPED_UNICODE | JSO
 const rpuMatchForm = document.getElementById('rpu-match-form');
 const rpuMatchStatus = document.getElementById('rpu-match-status');
 const rpuMatchResult = document.getElementById('rpu-match-result');
+const suggestionStatus = document.getElementById('suggestion-status');
+const suggestionList = document.getElementById('suggestion-list');
+const suggestionPager = document.getElementById('suggestion-pager');
+const refreshSuggestions = document.getElementById('refresh-suggestions');
+let suggestionPage = 1;
 const matchEscape = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character]));
 
 function renderRpuMatch(data) {
@@ -351,6 +369,77 @@ rpuMatchResult.addEventListener('click', async (event) => {
         rpuMatchStatus.textContent = error.message;
         button.disabled = false;
     }
+});
+
+function cardEscuelaSugerida(escuela, rpu) {
+    return `<article class="school-match-card"><div><span class="status-pill ${Number(escuela.score) >= 70 ? 'status-ok' : 'status-warn'}">${matchEscape(escuela.score)}% coincidencia</span><strong>${matchEscape(escuela.cct)} · ${matchEscape(escuela.nombre)}</strong><small>${matchEscape(escuela.domicilio || 'Sin domicilio')}</small><small>${matchEscape(escuela.localidad || 'Sin localidad')} · ${matchEscape(escuela.municipio || 'Sin municipio')}</small><small>${matchEscape(escuela.nivel || 'Sin nivel')} · ${matchEscape(escuela.subnivel || 'Sin subnivel')} · ${matchEscape(escuela.status || 'Sin estatus')}</small><small>${matchEscape(escuela.clasificacion || escuela.fuente || 'Padrón maestro')}</small></div><button class="btn-seg compact-action" type="button" data-suggested-rpu="${matchEscape(rpu)}" data-suggested-cct="${matchEscape(escuela.cct)}">Vincular</button></article>`;
+}
+
+function renderSugerencias(data) {
+    const coincidencias = data.coincidencias || [];
+    suggestionStatus.textContent = `${Number(data.total || 0).toLocaleString('es-MX')} RPUs sin vínculo. Página ${data.pagina} de ${data.paginas}.`;
+    suggestionList.innerHTML = coincidencias.length ? coincidencias.map((item) => {
+        const cfe = item.cfe || {};
+        const opciones = item.sugerencias || [];
+        return `<article class="suggested-rpu-card"><div class="suggested-rpu-head"><strong>${matchEscape(item.rpu)}</strong><span class="status-pill">${matchEscape(cfe.tarifa || 'N/D')}</span></div><div class="suggested-cfe-data"><strong>${matchEscape(cfe.nombre || 'Sin nombre CFE')}</strong><small>${matchEscape(cfe.direccion || 'Sin dirección')} · ${matchEscape(cfe.poblacion || 'Sin población')}</small><small>${matchEscape(cfe.division || 'Sin división')} · ${matchEscape(cfe.periodo || 'Sin periodo')}</small></div><div class="match-suggestions"><div class="match-title"><strong>Opciones de escuela</strong><span>${opciones.length} sugerencias</span></div>${opciones.length ? opciones.map((escuela) => cardEscuelaSugerida(escuela, item.rpu)).join('') : `<button class="manual-suggest-search" type="button" data-open-manual-rpu="${matchEscape(item.rpu)}"><i class="bi bi-search me-1"></i>Buscar este RPU manualmente</button>`}</div></article>`;
+    }).join('') : '<div class="empty-state"><i class="bi bi-check2-circle"></i><strong>No hay RPUs pendientes</strong><span>Todos los RPUs cargados ya tienen al menos una escuela vinculada.</span></div>';
+    suggestionPager.hidden = Number(data.paginas || 1) <= 1;
+    suggestionPager.innerHTML = Number(data.paginas || 1) > 1 ? `<span>Página ${data.pagina} de ${data.paginas}</span><div><button type="button" data-suggestion-page="prev" ${Number(data.pagina) <= 1 ? 'disabled' : ''}>Anterior</button><button type="button" data-suggestion-page="next" ${Number(data.pagina) >= Number(data.paginas) ? 'disabled' : ''}>Siguiente</button></div>` : '';
+}
+
+async function cargarSugerencias(pagina = 1) {
+    suggestionPage = pagina;
+    suggestionStatus.textContent = 'Buscando coincidencias en el padrón maestro...';
+    const body = new URLSearchParams({accion: 'sugerir_vinculos_paginados', csrf, pagina: String(pagina)});
+    const response = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body});
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible cargar las coincidencias.');
+    renderSugerencias(data);
+}
+
+suggestionList.addEventListener('click', async (event) => {
+    const manualButton = event.target.closest('[data-open-manual-rpu]');
+    if (manualButton) {
+        rpuMatchForm.rpu.value = manualButton.dataset.openManualRpu;
+        rpuMatchForm.scrollIntoView({behavior: 'smooth', block: 'center'});
+        rpuMatchForm.rpu.focus();
+        return;
+    }
+    const button = event.target.closest('[data-suggested-cct]');
+    if (!button) return;
+    const rpu = button.dataset.suggestedRpu;
+    const cct = button.dataset.suggestedCct;
+    if (!window.confirm(`¿Confirmas vincular el RPU ${rpu} con la escuela ${cct}?`)) return;
+    button.disabled = true;
+    try {
+        const body = new URLSearchParams({accion: 'vincular_rpu', csrf, rpu, cct});
+        const response = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body});
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible guardar el vínculo.');
+        suggestionStatus.textContent = data.mensaje;
+        await cargarSugerencias(suggestionPage);
+    } catch (error) {
+        suggestionStatus.textContent = error.message;
+        button.disabled = false;
+    }
+});
+
+suggestionPager.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-suggestion-page]');
+    if (!button) return;
+    cargarSugerencias(suggestionPage + (button.dataset.suggestionPage === 'next' ? 1 : -1)).catch((error) => {
+        suggestionStatus.textContent = error.message;
+    });
+});
+
+refreshSuggestions.addEventListener('click', () => {
+    cargarSugerencias(suggestionPage).catch((error) => {
+        suggestionStatus.textContent = error.message;
+    });
+});
+
+cargarSugerencias().catch((error) => {
+    suggestionStatus.textContent = error.message;
 });
 </script>
 </body>

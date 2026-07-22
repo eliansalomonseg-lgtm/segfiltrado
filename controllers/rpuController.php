@@ -311,6 +311,75 @@ class RpuController
         }
     }
 
+    public function sugerirVinculosPaginados(): void
+    {
+        $this->validarToken();
+        try {
+            $conexion = Conexion::conectar();
+            $this->prepararTablas($conexion);
+            $pagina = max(1, (int) ($_POST['pagina'] ?? 1));
+            $porPagina = 10;
+            $offset = ($pagina - 1) * $porPagina;
+            $consultaTotal = $conexion->query(
+                'SELECT COUNT(*)
+                 FROM (
+                    SELECT MAX(id) AS consumo_id
+                    FROM cfe_consumos
+                    GROUP BY RPU
+                 ) ultimos
+                 INNER JOIN cfe_consumos cc ON cc.id = ultimos.consumo_id
+                 LEFT JOIN (SELECT DISTINCT RPU FROM escuelas_rpu) er ON er.RPU = cc.RPU
+                 WHERE er.RPU IS NULL'
+            );
+            $total = (int) $consultaTotal->fetchColumn();
+            $paginas = max(1, (int) ceil($total / $porPagina));
+            $pagina = min($pagina, $paginas);
+            $offset = ($pagina - 1) * $porPagina;
+            $consulta = $conexion->prepare(
+                'SELECT cc.RPU, cc.division_cfe, cc.nombre_cfe, cc.direccion_cfe, cc.poblacion_cfe, cc.tarifa_cfe, cc.desde, cc.hasta, cc.total, cc.consumo
+                 FROM (
+                    SELECT MAX(id) AS consumo_id
+                    FROM cfe_consumos
+                    GROUP BY RPU
+                 ) ultimos
+                 INNER JOIN cfe_consumos cc ON cc.id = ultimos.consumo_id
+                 LEFT JOIN (SELECT DISTINCT RPU FROM escuelas_rpu) er ON er.RPU = cc.RPU
+                 WHERE er.RPU IS NULL
+                 ORDER BY cc.id DESC
+                 LIMIT :limite OFFSET :offset'
+            );
+            $consulta->bindValue(':limite', $porPagina, PDO::PARAM_INT);
+            $consulta->bindValue(':offset', $offset, PDO::PARAM_INT);
+            $consulta->execute();
+            $coincidencias = [];
+            foreach ($consulta->fetchAll() as $fila) {
+                $coincidencias[] = [
+                    'rpu' => (string) $fila['RPU'],
+                    'cfe' => [
+                        'division' => (string) ($fila['division_cfe'] ?? ''),
+                        'nombre' => (string) ($fila['nombre_cfe'] ?? ''),
+                        'direccion' => (string) ($fila['direccion_cfe'] ?? ''),
+                        'poblacion' => (string) ($fila['poblacion_cfe'] ?? ''),
+                        'tarifa' => (string) ($fila['tarifa_cfe'] ?? ''),
+                        'periodo' => trim((string) ($fila['desde'] ?? '') . ' / ' . (string) ($fila['hasta'] ?? '')),
+                        'total' => (float) $fila['total'],
+                        'consumo' => (float) $fila['consumo']
+                    ],
+                    'sugerencias' => $this->sugerencias($conexion, (string) $fila['RPU'], $fila)
+                ];
+            }
+            $this->responder([
+                'ok' => true,
+                'total' => $total,
+                'pagina' => $pagina,
+                'paginas' => $paginas,
+                'coincidencias' => $coincidencias
+            ]);
+        } catch (Throwable $e) {
+            $this->responder(['ok' => false, 'error' => 'No fue posible generar coincidencias: ' . $e->getMessage()], 500);
+        }
+    }
+
     public function opcionesCatalogoCfe(): void
     {
         $this->validarToken();
@@ -849,6 +918,10 @@ if ($accion === 'sugerir_rpus_malos') {
 
 if ($accion === 'buscar_catalogo_cfe') {
     $controlador->buscarCatalogoCfe();
+}
+
+if ($accion === 'sugerir_vinculos_paginados') {
+    $controlador->sugerirVinculosPaginados();
 }
 
 if ($accion === 'opciones_catalogo_cfe') {

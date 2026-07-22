@@ -1123,6 +1123,81 @@ body {
     justify-self: start;
 }
 
+.suggestion-inbox {
+    margin-bottom: 16px;
+}
+
+.suggestion-list {
+    display: grid;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.suggested-rpu-card {
+    background: #fbfcfd;
+    border: 1px solid var(--seg-border);
+    border-radius: 10px;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: minmax(240px, .7fr) minmax(0, 1.3fr);
+    padding: 14px;
+}
+
+.suggested-rpu-head {
+    align-items: center;
+    display: flex;
+    gap: 8px;
+    justify-content: space-between;
+}
+
+.suggested-rpu-head > strong {
+    color: var(--seg-guinda);
+    font-size: 15px;
+}
+
+.suggested-cfe-data {
+    display: grid;
+    gap: 4px;
+}
+
+.suggested-cfe-data strong {
+    color: var(--seg-text);
+    font-size: 12px;
+}
+
+.suggested-cfe-data small {
+    color: var(--seg-muted);
+    font-size: 11px;
+}
+
+.manual-suggest-search {
+    background: #fff;
+    border: 1px dashed var(--seg-gold);
+    border-radius: 7px;
+    color: var(--seg-guinda);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 10px;
+}
+
+@media (max-width: 760px) {
+    .link-match-form,
+    .link-match-result,
+    .suggested-rpu-card {
+        grid-template-columns: 1fr;
+    }
+
+    .school-match-card {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .school-match-card .btn-seg {
+        width: 100%;
+    }
+}
+
 .adjustment-drop {
     align-items: center;
     background: #fbfcfd;
