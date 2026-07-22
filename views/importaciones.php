@@ -152,6 +152,24 @@ $queryBase = $_GET;
             <small>Compartidos</small>
         </article>
     </section>
+    <section class="results-card link-workbench">
+        <div class="results-head">
+            <div>
+                <span class="eyebrow">EMPAREJAR RPU</span>
+                <h2>Relaciona un medidor con el padrón maestro</h2>
+                <p>Busca un RPU cargado y revisa escuelas sugeridas por nombre, domicilio, localidad, nivel y estatus.</p>
+            </div>
+        </div>
+        <form id="rpu-match-form" class="import-filters link-match-form">
+            <label class="search-field">
+                <i class="bi bi-lightning-charge"></i>
+                <input type="search" name="rpu" required placeholder="Captura el RPU del reporte CFE">
+            </label>
+            <button class="btn-seg compact-action" type="submit"><i class="bi bi-diagram-3 me-2"></i>Buscar coincidencias</button>
+        </form>
+        <div id="rpu-match-status" class="adjustment-status">Consulta un RPU que ya exista en los reportes CFE cargados.</div>
+        <div id="rpu-match-result" class="link-match-result" hidden></div>
+    </section>
     <section class="results-card import-control">
         <div class="results-head">
             <div>
@@ -272,6 +290,68 @@ if (autoFilter) {
         timer = setTimeout(submitFilters, 450);
     });
 }
+
+const csrf = <?= json_encode($_SESSION['seg_csrf'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+const rpuMatchForm = document.getElementById('rpu-match-form');
+const rpuMatchStatus = document.getElementById('rpu-match-status');
+const rpuMatchResult = document.getElementById('rpu-match-result');
+const matchEscape = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character]));
+
+function renderRpuMatch(data) {
+    const cfe = data.cfe || {};
+    const cfeCard = `<article class="match-cfe-card"><span>RECIBO CFE</span><strong>${matchEscape(cfe.rpu || data.rpu)} - ${matchEscape(cfe.nombre || 'Sin nombre')}</strong><small>${matchEscape(cfe.direccion || 'Sin dirección')} · ${matchEscape(cfe.poblacion || 'Sin población')}</small><small>División ${matchEscape(cfe.division || 'Sin división')} · Tarifa ${matchEscape(cfe.tarifa || 'N/D')} · Periodo ${matchEscape(cfe.periodo || 'Sin periodo')}</small></article>`;
+    const vinculados = data.vinculos || [];
+    if (vinculados.length) {
+        rpuMatchResult.innerHTML = `${cfeCard}<div class="match-linked"><strong>Este RPU ya tiene ${vinculados.length} vínculo${vinculados.length === 1 ? '' : 's'} confirmado${vinculados.length === 1 ? '' : 's'}</strong>${vinculados.map((escuela) => `<span>${matchEscape(escuela.cct)} · ${matchEscape(escuela.nombre)} · ${matchEscape(escuela.nivel || escuela.subnivel || 'Sin nivel')}</span>`).join('')}</div>`;
+        return;
+    }
+    const sugerencias = data.sugerencias || [];
+    const cards = sugerencias.length ? sugerencias.map((escuela) => `<article class="school-match-card"><div><span class="status-pill ${Number(escuela.score) >= 70 ? 'status-ok' : 'status-warn'}">${matchEscape(escuela.score)}% coincidencia</span><strong>${matchEscape(escuela.cct)} · ${matchEscape(escuela.nombre)}</strong><small>${matchEscape(escuela.domicilio || 'Sin domicilio')}</small><small>${matchEscape(escuela.localidad || 'Sin localidad')} · ${matchEscape(escuela.municipio || 'Sin municipio')}</small><small>${matchEscape(escuela.nivel || 'Sin nivel')} · ${matchEscape(escuela.subnivel || 'Sin subnivel')} · ${matchEscape(escuela.status || 'Sin estatus')}</small><small>${matchEscape(escuela.clasificacion || escuela.fuente || 'Padrón maestro')}</small></div><button class="btn-seg compact-action" type="button" data-link-cct="${matchEscape(escuela.cct)}">Vincular</button></article>`).join('') : '<div class="empty-state"><i class="bi bi-search"></i><strong>Sin coincidencias automáticas</strong><span>Busca la escuela por CCT en el padrón o revisa localidad y domicilio del recibo.</span></div>';
+    rpuMatchResult.innerHTML = `${cfeCard}<div class="match-suggestions"><div class="match-title"><strong>Escuelas sugeridas</strong><span>${sugerencias.length} opciones</span></div>${cards}</div>`;
+}
+
+async function buscarCoincidenciasRpu(rpu) {
+    rpuMatchStatus.textContent = 'Comparando RPU con nombre, domicilio, localidad y padrón escolar...';
+    const body = new URLSearchParams({accion: 'buscar_rpu', csrf, rpu});
+    const response = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body});
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+        throw new Error(data.error || 'No fue posible consultar el RPU.');
+    }
+    rpuMatchStatus.textContent = data.encontrado ? `Resultado listo para RPU ${data.rpu}.` : `El RPU ${data.rpu} no aparece todavía en los reportes CFE.`;
+    rpuMatchResult.hidden = false;
+    renderRpuMatch(data);
+}
+
+rpuMatchForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+        await buscarCoincidenciasRpu(rpuMatchForm.rpu.value.trim());
+    } catch (error) {
+        rpuMatchStatus.textContent = error.message;
+        rpuMatchResult.hidden = true;
+    }
+});
+
+rpuMatchResult.addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-link-cct]');
+    if (!button) return;
+    const rpu = rpuMatchForm.rpu.value.trim();
+    const cct = button.dataset.linkCct;
+    if (!window.confirm(`¿Confirmas vincular el RPU ${rpu} con la escuela ${cct}?`)) return;
+    button.disabled = true;
+    try {
+        const body = new URLSearchParams({accion: 'vincular_rpu', csrf, rpu, cct});
+        const response = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body});
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible guardar el vínculo.');
+        rpuMatchStatus.textContent = data.mensaje;
+        await buscarCoincidenciasRpu(rpu);
+    } catch (error) {
+        rpuMatchStatus.textContent = error.message;
+        button.disabled = false;
+    }
+});
 </script>
 </body>
 </html>

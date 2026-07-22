@@ -1050,6 +1050,79 @@ body {
     grid-template-columns: minmax(0, 1fr);
 }
 
+.link-workbench {
+    margin-bottom: 16px;
+}
+
+.link-match-form {
+    grid-template-columns: minmax(300px, 1fr) auto;
+    margin-bottom: 12px;
+}
+
+.link-match-result {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: minmax(260px, .8fr) minmax(0, 1.2fr);
+    margin-top: 12px;
+}
+
+.match-cfe-card,
+.match-suggestions,
+.match-linked {
+    background: #fbfcfd;
+    border: 1px solid var(--seg-border);
+    border-radius: 10px;
+    display: grid;
+    gap: 6px;
+    padding: 14px;
+}
+
+.match-cfe-card > span,
+.match-title span {
+    color: var(--seg-guinda);
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: .08em;
+}
+
+.match-cfe-card strong,
+.school-match-card strong,
+.match-linked strong {
+    color: var(--seg-text);
+    font-size: 13px;
+}
+
+.match-cfe-card small,
+.school-match-card small,
+.match-linked span {
+    color: var(--seg-muted);
+    font-size: 11px;
+}
+
+.match-title {
+    align-items: center;
+    display: flex;
+    justify-content: space-between;
+}
+
+.school-match-card {
+    align-items: center;
+    border-top: 1px solid var(--seg-border);
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+    padding: 10px 0;
+}
+
+.school-match-card > div {
+    display: grid;
+    gap: 3px;
+}
+
+.school-match-card .status-pill {
+    justify-self: start;
+}
+
 .adjustment-drop {
     align-items: center;
     background: #fbfcfd;

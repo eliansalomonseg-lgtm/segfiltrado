@@ -419,20 +419,28 @@ class RpuController
             $conexion = Conexion::conectar();
             $this->prepararTablas($conexion);
             $ultimo = $this->historial($conexion, $rpu)[0] ?? [];
+            $consultaEscuela = $conexion->prepare('SELECT id, CCT FROM escuelas WHERE CCT = ? LIMIT 1');
+            $consultaEscuela->execute([$cct]);
+            $escuela = $consultaEscuela->fetch();
+            if (!$escuela) {
+                throw new RuntimeException('La escuela seleccionada ya no existe en el padrón maestro.');
+            }
             $consulta = $conexion->prepare(
-                'INSERT INTO escuelas_rpu (CCT, RPU, nombre_recibo_cfe, poblacion_cfe, tarifa_cfe)
-                 VALUES (:cct, :rpu, :nombre, :poblacion, :tarifa)
-                 ON DUPLICATE KEY UPDATE nombre_recibo_cfe = VALUES(nombre_recibo_cfe), poblacion_cfe = VALUES(poblacion_cfe), tarifa_cfe = VALUES(tarifa_cfe)'
+                'INSERT INTO escuelas_rpu (CCT, escuela_id, RPU, nombre_recibo_cfe, poblacion_cfe, tarifa_cfe)
+                 VALUES (:cct, :escuela_id, :rpu, :nombre, :poblacion, :tarifa)
+                 ON DUPLICATE KEY UPDATE escuela_id = VALUES(escuela_id), nombre_recibo_cfe = VALUES(nombre_recibo_cfe), poblacion_cfe = VALUES(poblacion_cfe), tarifa_cfe = VALUES(tarifa_cfe)'
             );
             $consulta->execute([
                 'cct' => $cct,
+                'escuela_id' => (int) $escuela['id'],
                 'rpu' => $rpu,
                 'nombre' => $this->nulo($ultimo['nombre_cfe'] ?? null),
                 'poblacion' => $this->nulo($ultimo['poblacion_cfe'] ?? null),
                 'tarifa' => $this->nulo($ultimo['tarifa_cfe'] ?? null)
             ]);
-            $conexion->prepare('UPDATE cfe_consumos SET CCT = :cct WHERE RPU = :rpu AND CCT IS NULL')->execute([
+            $conexion->prepare('UPDATE cfe_consumos SET CCT = :cct, escuela_id = :escuela_id WHERE RPU = :rpu AND CCT IS NULL')->execute([
                 'cct' => $cct,
+                'escuela_id' => (int) $escuela['id'],
                 'rpu' => $rpu
             ]);
 
@@ -504,6 +512,8 @@ class RpuController
         $this->asegurarColumna($conexion, 'cfe_consumos', 'factor_carga', 'DECIMAL(14,4) NOT NULL DEFAULT 0');
         $this->asegurarColumna($conexion, 'cfe_consumos', 'iva', 'DECIMAL(14,2) NOT NULL DEFAULT 0');
         $this->asegurarColumna($conexion, 'cfe_consumos', 'formula_validacion', 'DECIMAL(14,2) NOT NULL DEFAULT 0');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'escuela_id', 'BIGINT UNSIGNED NULL');
+        $this->asegurarColumna($conexion, 'escuelas_rpu', 'escuela_id', 'BIGINT UNSIGNED NULL');
     }
 
     private function asegurarColumna(PDO $conexion, string $tabla, string $columna, string $definicion): void
@@ -576,6 +586,7 @@ class RpuController
         }
         $poblacion = trim((string) ($ultimo['poblacion_cfe'] ?? ''));
         $nombre = trim((string) ($ultimo['nombre_cfe'] ?? ''));
+        $direccion = trim((string) ($ultimo['direccion_cfe'] ?? ''));
         $parametros = [];
         $condiciones = [];
         if ($poblacion !== '') {
@@ -587,19 +598,24 @@ class RpuController
             $parametros['p' . $i] = '%' . $palabra . '%';
             $condiciones[] = 'NOMBRECT LIKE :p' . $i;
         }
+        foreach (array_slice(array_filter(preg_split('/\s+/', $direccion) ?: [], fn ($p): bool => strlen($p) >= 4), 0, 2) as $i => $palabra) {
+            $parametros['d' . $i] = '%' . $palabra . '%';
+            $condiciones[] = 'DOMICILIO LIKE :d' . $i;
+        }
         if (!$condiciones) {
             return [];
         }
         $consulta = $conexion->prepare(
-            'SELECT CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL, NIVEL, HOMO, TURNO, ZONA, SECTOR, ORIGEN
+            'SELECT CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL, NIVEL, HOMO, TURNO, ZONA, SECTOR, ORIGEN, CLASIFICACION
              FROM escuelas
              WHERE ' . implode(' OR ', $condiciones) . '
+             ORDER BY CASE WHEN CLASIFICACION = \'ESCUELA BASICA OFICIALIZADA (ACTIVA)\' THEN 0 WHEN CLASIFICACION LIKE \'ESCUELA%\' THEN 1 ELSE 2 END, STATUS DESC
              LIMIT 250'
         );
         $consulta->execute($parametros);
         $sugerencias = [];
         foreach ($consulta->fetchAll() as $fila) {
-            $score = $this->puntaje($nombre, $poblacion, $fila);
+            $score = $this->puntaje($nombre, $poblacion, $direccion, $fila);
             if ($score >= 25) {
                 $sugerencias[] = $this->escuelaDesdeFila($fila, $score, 'Sugerencia por nombre/localidad');
             }
@@ -641,13 +657,14 @@ class RpuController
             'turno' => (string) ($fila['TURNO'] ?? ''),
             'zona' => (string) ($fila['ZONA'] ?? ''),
             'sector' => (string) ($fila['SECTOR'] ?? ''),
+            'clasificacion' => (string) ($fila['CLASIFICACION'] ?? ''),
             'fuente' => (string) ($fila['ORIGEN'] ?? 'Catalogo local SEG/Oficializacion'),
             'score' => $score,
             'origen' => $origen
         ];
     }
 
-    private function puntaje(string $nombreCfe, string $poblacionCfe, array $escuela): int
+    private function puntaje(string $nombreCfe, string $poblacionCfe, string $direccionCfe, array $escuela): int
     {
         $nombreBase = $this->normalizar($nombreCfe);
         $nombreEscuela = $this->normalizar((string) ($escuela['NOMBRECT'] ?? ''));
@@ -655,12 +672,23 @@ class RpuController
         $localidad = $this->normalizar((string) ($escuela['NOMBRELOC'] ?? ''));
         $municipio = $this->normalizar((string) ($escuela['NOMBREMUN'] ?? ''));
         $poblacion = $this->normalizar($poblacionCfe);
-        $score = (int) round($similitud);
+        $score = (int) round($similitud * 0.6);
         if ($poblacion !== '' && (($localidad !== '' && ($localidad === $poblacion || str_contains($poblacion, $localidad))) || ($municipio !== '' && $municipio === $poblacion))) {
-            $score += 35;
+            $score += 30;
+        }
+        $direccion = $this->normalizar($direccionCfe);
+        $domicilio = $this->normalizar((string) ($escuela['DOMICILIO'] ?? ''));
+        if ($direccion !== '' && $domicilio !== '') {
+            $palabrasCfe = array_unique(array_filter(explode(' ', $direccion), fn (string $palabra): bool => strlen($palabra) >= 4));
+            $palabrasEscuela = array_unique(array_filter(explode(' ', $domicilio), fn (string $palabra): bool => strlen($palabra) >= 4));
+            $coincidencias = count(array_intersect($palabrasCfe, $palabrasEscuela));
+            $score += min(15, $coincidencias * 5);
         }
         if ($this->normalizar((string) ($escuela['STATUS'] ?? '')) === '1' || $this->normalizar((string) ($escuela['STATUS'] ?? '')) === 'ACTIVO') {
             $score += 5;
+        }
+        if ($this->normalizar((string) ($escuela['CLASIFICACION'] ?? '')) === 'ESCUELA BASICA OFICIALIZADA ACTIVA') {
+            $score += 8;
         }
         return min(100, $score);
     }
