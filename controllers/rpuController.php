@@ -656,36 +656,40 @@ class RpuController
         $poblacion = trim((string) ($ultimo['poblacion_cfe'] ?? ''));
         $nombre = trim((string) ($ultimo['nombre_cfe'] ?? ''));
         $direccion = trim((string) ($ultimo['direccion_cfe'] ?? ''));
-        $parametros = [];
-        $condiciones = [];
-        if ($poblacion !== '') {
-            $parametros['poblacion_loc'] = '%' . $poblacion . '%';
-            $parametros['poblacion_mun'] = '%' . $poblacion . '%';
-            $condiciones[] = '(NOMBRELOC LIKE :poblacion_loc OR NOMBREMUN LIKE :poblacion_mun)';
-        }
-        foreach (array_slice(array_filter(preg_split('/\s+/', $nombre) ?: [], fn ($p): bool => strlen($p) >= 4), 0, 3) as $i => $palabra) {
-            $parametros['p' . $i] = '%' . $palabra . '%';
-            $condiciones[] = 'NOMBRECT LIKE :p' . $i;
-        }
-        foreach (array_slice(array_filter(preg_split('/\s+/', $direccion) ?: [], fn ($p): bool => strlen($p) >= 4), 0, 2) as $i => $palabra) {
-            $parametros['d' . $i] = '%' . $palabra . '%';
-            $condiciones[] = 'DOMICILIO LIKE :d' . $i;
-        }
-        if (!$condiciones) {
+        $referencia = $this->referenciaGeograficaCfe($poblacion);
+        if ($referencia['localidad'] === '' && $referencia['municipio'] === '') {
             return [];
         }
-        $consulta = $conexion->prepare(
-            'SELECT CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL, NIVEL, HOMO, TURNO, ZONA, SECTOR, ORIGEN, CLASIFICACION, TIPOCT
-             FROM escuelas
-             WHERE ' . implode(' OR ', $condiciones) . '
-             ORDER BY CASE WHEN CLASIFICACION = \'ESCUELA BASICA OFICIALIZADA (ACTIVA)\' THEN 0 WHEN CLASIFICACION LIKE \'ESCUELA%\' THEN 1 ELSE 2 END, STATUS DESC
-             LIMIT 250'
-        );
-        $consulta->execute($parametros);
+        $filtrosGeograficos = [];
+        if ($referencia['localidad'] !== '' && $referencia['municipio'] !== '') {
+            $filtrosGeograficos[] = [
+                'NOMBRELOC LIKE :localidad AND NOMBREMUN LIKE :municipio',
+                ['localidad' => '%' . $referencia['localidad'] . '%', 'municipio' => '%' . $referencia['municipio'] . '%']
+            ];
+        } elseif ($referencia['localidad'] !== '') {
+            $filtrosGeograficos[] = ['NOMBRELOC LIKE :localidad', ['localidad' => '%' . $referencia['localidad'] . '%']];
+        } elseif ($referencia['municipio'] !== '') {
+            $filtrosGeograficos[] = ['NOMBREMUN LIKE :municipio', ['municipio' => '%' . $referencia['municipio'] . '%']];
+        }
+        $filas = [];
+        foreach ($filtrosGeograficos as [$filtro, $parametros]) {
+            $consulta = $conexion->prepare(
+                'SELECT CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL, NIVEL, HOMO, TURNO, ZONA, SECTOR, ORIGEN, CLASIFICACION, TIPOCT
+                 FROM escuelas
+                 WHERE ' . $filtro . '
+                 ORDER BY CASE WHEN CLASIFICACION = \'ESCUELA BASICA OFICIALIZADA (ACTIVA)\' THEN 0 WHEN CLASIFICACION LIKE \'ESCUELA%\' THEN 1 ELSE 2 END, STATUS DESC
+                 LIMIT 300'
+            );
+            $consulta->execute($parametros);
+            $filas = $consulta->fetchAll();
+            if ($filas) {
+                break;
+            }
+        }
         $nivelCfe = $this->identificarNivelCfe($nombre);
         $sugerencias = [];
-        foreach ($consulta->fetchAll() as $fila) {
-            $evaluacion = $this->puntaje($nombre, $poblacion, $direccion, $nivelCfe, $fila);
+        foreach ($filas as $fila) {
+            $evaluacion = $this->puntaje($nombre, $referencia['localidad'], $referencia['municipio'], $direccion, $nivelCfe, $fila);
             if ($evaluacion['score'] >= 25) {
                 $sugerencias[] = $this->escuelaDesdeFila($fila, $evaluacion['score'], 'Sugerencia por padrón maestro', $evaluacion);
             }
@@ -748,16 +752,17 @@ class RpuController
         ];
     }
 
-    private function puntaje(string $nombreCfe, string $poblacionCfe, string $direccionCfe, ?string $nivelCfe, array $escuela): array
+    private function puntaje(string $nombreCfe, string $localidadCfe, string $municipioCfe, string $direccionCfe, ?string $nivelCfe, array $escuela): array
     {
         $nombreBase = $this->normalizar($nombreCfe);
         $nombreEscuela = $this->normalizar((string) ($escuela['NOMBRECT'] ?? ''));
         similar_text($nombreBase, $nombreEscuela, $similitud);
         $localidad = $this->normalizar((string) ($escuela['NOMBRELOC'] ?? ''));
         $municipio = $this->normalizar((string) ($escuela['NOMBREMUN'] ?? ''));
-        $poblacion = $this->normalizar($poblacionCfe);
-        $coincideLocalidad = $poblacion !== '' && $localidad !== '' && ($localidad === $poblacion || str_contains($poblacion, $localidad) || str_contains($localidad, $poblacion));
-        $coincideMunicipio = $poblacion !== '' && $municipio !== '' && ($municipio === $poblacion || str_contains($poblacion, $municipio) || str_contains($municipio, $poblacion));
+        $referenciaLocalidad = $this->normalizar($localidadCfe);
+        $referenciaMunicipio = $this->normalizar($municipioCfe);
+        $coincideLocalidad = $referenciaLocalidad !== '' && $localidad !== '' && ($localidad === $referenciaLocalidad || str_contains($referenciaLocalidad, $localidad) || str_contains($localidad, $referenciaLocalidad));
+        $coincideMunicipio = $referenciaMunicipio !== '' && $municipio !== '' && ($municipio === $referenciaMunicipio || str_contains($referenciaMunicipio, $municipio) || str_contains($municipio, $referenciaMunicipio));
         $ubicacion = $coincideLocalidad ? 'Misma localidad/población' : ($coincideMunicipio ? 'Municipio coincidente' : 'Nombre o domicilio cercano');
         $nivelCoincide = $this->coincideNivelCfe($nivelCfe, $escuela);
         $activa = $this->estaActiva((string) ($escuela['STATUS'] ?? ''));
@@ -784,6 +789,21 @@ class RpuController
             'ubicacion' => $ubicacion,
             'administrativa' => $administrativa,
             'activa' => $activa
+        ];
+    }
+
+    private function referenciaGeograficaCfe(string $poblacion): array
+    {
+        $texto = trim($poblacion);
+        $localidad = $texto;
+        $municipio = '';
+        if (preg_match('/^(.*?)\s*\(([^)]+)\)\s*$/u', $texto, $coincidencia)) {
+            $localidad = trim($coincidencia[1]);
+            $municipio = trim($coincidencia[2]);
+        }
+        return [
+            'localidad' => $localidad,
+            'municipio' => $municipio
         ];
     }
 
