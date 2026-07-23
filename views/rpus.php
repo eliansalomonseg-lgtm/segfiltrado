@@ -217,7 +217,7 @@ function cfePanel(cfe) {
     </div>`;
 }
 
-function schoolPanel(escuela, vinculado) {
+function schoolPanel(escuela, vinculado, rpu) {
     const turnoZona = [escuela.turno ? `<b>Turno:</b> ${escapeHtml(escuela.turno)}` : '', escuela.zona ? `<b>Zona:</b> ${escapeHtml(escuela.zona)}` : '', escuela.sector ? `<b>Sector:</b> ${escapeHtml(escuela.sector)}` : ''].filter(Boolean).join(' - ');
     const homoFuente = [escuela.homo ? `<b>HOMO:</b> ${escapeHtml(escuela.homo)}` : '', escuela.fuente ? `<b>Fuente:</b> ${escapeHtml(escuela.fuente)}` : ''].filter(Boolean).join(' - ');
     return `<div class="compare-panel school-panel">
@@ -230,22 +230,23 @@ function schoolPanel(escuela, vinculado) {
         ${turnoZona ? `<small>${turnoZona}</small>` : ''}
         ${homoFuente ? `<small>${homoFuente}</small>` : ''}
         <span class="status-pill ${vinculado ? 'status-ok' : 'status-warn'}">${escapeHtml(escuela.origen || (vinculado ? 'Vinculo confirmado' : 'Sugerencia'))} - ${escapeHtml(escuela.score || 0)}%</span>
+        ${vinculado && escuela.cct ? `<button class="unlink-rpu-button" type="button" data-unlink-rpu="${escapeHtml(rpu)}" data-unlink-cct="${escapeHtml(escuela.cct)}"><i class="bi bi-link-45deg me-1"></i>Desvincular este CCT</button>` : ''}
     </div>`;
 }
 
 function comparisonCard(cfe, escuela, vinculado) {
     return `<div class="rpu-comparison">
         ${cfePanel(cfe || {})}
-        ${schoolPanel(escuela || {}, vinculado)}
+        ${schoolPanel(escuela || {}, vinculado, currentRpu)}
     </div>`;
 }
 
 function renderSchool(data) {
-    const linked = data.vinculos?.[0];
+    const vinculados = data.vinculos || [];
     const cfe = data.cfe || {};
-    linkState.textContent = linked ? 'Vinculado' : 'Sin vinculo';
-    schoolBox.innerHTML = linked
-        ? comparisonCard(cfe, linked, true)
+    linkState.textContent = vinculados.length ? (vinculados.length === 1 ? 'Vinculado' : `${vinculados.length} vinculos`) : 'Sin vinculo';
+    schoolBox.innerHTML = vinculados.length
+        ? vinculados.map((escuela) => comparisonCard(cfe, escuela, true)).join('')
         : `${cfePanel(cfe)}<div class="empty-state"><i class="bi bi-link-45deg"></i><strong>RPU sin vinculo confirmado</strong><span>Este medidor todavia no tiene escuela asignada.</span></div>`;
 }
 
@@ -406,6 +407,32 @@ form.addEventListener('submit', async (event) => {
         await searchRpu(form.rpu.value.trim());
     } catch (error) {
         statusBox.textContent = error.message;
+    }
+});
+
+schoolBox.addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-unlink-cct]');
+    if (!button) {
+        return;
+    }
+    const rpu = button.dataset.unlinkRpu;
+    const cct = button.dataset.unlinkCct;
+    if (!window.confirm(`¿Confirmas desvincular el RPU ${rpu} del CCT ${cct}?`)) {
+        return;
+    }
+    button.disabled = true;
+    try {
+        const body = new URLSearchParams({accion: 'desvincular_rpu', csrf: token, rpu, cct});
+        const response = await fetch('../controllers/rpuController.php', {method: 'POST', body});
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+            throw new Error(data.error || 'No fue posible desvincular el CCT.');
+        }
+        statusBox.textContent = data.mensaje;
+        await searchRpu(rpu);
+    } catch (error) {
+        statusBox.textContent = error.message;
+        button.disabled = false;
     }
 });
 
