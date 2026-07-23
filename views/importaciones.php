@@ -320,6 +320,18 @@ let suggestionPage = 1;
 let currentSuggestionRows = [];
 const matchEscape = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character]));
 
+function controlCctManual(rpu) {
+    return `<form class="manual-cct-link" data-manual-cct-rpu="${matchEscape(rpu)}"><label>Asignar CCT manualmente</label><div><input name="cct" type="text" maxlength="20" autocomplete="off" placeholder="Escribe el CCT correcto"><button class="btn-seg compact-action" type="submit"><i class="bi bi-link-45deg me-1"></i>Vincular CCT</button></div></form>`;
+}
+
+async function vincularCct(rpu, cct) {
+    const body = new URLSearchParams({accion: 'vincular_rpu', csrf, rpu, cct});
+    const response = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body});
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible guardar el vínculo.');
+    return data;
+}
+
 function renderRpuMatch(data) {
     const cfe = data.cfe || {};
     const cfeCard = `<article class="match-cfe-card"><span>RECIBO CFE</span><strong>${matchEscape(cfe.rpu || data.rpu)} - ${matchEscape(cfe.nombre || 'Sin nombre')}</strong><small>${matchEscape(cfe.direccion || 'Sin dirección')} · ${matchEscape(cfe.poblacion || 'Sin población')}</small><small>División ${matchEscape(cfe.division || 'Sin división')} · Tarifa ${matchEscape(cfe.tarifa || 'N/D')} · Periodo ${matchEscape(cfe.periodo || 'Sin periodo')}</small></article>`;
@@ -328,7 +340,7 @@ function renderRpuMatch(data) {
     const cards = sugerencias.length ? sugerencias.map((escuela) => `<article class="school-match-card"><div><span class="status-pill ${Number(escuela.similitud) >= 69 ? 'status-ok' : 'status-warn'}">${Number(escuela.similitud || 0).toFixed(1)}% coincidencia</span><strong>${matchEscape(escuela.cct)} · ${matchEscape(escuela.nombre)}</strong><small>${matchEscape(escuela.domicilio || 'Sin domicilio')}</small><small>${matchEscape(escuela.localidad || 'Sin localidad')} · ${matchEscape(escuela.municipio || 'Sin municipio')}</small><small>${matchEscape(escuela.nivel || 'Sin nivel')} · ${matchEscape(escuela.subnivel || 'Sin subnivel')} · ${matchEscape(escuela.status || 'Sin estatus')}</small><small>${matchEscape(escuela.ubicacion || 'Coincidencia por padrón')} · ${escuela.nivel_coincide ? 'Nivel coincide' : 'Nivel por revisar'}</small><small>${matchEscape(escuela.clasificacion || escuela.fuente || 'Padrón maestro')}</small></div><button class="btn-seg compact-action" type="button" data-link-cct="${matchEscape(escuela.cct)}">Vincular</button></article>`).join('') : '<div class="empty-state"><i class="bi bi-search"></i><strong>Sin coincidencias automáticas</strong><span>Busca la escuela por CCT en el padrón o revisa localidad y domicilio del recibo.</span></div>';
     const links = vinculados.length ? `<div class="match-linked"><strong>Vínculos confirmados: ${vinculados.length}</strong>${vinculados.map((escuela) => `<span>${matchEscape(escuela.cct)} · ${matchEscape(escuela.nombre)} · ${matchEscape(escuela.nivel || escuela.subnivel || 'Sin nivel')}</span>`).join('')}</div>` : '';
     const title = vinculados.length ? 'Agregar otra escuela al RPU' : 'Escuelas sugeridas';
-    rpuMatchResult.innerHTML = `${cfeCard}<div class="match-suggestions">${links}<div class="match-title"><strong>${title}</strong><span>${sugerencias.length} opciones</span></div>${cards}</div>`;
+    rpuMatchResult.innerHTML = `${cfeCard}<div class="match-suggestions">${links}<div class="match-title"><strong>${title}</strong><span>${sugerencias.length} opciones</span></div>${cards}${controlCctManual(data.rpu)}</div>`;
 }
 
 async function buscarCoincidenciasRpu(rpu) {
@@ -362,10 +374,32 @@ rpuMatchResult.addEventListener('click', async (event) => {
     if (!window.confirm(`¿Confirmas vincular el RPU ${rpu} con la escuela ${cct}?`)) return;
     button.disabled = true;
     try {
-        const body = new URLSearchParams({accion: 'vincular_rpu', csrf, rpu, cct});
-        const response = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body});
-        const data = await response.json();
-        if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible guardar el vínculo.');
+        const data = await vincularCct(rpu, cct);
+        rpuMatchStatus.textContent = data.mensaje;
+        await buscarCoincidenciasRpu(rpu);
+    } catch (error) {
+        rpuMatchStatus.textContent = error.message;
+        button.disabled = false;
+    }
+});
+
+rpuMatchResult.addEventListener('submit', async (event) => {
+    const form = event.target.closest('[data-manual-cct-rpu]');
+    if (!form) return;
+    event.preventDefault();
+    const rpu = form.dataset.manualCctRpu;
+    const input = form.elements.cct;
+    const cct = input.value.trim().toUpperCase();
+    if (!cct) {
+        rpuMatchStatus.textContent = 'Escribe el CCT que deseas vincular.';
+        input.focus();
+        return;
+    }
+    if (!window.confirm(`¿Confirmas vincular el RPU ${rpu} con el CCT ${cct}?`)) return;
+    const button = form.querySelector('button');
+    button.disabled = true;
+    try {
+        const data = await vincularCct(rpu, cct);
         rpuMatchStatus.textContent = data.mensaje;
         await buscarCoincidenciasRpu(rpu);
     } catch (error) {
@@ -385,7 +419,7 @@ function renderSugerencias(data) {
     suggestionList.innerHTML = coincidencias.length ? coincidencias.map((item) => {
         const cfe = item.cfe || {};
         const opciones = item.sugerencias || [];
-        return `<article class="suggested-rpu-card"><div class="suggested-rpu-head"><strong>${matchEscape(item.rpu)}</strong><span class="status-pill">${matchEscape(cfe.tarifa || 'N/D')}</span></div><div class="suggested-cfe-data"><strong>${matchEscape(cfe.nombre || 'Sin nombre CFE')}</strong><small>${matchEscape(cfe.direccion || 'Sin dirección')} · ${matchEscape(cfe.poblacion || 'Sin población')}</small><small>${matchEscape(cfe.division || 'Sin división')} · ${matchEscape(cfe.periodo || 'Sin periodo')}</small></div><div class="match-suggestions"><div class="match-title"><strong>Opciones de escuela</strong><span>${opciones.length} sugerencias</span></div>${opciones.length ? opciones.map((escuela) => cardEscuelaSugerida(escuela, item.rpu)).join('') : `<button class="manual-suggest-search" type="button" data-open-manual-rpu="${matchEscape(item.rpu)}"><i class="bi bi-search me-1"></i>Buscar este RPU manualmente</button>`}</div></article>`;
+        return `<article class="suggested-rpu-card"><div class="suggested-rpu-head"><strong>${matchEscape(item.rpu)}</strong><span class="status-pill">${matchEscape(cfe.tarifa || 'N/D')}</span></div><div class="suggested-cfe-data"><strong>${matchEscape(cfe.nombre || 'Sin nombre CFE')}</strong><small>${matchEscape(cfe.direccion || 'Sin dirección')} · ${matchEscape(cfe.poblacion || 'Sin población')}</small><small>${matchEscape(cfe.division || 'Sin división')} · ${matchEscape(cfe.periodo || 'Sin periodo')}</small></div><div class="match-suggestions"><div class="match-title"><strong>Opciones de escuela</strong><span>${opciones.length} sugerencias</span></div>${opciones.length ? opciones.map((escuela) => cardEscuelaSugerida(escuela, item.rpu)).join('') : `<button class="manual-suggest-search" type="button" data-open-manual-rpu="${matchEscape(item.rpu)}"><i class="bi bi-search me-1"></i>Buscar este RPU manualmente</button>`}${controlCctManual(item.rpu)}</div></article>`;
     }).join('') : '<div class="empty-state"><i class="bi bi-check2-circle"></i><strong>No hay RPUs pendientes</strong><span>Todos los RPUs cargados ya tienen al menos una escuela vinculada.</span></div>';
     suggestionPager.hidden = Number(data.paginas || 1) <= 1;
     suggestionPager.innerHTML = Number(data.paginas || 1) > 1 ? `<span>Página ${data.pagina} de ${data.paginas}</span><div><button type="button" data-suggestion-page="prev" ${Number(data.pagina) <= 1 ? 'disabled' : ''}>Anterior</button><button type="button" data-suggestion-page="next" ${Number(data.pagina) >= Number(data.paginas) ? 'disabled' : ''}>Siguiente</button></div>` : '';
@@ -416,10 +450,32 @@ suggestionList.addEventListener('click', async (event) => {
     if (!window.confirm(`¿Confirmas vincular el RPU ${rpu} con la escuela ${cct}?`)) return;
     button.disabled = true;
     try {
-        const body = new URLSearchParams({accion: 'vincular_rpu', csrf, rpu, cct});
-        const response = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body});
-        const data = await response.json();
-        if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible guardar el vínculo.');
+        const data = await vincularCct(rpu, cct);
+        suggestionStatus.textContent = data.mensaje;
+        await cargarSugerencias(suggestionPage);
+    } catch (error) {
+        suggestionStatus.textContent = error.message;
+        button.disabled = false;
+    }
+});
+
+suggestionList.addEventListener('submit', async (event) => {
+    const form = event.target.closest('[data-manual-cct-rpu]');
+    if (!form) return;
+    event.preventDefault();
+    const rpu = form.dataset.manualCctRpu;
+    const input = form.elements.cct;
+    const cct = input.value.trim().toUpperCase();
+    if (!cct) {
+        suggestionStatus.textContent = 'Escribe el CCT que deseas vincular.';
+        input.focus();
+        return;
+    }
+    if (!window.confirm(`¿Confirmas vincular el RPU ${rpu} con el CCT ${cct}?`)) return;
+    const button = form.querySelector('button');
+    button.disabled = true;
+    try {
+        const data = await vincularCct(rpu, cct);
         suggestionStatus.textContent = data.mensaje;
         await cargarSugerencias(suggestionPage);
     } catch (error) {

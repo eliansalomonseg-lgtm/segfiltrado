@@ -1123,6 +1123,48 @@ body {
     justify-self: start;
 }
 
+.manual-cct-link {
+    border-top: 1px dashed #dcd4cb;
+    margin-top: 10px;
+    padding-top: 10px;
+}
+
+.manual-cct-link label {
+    color: var(--seg-guinda);
+    display: block;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: .06em;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+}
+
+.manual-cct-link > div {
+    display: flex;
+    gap: 8px;
+}
+
+.manual-cct-link input {
+    border: 1px solid #dcd4cb;
+    border-radius: 4px;
+    color: var(--seg-text);
+    font-size: 12px;
+    min-width: 0;
+    padding: 7px 9px;
+    text-transform: uppercase;
+    width: 100%;
+}
+
+.manual-cct-link input:focus {
+    border-color: var(--seg-gold);
+    box-shadow: 0 0 0 3px rgba(191, 162, 118, .18);
+    outline: 0;
+}
+
+.manual-cct-link .btn-seg {
+    flex: 0 0 auto;
+}
+
 .suggestion-inbox {
     margin-bottom: 16px;
 }
@@ -1211,6 +1253,14 @@ body {
     }
 
     .school-match-card .btn-seg {
+        width: 100%;
+    }
+
+    .manual-cct-link > div {
+        flex-direction: column;
+    }
+
+    .manual-cct-link .btn-seg {
         width: 100%;
     }
 }

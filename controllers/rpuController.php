@@ -484,7 +484,7 @@ class RpuController
         $this->validarToken();
         try {
             $rpu = trim((string) ($_POST['rpu'] ?? ''));
-            $cct = trim((string) ($_POST['cct'] ?? ''));
+            $cct = strtoupper(trim((string) ($_POST['cct'] ?? '')));
             if ($rpu === '' || $cct === '') {
                 throw new RuntimeException('Faltan RPU o CCT para vincular.');
             }
@@ -517,7 +517,7 @@ class RpuController
                 'rpu' => $rpu
             ]);
 
-            $this->responder(['ok' => true, 'mensaje' => 'RPU vinculado correctamente.']);
+            $this->responder(['ok' => true, 'mensaje' => 'RPU vinculado correctamente con el CCT ' . $cct . '.']);
         } catch (Throwable $e) {
             $this->responder(['ok' => false, 'error' => $e->getMessage()], 500);
         }
