@@ -2,10 +2,16 @@
 
 declare(strict_types=1);
 
+session_start();
+
 require_once dirname(__DIR__) . '/services/conexion.php';
 
 $conexion = Conexion::conectar();
 $segBasePath = '';
+
+if (empty($_SESSION['seg_csrf'])) {
+    $_SESSION['seg_csrf'] = bin2hex(random_bytes(24));
+}
 
 function dashboardCount(PDO $conexion, string $query): int
 {
@@ -18,6 +24,8 @@ $rpusVinculados = dashboardCount($conexion, 'SELECT COUNT(DISTINCT RPU) FROM esc
 $totalReportesCfe = dashboardCount($conexion, 'SELECT COUNT(*) FROM cfe_reportes');
 $totalLecturasCfe = dashboardCount($conexion, 'SELECT COUNT(*) FROM cfe_consumos');
 $casosCfe = dashboardCount($conexion, 'SELECT COUNT(*) FROM cfe_consumos WHERE severidad >= 3');
+$reportesCeroRecientes = $conexion->query('SELECT id FROM cfe_reportes ORDER BY anio DESC, mes DESC, id DESC LIMIT 6')->fetchAll();
+$totalReportesCeroRecientes = count($reportesCeroRecientes);
 $ultimoReporte = $conexion->query('SELECT anio, mes FROM cfe_reportes ORDER BY anio DESC, mes DESC, id DESC LIMIT 1')->fetch();
 $avance = $totalEscuelas > 0 ? min(100, round($totalVinculos / $totalEscuelas * 100, 1)) : 0;
 $meses = [1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril', 5 => 'Mayo', 6 => 'Junio', 7 => 'Julio', 8 => 'Agosto', 9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre'];
@@ -124,6 +132,42 @@ foreach ($historialMensual as $registroMensual) {
             </div>
             <a href="ajustes.php" class="director-link">Ver reportes CFE <i class="bi bi-arrow-right"></i></a>
         </article>
+    </section>
+    <section class="zero-consumption-card">
+        <div class="zero-consumption-head">
+            <div>
+                <span class="eyebrow">SERVICIOS SIN CONSUMO</span>
+                <h2>Posibles escuelas o servicios sin operación</h2>
+                <p>Exporta únicamente los RPUs que registran consumo de energía en cero en los reportes recientes.</p>
+            </div>
+            <span class="zero-consumption-period"><i class="bi bi-calendar3"></i><?= $totalReportesCeroRecientes ?> de 6 reportes disponibles</span>
+        </div>
+        <div class="zero-consumption-options">
+            <article>
+                <span class="zero-consumption-icon"><i class="bi bi-lightning-charge"></i></span>
+                <div>
+                    <strong>3 o más reportes en cero</strong>
+                    <span>Identifica servicios con consumo 0 recurrente</span>
+                </div>
+                <form method="post" action="../controllers/ajustesController.php">
+                    <input type="hidden" name="accion" value="exportar_consumo_cero_recurrente">
+                    <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['seg_csrf'], ENT_QUOTES, 'UTF-8') ?>">
+                    <button class="btn-seg compact-action" type="submit" name="exportar_tipo" value="cero_tres_reportes" <?= $totalReportesCeroRecientes < 3 ? 'disabled' : '' ?>><i class="bi bi-download me-2"></i>Exportar CSV</button>
+                </form>
+            </article>
+            <article>
+                <span class="zero-consumption-icon zero-consumption-icon-critical"><i class="bi bi-exclamation-triangle"></i></span>
+                <div>
+                    <strong>6 últimos reportes en cero</strong>
+                    <span>Identifica servicios sin consumo durante todo el periodo</span>
+                </div>
+                <form method="post" action="../controllers/ajustesController.php">
+                    <input type="hidden" name="accion" value="exportar_consumo_cero_recurrente">
+                    <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['seg_csrf'], ENT_QUOTES, 'UTF-8') ?>">
+                    <button class="btn-seg compact-action" type="submit" name="exportar_tipo" value="cero_seis_reportes" <?= $totalReportesCeroRecientes < 6 ? 'disabled' : '' ?>><i class="bi bi-download me-2"></i>Exportar CSV</button>
+                </form>
+            </article>
+        </div>
     </section>
     <section class="dashboard-grid">
         <article class="panel-card">

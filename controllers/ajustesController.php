@@ -330,6 +330,8 @@ class AjustesController
                 INDEX idx_cfe_consumos_rpu (RPU),
                 INDEX idx_cfe_consumos_cct (CCT),
                 INDEX idx_cfe_consumos_reporte (reporte_id),
+                INDEX idx_cfe_consumos_reporte_rpu_consumo (reporte_id, RPU, consumo),
+                INDEX idx_cfe_consumos_reporte_consumo_rpu (reporte_id, consumo, RPU),
                 FOREIGN KEY (reporte_id) REFERENCES cfe_reportes(id) ON DELETE CASCADE,
                 FOREIGN KEY (CCT) REFERENCES escuelas(CCT) ON DELETE SET NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
@@ -345,6 +347,8 @@ class AjustesController
         $this->asegurarColumna($conexion, 'cfe_reportes', 'ajuste_muchos_dias', 'INT NOT NULL DEFAULT 0');
         $this->asegurarColumna($conexion, 'cfe_reportes', 'periodo_correcto_con_aumento', 'INT NOT NULL DEFAULT 0');
         $this->asegurarColumna($conexion, 'cfe_reportes', 'sin_alerta_con_aumento', 'INT NOT NULL DEFAULT 0');
+        $this->asegurarIndice($conexion, 'cfe_consumos', 'idx_cfe_consumos_reporte_rpu_consumo', 'reporte_id, RPU, consumo');
+        $this->asegurarIndice($conexion, 'cfe_consumos', 'idx_cfe_consumos_reporte_consumo_rpu', 'reporte_id, consumo, RPU');
     }
 
     private function asegurarColumna(PDO $conexion, string $tabla, string $columna, string $definicion): void
@@ -355,6 +359,17 @@ class AjustesController
         $consulta->execute([$tabla, $columna]);
         if ((int) $consulta->fetchColumn() === 0) {
             $conexion->exec('ALTER TABLE `' . $tabla . '` ADD COLUMN `' . $columna . '` ' . $definicion);
+        }
+    }
+
+    private function asegurarIndice(PDO $conexion, string $tabla, string $indice, string $columnas): void
+    {
+        $consulta = $conexion->prepare(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?'
+        );
+        $consulta->execute([$tabla, $indice]);
+        if ((int) $consulta->fetchColumn() === 0) {
+            $conexion->exec('ALTER TABLE `' . $tabla . '` ADD INDEX `' . $indice . '` (' . $columnas . ')');
         }
     }
 
@@ -416,6 +431,98 @@ class AjustesController
             exit;
         } catch (Throwable $e) {
             $this->responder(['ok' => false, 'error' => 'Fallo al exportar CSV: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function exportarConsumoCeroRecurrente(): void
+    {
+        $this->validarToken();
+        set_time_limit(0);
+        try {
+            $conexion = Conexion::conectar();
+            $this->prepararHistorialCfe($conexion);
+            $tipo = (string) ($_POST['exportar_tipo'] ?? 'cero_tres_reportes');
+            if (!in_array($tipo, ['cero_tres_reportes', 'cero_seis_reportes'], true)) {
+                $this->responder(['ok' => false, 'error' => 'Tipo de exportacion no valido.'], 422);
+            }
+            $reportes = $conexion->query(
+                'SELECT id, archivo, anio, mes
+                 FROM cfe_reportes
+                 ORDER BY anio DESC, mes DESC, id DESC
+                 LIMIT 6'
+            )->fetchAll();
+            $minimo = $tipo === 'cero_tres_reportes' ? 3 : 6;
+            if (count($reportes) < $minimo) {
+                $this->responder(['ok' => false, 'error' => 'Se requieren al menos ' . $minimo . ' reportes CFE cargados para esta exportacion.'], 422);
+            }
+            $ids = array_map(static fn (array $reporte): int => (int) $reporte['id'], $reportes);
+            $marcadores = implode(',', array_fill(0, count($ids), '?'));
+            $condicion = $tipo === 'cero_tres_reportes'
+                ? 'COUNT(DISTINCT cc.reporte_id) >= 3'
+                : 'COUNT(DISTINCT cc.reporte_id) = ' . count($ids);
+            $consulta = $conexion->prepare(
+                'SELECT z.RPU,
+                        z.reportes_cero,
+                        MAX(cc.nombre_cfe) AS nombre_cfe,
+                        MAX(cc.direccion_cfe) AS direccion_cfe,
+                        MAX(cc.poblacion_cfe) AS poblacion_cfe,
+                        MAX(cc.tarifa_cfe) AS tarifa_cfe,
+                        MAX(cc.total) AS total_actual,
+                        GROUP_CONCAT(DISTINCT er.CCT ORDER BY er.CCT SEPARATOR " | ") AS ccts,
+                        GROUP_CONCAT(DISTINCT e.NOMBRECT ORDER BY e.NOMBRECT SEPARATOR " | ") AS escuelas,
+                        GROUP_CONCAT(DISTINCT NULLIF(e.NIVEL, "") ORDER BY e.NIVEL SEPARATOR " | ") AS niveles
+                 FROM (
+                    SELECT cc.RPU, COUNT(DISTINCT cc.reporte_id) AS reportes_cero
+                    FROM cfe_consumos cc FORCE INDEX (idx_cfe_consumos_reporte_consumo_rpu)
+                    WHERE cc.reporte_id IN (' . $marcadores . ') AND cc.consumo = 0
+                    GROUP BY cc.RPU
+                    HAVING ' . $condicion . '
+                 ) z
+                 INNER JOIN cfe_consumos cc FORCE INDEX (idx_cfe_consumos_reporte_consumo_rpu)
+                    ON cc.RPU = z.RPU AND cc.reporte_id IN (' . $marcadores . ') AND cc.consumo = 0
+                 LEFT JOIN escuelas_rpu er ON er.RPU = z.RPU
+                 LEFT JOIN escuelas e ON e.CCT = er.CCT
+                 GROUP BY z.RPU, z.reportes_cero
+                 ORDER BY z.reportes_cero DESC, z.RPU'
+            );
+            $consulta->execute(array_merge($ids, $ids));
+            $casos = $consulta->fetchAll();
+            $archivo = fopen('php://temp', 'r+');
+            fputcsv($archivo, ['CRITERIO', 'RPU', 'ESCUELA_VINCULADA', 'CCT', 'NIVEL', 'NOMBRE_SERVICIO_CFE', 'DIRECCION_CFE', 'POBLACION_CFE', 'TARIFA', 'REPORTES_CONSUMO_CERO', 'REPORTES_REVISADOS', 'CONSUMO_KWH', 'TOTAL_MAYOR_EN_RECIBO_CON_CERO', 'EXPLICACION'], ',', '"');
+            $criterio = $tipo === 'cero_tres_reportes'
+                ? 'CONSUMO 0 EN 3 O MAS REPORTES RECIENTES'
+                : 'CONSUMO 0 EN LOS ULTIMOS 6 REPORTES';
+            foreach ($casos as $caso) {
+                $mensaje = $tipo === 'cero_tres_reportes'
+                    ? 'Tiene consumo 0 en ' . $caso['reportes_cero'] . ' de los ultimos ' . count($reportes) . ' reportes revisados. Verificar si el servicio o la escuela sigue operando.'
+                    : 'Tiene consumo 0 en los seis reportes recientes. Verificar si el servicio o la escuela sigue operando.';
+                fputcsv($archivo, [
+                    $criterio,
+                    (string) $caso['RPU'],
+                    (string) ($caso['escuelas'] ?: 'RPU SIN ESCUELA VINCULADA'),
+                    (string) ($caso['ccts'] ?? ''),
+                    (string) ($caso['niveles'] ?? ''),
+                    (string) ($caso['nombre_cfe'] ?? ''),
+                    (string) ($caso['direccion_cfe'] ?? ''),
+                    (string) ($caso['poblacion_cfe'] ?? ''),
+                    (string) ($caso['tarifa_cfe'] ?? ''),
+                    (int) $caso['reportes_cero'],
+                    count($reportes),
+                    '0.00',
+                    number_format((float) ($caso['total_actual'] ?? 0), 2, '.', ''),
+                    $mensaje
+                ], ',', '"');
+            }
+            rewind($archivo);
+            $csv = stream_get_contents($archivo) ?: '';
+            fclose($archivo);
+            http_response_code(200);
+            header('Content-Type: text/csv; charset=UTF-8');
+            header('Content-Disposition: attachment; filename="rpus_consumo_cero_' . $tipo . '_' . date('Ymd_His') . '.csv"');
+            echo "\xEF\xBB\xBF" . $csv;
+            exit;
+        } catch (Throwable $e) {
+            $this->responder(['ok' => false, 'error' => 'Fallo al exportar RPUs con consumo cero: ' . $e->getMessage()], 500);
         }
     }
 
@@ -1054,6 +1161,10 @@ if ($accion === 'importar_reportes_masivos') {
 
 if ($accion === 'exportar_excel_directores') {
     $controlador->exportarExcelDirectores();
+}
+
+if ($accion === 'exportar_consumo_cero_recurrente') {
+    $controlador->exportarConsumoCeroRecurrente();
 }
 
 http_response_code(400);
