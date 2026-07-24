@@ -35,18 +35,34 @@ $historialMensual = $conexion->query(
      GROUP BY anio, mes
      ORDER BY anio ASC, mes ASC'
 )->fetchAll(PDO::FETCH_ASSOC);
+$pagosReales = [];
+try {
+    $consultaPagosReales = $conexion->query('SELECT anio, mes, importe_facturado, importe_pagado, referencia FROM cfe_pagos_reales');
+    foreach ($consultaPagosReales->fetchAll(PDO::FETCH_ASSOC) as $pagoReal) {
+        $pagosReales[(int) $pagoReal['anio'] . '-' . (int) $pagoReal['mes']] = $pagoReal;
+    }
+} catch (Throwable) {
+}
 $etiquetasMensuales = [];
 $pagosMensuales = [];
+$pagosRealesMensuales = [];
 $ajustesMensuales = [];
 $mesMayorPago = null;
 $mesMayorAjustes = null;
+$importeFacturadoJunio = 0.0;
 foreach ($historialMensual as $registroMensual) {
     $etiqueta = ($meses[(int) $registroMensual['mes']] ?? 'Mes') . ' ' . $registroMensual['anio'];
     $totalPagado = (float) $registroMensual['total_pagado'];
+    $llavePeriodo = (int) $registroMensual['anio'] . '-' . (int) $registroMensual['mes'];
+    $pagoReal = $pagosReales[$llavePeriodo] ?? null;
     $ajustes = (int) $registroMensual['ajustes'];
     $etiquetasMensuales[] = $etiqueta;
     $pagosMensuales[] = $totalPagado;
+    $pagosRealesMensuales[] = $pagoReal ? (float) $pagoReal['importe_pagado'] : null;
     $ajustesMensuales[] = $ajustes;
+    if ((int) $registroMensual['anio'] === 2026 && (int) $registroMensual['mes'] === 6) {
+        $importeFacturadoJunio = $totalPagado;
+    }
     if ($mesMayorPago === null || $totalPagado > $mesMayorPago['valor']) {
         $mesMayorPago = ['etiqueta' => $etiqueta, 'valor' => $totalPagado];
     }
@@ -54,6 +70,9 @@ foreach ($historialMensual as $registroMensual) {
         $mesMayorAjustes = ['etiqueta' => $etiqueta, 'valor' => $ajustes];
     }
 }
+$pagoRealJunio = $pagosReales['2026-6'] ?? null;
+$importePagadoJunio = $pagoRealJunio ? (float) $pagoRealJunio['importe_pagado'] : 22522000.00;
+$referenciaPagoJunio = (string) ($pagoRealJunio['referencia'] ?? 'Pago negociado informado');
 ?>
 <!doctype html>
 <html lang="es">
@@ -133,6 +152,29 @@ foreach ($historialMensual as $registroMensual) {
             <a href="ajustes.php" class="director-link">Ver reportes CFE <i class="bi bi-arrow-right"></i></a>
         </article>
     </section>
+    <section class="payment-reconciliation-card">
+        <div class="payment-reconciliation-head">
+            <div>
+                <span class="eyebrow">CONCILIACION DE PAGO</span>
+                <h2>Junio 2026</h2>
+                <p>El importe facturado permanece como referencia; el pago real confirmado se muestra por separado en la gráfica.</p>
+            </div>
+            <span class="payment-reconciliation-badge"><i class="bi bi-receipt-cutoff"></i>Dato conciliado</span>
+        </div>
+        <div class="payment-reconciliation-grid">
+            <div class="payment-amount"><span>Facturado por CFE</span><strong>$<?= number_format($importeFacturadoJunio, 2) ?></strong></div>
+            <div class="payment-amount payment-amount-real"><span>Pagado real</span><strong>$<?= number_format($importePagadoJunio, 2) ?></strong></div>
+            <div class="payment-amount payment-amount-difference"><span>Diferencia negociada</span><strong>$<?= number_format(max(0, $importeFacturadoJunio - $importePagadoJunio), 2) ?></strong></div>
+        </div>
+        <form id="payment-reconciliation-form" class="payment-reconciliation-form">
+            <input type="hidden" name="anio" value="2026">
+            <input type="hidden" name="mes" value="6">
+            <label><span>Pago real MXN</span><input name="importe_pagado" type="number" min="0" step="0.01" value="<?= htmlspecialchars(number_format($importePagadoJunio, 2, '.', ''), ENT_QUOTES, 'UTF-8') ?>" required></label>
+            <label><span>Referencia o comprobante</span><input name="referencia" type="text" maxlength="255" value="<?= htmlspecialchars($referenciaPagoJunio, ENT_QUOTES, 'UTF-8') ?>" placeholder="Folio, oficio o referencia"></label>
+            <button class="btn-seg compact-action" type="submit"><i class="bi bi-check2-circle me-2"></i>Guardar pago real</button>
+        </form>
+        <div id="payment-reconciliation-status" class="payment-reconciliation-status"></div>
+    </section>
     <section class="zero-consumption-card">
         <div class="zero-consumption-head">
             <div>
@@ -198,17 +240,19 @@ foreach ($historialMensual as $registroMensual) {
 <script>
 const dashboardLabels = <?= json_encode($etiquetasMensuales, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const dashboardPayments = <?= json_encode($pagosMensuales, JSON_NUMERIC_CHECK | JSON_HEX_TAG) ?>;
+const dashboardRealPayments = <?= json_encode($pagosRealesMensuales, JSON_NUMERIC_CHECK | JSON_HEX_TAG) ?>;
 const dashboardAdjustments = <?= json_encode($ajustesMensuales, JSON_NUMERIC_CHECK | JSON_HEX_TAG) ?>;
+const dashboardCsrf = <?= json_encode($_SESSION['seg_csrf'], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 
 if (dashboardLabels.length && window.Chart) {
     document.getElementById('payments-empty').hidden = true;
     document.getElementById('adjustments-empty').hidden = true;
     new Chart(document.getElementById('payments-chart'), {
         type: 'bar',
-        data: {labels: dashboardLabels, datasets: [{data: dashboardPayments, backgroundColor: '#8b1827', borderRadius: 3, maxBarThickness: 38}]},
+        data: {labels: dashboardLabels, datasets: [{label: 'Facturado CFE', data: dashboardPayments, backgroundColor: '#8b1827', borderRadius: 3, maxBarThickness: 38}, {label: 'Pago real confirmado', data: dashboardRealPayments, backgroundColor: '#bfa276', borderRadius: 3, maxBarThickness: 38}]},
         options: {
             maintainAspectRatio: false,
-            plugins: {legend: {display: false}, tooltip: {callbacks: {label: context => new Intl.NumberFormat('es-MX', {style: 'currency', currency: 'MXN'}).format(context.raw)}}},
+            plugins: {legend: {display: true, position: 'bottom', labels: {boxWidth: 10, font: {size: 10}}}, tooltip: {callbacks: {label: context => `${context.dataset.label}: ${new Intl.NumberFormat('es-MX', {style: 'currency', currency: 'MXN'}).format(context.raw)}`}}},
             scales: {x: {grid: {display: false}, ticks: {color: '#6b6570', font: {size: 10}}}, y: {beginAtZero: true, grid: {color: '#eee9e4'}, ticks: {color: '#6b6570', font: {size: 10}, callback: value => '$' + new Intl.NumberFormat('es-MX', {notation: 'compact', maximumFractionDigits: 1}).format(value)}}}
         }
     });
@@ -222,6 +266,28 @@ if (dashboardLabels.length && window.Chart) {
         }
     });
 }
+
+const paymentForm = document.getElementById('payment-reconciliation-form');
+const paymentStatus = document.getElementById('payment-reconciliation-status');
+paymentForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = paymentForm.querySelector('button');
+    button.disabled = true;
+    paymentStatus.textContent = 'Guardando pago real de junio de 2026...';
+    try {
+        const body = new URLSearchParams(new FormData(paymentForm));
+        body.set('accion', 'guardar_pago_real');
+        body.set('csrf', dashboardCsrf);
+        const response = await fetch('../controllers/ajustesController.php', {method: 'POST', body});
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible guardar el pago real.');
+        paymentStatus.textContent = `${data.mensaje} Diferencia conciliada: ${new Intl.NumberFormat('es-MX', {style: 'currency', currency: 'MXN'}).format(data.diferencia)}.`;
+        window.setTimeout(() => window.location.reload(), 700);
+    } catch (error) {
+        paymentStatus.textContent = error.message;
+        button.disabled = false;
+    }
+});
 </script>
 </body>
 </html>

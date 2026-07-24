@@ -351,6 +351,22 @@ class AjustesController
         $this->asegurarIndice($conexion, 'cfe_consumos', 'idx_cfe_consumos_reporte_consumo_rpu', 'reporte_id, consumo, RPU');
     }
 
+    private function prepararPagosReales(PDO $conexion): void
+    {
+        $conexion->exec(
+            "CREATE TABLE IF NOT EXISTS cfe_pagos_reales (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                anio INT NOT NULL,
+                mes TINYINT NOT NULL,
+                importe_facturado DECIMAL(16,2) NOT NULL,
+                importe_pagado DECIMAL(16,2) NOT NULL,
+                referencia VARCHAR(255) NULL,
+                actualizado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_cfe_pagos_reales_periodo (anio, mes)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
+    }
+
     private function asegurarColumna(PDO $conexion, string $tabla, string $columna, string $definicion): void
     {
         $consulta = $conexion->prepare(
@@ -523,6 +539,44 @@ class AjustesController
             exit;
         } catch (Throwable $e) {
             $this->responder(['ok' => false, 'error' => 'Fallo al exportar RPUs con consumo cero: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function guardarPagoReal(): void
+    {
+        $this->validarToken();
+        try {
+            $anio = (int) ($_POST['anio'] ?? 0);
+            $mes = (int) ($_POST['mes'] ?? 0);
+            $importePagado = (float) str_replace([',', '$', ' '], '', (string) ($_POST['importe_pagado'] ?? ''));
+            $referencia = trim((string) ($_POST['referencia'] ?? ''));
+            if ($anio < 2020 || $anio > 2100 || $mes < 1 || $mes > 12 || $importePagado < 0) {
+                $this->responder(['ok' => false, 'error' => 'Captura un periodo y un importe pagado validos.'], 422);
+            }
+            $conexion = Conexion::conectar();
+            $this->prepararHistorialCfe($conexion);
+            $this->prepararPagosReales($conexion);
+            $consultaFacturado = $conexion->prepare('SELECT COALESCE(SUM(importe_total), 0) FROM cfe_reportes WHERE anio = ? AND mes = ?');
+            $consultaFacturado->execute([$anio, $mes]);
+            $importeFacturado = (float) $consultaFacturado->fetchColumn();
+            if ($importeFacturado <= 0) {
+                $this->responder(['ok' => false, 'error' => 'No hay importe facturado CFE para el periodo seleccionado.'], 422);
+            }
+            $consulta = $conexion->prepare(
+                'INSERT INTO cfe_pagos_reales (anio, mes, importe_facturado, importe_pagado, referencia)
+                 VALUES (?, ?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE importe_facturado = VALUES(importe_facturado), importe_pagado = VALUES(importe_pagado), referencia = VALUES(referencia)'
+            );
+            $consulta->execute([$anio, $mes, $importeFacturado, $importePagado, $referencia !== '' ? $referencia : null]);
+            $this->responder([
+                'ok' => true,
+                'facturado' => $importeFacturado,
+                'pagado' => $importePagado,
+                'diferencia' => $importeFacturado - $importePagado,
+                'mensaje' => 'Pago real guardado para ' . sprintf('%02d/%d', $mes, $anio) . '.'
+            ]);
+        } catch (Throwable $e) {
+            $this->responder(['ok' => false, 'error' => 'No fue posible guardar el pago real: ' . $e->getMessage()], 500);
         }
     }
 
@@ -1165,6 +1219,10 @@ if ($accion === 'exportar_excel_directores') {
 
 if ($accion === 'exportar_consumo_cero_recurrente') {
     $controlador->exportarConsumoCeroRecurrente();
+}
+
+if ($accion === 'guardar_pago_real') {
+    $controlador->guardarPagoReal();
 }
 
 http_response_code(400);
