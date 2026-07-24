@@ -422,7 +422,7 @@ function renderSugerencias(data) {
         return `<article class="suggested-rpu-card"><div class="suggested-rpu-head"><strong>${matchEscape(item.rpu)}</strong><span class="status-pill">${matchEscape(cfe.tarifa || 'N/D')}</span></div><div class="suggested-cfe-data"><strong>${matchEscape(cfe.nombre || 'Sin nombre CFE')}</strong><small>${matchEscape(cfe.direccion || 'Sin dirección')} · ${matchEscape(cfe.poblacion || 'Sin población')}</small><small>${matchEscape(cfe.division || 'Sin división')} · ${matchEscape(cfe.periodo || 'Sin periodo')}</small></div><div class="match-suggestions"><div class="match-title"><strong>Opciones de escuela</strong><span>${opciones.length} sugerencias</span></div>${opciones.length ? opciones.map((escuela) => cardEscuelaSugerida(escuela, item.rpu)).join('') : `<button class="manual-suggest-search" type="button" data-open-manual-rpu="${matchEscape(item.rpu)}"><i class="bi bi-search me-1"></i>Buscar este RPU manualmente</button>`}${controlCctManual(item.rpu)}</div></article>`;
     }).join('') : '<div class="empty-state"><i class="bi bi-check2-circle"></i><strong>No hay RPUs pendientes</strong><span>Todos los RPUs cargados ya tienen al menos una escuela vinculada.</span></div>';
     suggestionPager.hidden = Number(data.paginas || 1) <= 1;
-    suggestionPager.innerHTML = Number(data.paginas || 1) > 1 ? `<span>Página ${data.pagina} de ${data.paginas}</span><div><button type="button" data-suggestion-page="prev" ${Number(data.pagina) <= 1 ? 'disabled' : ''}>Anterior</button><button type="button" data-suggestion-page="next" ${Number(data.pagina) >= Number(data.paginas) ? 'disabled' : ''}>Siguiente</button></div>` : '';
+    suggestionPager.innerHTML = Number(data.paginas || 1) > 1 ? `<span>Página ${data.pagina} de ${data.paginas}</span><div><button type="button" data-suggestion-page="prev" ${Number(data.pagina) <= 1 ? 'disabled' : ''}>Anterior</button><label class="suggestion-page-jump">Ir a <input type="number" min="1" max="${data.paginas}" value="${data.pagina}" data-suggestion-page-input></label><button type="button" data-suggestion-jump>Ir</button><button type="button" data-suggestion-page="next" ${Number(data.pagina) >= Number(data.paginas) ? 'disabled' : ''}>Siguiente</button></div>` : '';
 }
 
 async function cargarSugerencias(pagina = 1) {
@@ -485,11 +485,28 @@ suggestionList.addEventListener('submit', async (event) => {
 });
 
 suggestionPager.addEventListener('click', (event) => {
+    const jump = event.target.closest('[data-suggestion-jump]');
+    if (jump) {
+        const input = suggestionPager.querySelector('[data-suggestion-page-input]');
+        const pagina = Number(input?.value || 1);
+        if (Number.isInteger(pagina) && pagina >= 1) {
+            cargarSugerencias(pagina).catch((error) => {
+                suggestionStatus.textContent = error.message;
+            });
+        }
+        return;
+    }
     const button = event.target.closest('[data-suggestion-page]');
     if (!button) return;
     cargarSugerencias(suggestionPage + (button.dataset.suggestionPage === 'next' ? 1 : -1)).catch((error) => {
         suggestionStatus.textContent = error.message;
     });
+});
+
+suggestionPager.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || !event.target.matches('[data-suggestion-page-input]')) return;
+    event.preventDefault();
+    event.target.closest('.pager').querySelector('[data-suggestion-jump]').click();
 });
 
 refreshSuggestions.addEventListener('click', () => {

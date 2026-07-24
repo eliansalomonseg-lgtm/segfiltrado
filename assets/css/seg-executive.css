@@ -1009,6 +1009,43 @@ body {
     gap: 8px;
 }
 
+.pager button,
+.suggestion-page-jump input {
+    background: #fff;
+    border: 1px solid var(--seg-border);
+    border-radius: 6px;
+    color: var(--seg-guinda);
+    font-size: 11px;
+    font-weight: 800;
+    min-height: 32px;
+    padding: 6px 9px;
+}
+
+.pager button:hover:not(:disabled) {
+    background: #faf8fb;
+}
+
+.pager button:disabled {
+    color: #aeb5c0;
+    cursor: not-allowed;
+}
+
+.suggestion-page-jump {
+    align-items: center;
+    color: var(--seg-muted);
+    display: flex;
+    font-size: 11px;
+    font-weight: 800;
+    gap: 5px;
+}
+
+.suggestion-page-jump input {
+    color: var(--seg-text);
+    min-height: 32px;
+    padding: 4px 6px;
+    width: 58px;
+}
+
 .pager a {
     background: #fff;
     border: 1px solid var(--seg-border);
