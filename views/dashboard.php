@@ -63,8 +63,9 @@ foreach ($historialMensual as $registroMensual) {
     if ((int) $registroMensual['anio'] === 2026 && (int) $registroMensual['mes'] === 6) {
         $importeFacturadoJunio = $totalPagado;
     }
-    if ($mesMayorPago === null || $totalPagado > $mesMayorPago['valor']) {
-        $mesMayorPago = ['etiqueta' => $etiqueta, 'valor' => $totalPagado];
+    $pagoParaResumen = $pagoReal ? (float) $pagoReal['importe_pagado'] : $totalPagado;
+    if ($mesMayorPago === null || $pagoParaResumen > $mesMayorPago['valor']) {
+        $mesMayorPago = ['etiqueta' => $etiqueta, 'valor' => $pagoParaResumen, 'conciliado' => $pagoReal !== null];
     }
     if ($mesMayorAjustes === null || $ajustes > $mesMayorAjustes['valor']) {
         $mesMayorAjustes = ['etiqueta' => $etiqueta, 'valor' => $ajustes];
@@ -143,7 +144,7 @@ $referenciaPagoJunio = (string) ($pagoRealJunio['referencia'] ?? 'Pago negociado
             <h2>Lo mas importante</h2>
             <div class="insight-row">
                 <i class="bi bi-graph-up-arrow"></i>
-                <span><small>Mes con mayor pago</small><strong><?= $mesMayorPago ? htmlspecialchars($mesMayorPago['etiqueta'], ENT_QUOTES, 'UTF-8') : 'Sin reportes' ?></strong><b><?= $mesMayorPago ? '$' . number_format($mesMayorPago['valor'], 2) : '$0.00' ?></b></span>
+                <span><small>Mes con mayor pago<?= !empty($mesMayorPago['conciliado']) ? ' conciliado' : '' ?></small><strong><?= $mesMayorPago ? htmlspecialchars($mesMayorPago['etiqueta'], ENT_QUOTES, 'UTF-8') : 'Sin reportes' ?></strong><b><?= $mesMayorPago ? '$' . number_format($mesMayorPago['valor'], 2) : '$0.00' ?></b></span>
             </div>
             <div class="insight-row">
                 <i class="bi bi-exclamation-circle"></i>
