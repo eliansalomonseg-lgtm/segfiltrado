@@ -86,7 +86,11 @@ CREATE TABLE IF NOT EXISTS `escuelas` (
   `LENGUA` TEXT NULL,
   `CLASIFICACION` VARCHAR(120) NULL,
   `DATOS_SEG_JSON` LONGTEXT NULL,
-  `DATOS_OFICIALIZACION_JSON` LONGTEXT NULL
+  `DATOS_OFICIALIZACION_JSON` LONGTEXT NULL,
+  INDEX `idx_escuelas_subnivel` (`SUBNIVEL`),
+  INDEX `idx_escuelas_status` (`STATUS`),
+  INDEX `idx_escuelas_localidad_municipio` (`NOMBRELOC`, `NOMBREMUN`),
+  INDEX `idx_escuelas_municipio` (`NOMBREMUN`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `catalogo_columnas` (
@@ -116,6 +120,7 @@ CREATE TABLE IF NOT EXISTS `escuelas_rpu` (
   `poblacion_cfe` VARCHAR(255) NULL,
   `tarifa_cfe` VARCHAR(10) NULL,
   UNIQUE KEY `uniq_escuela_rpu` (`CCT`, `RPU`),
+  KEY `idx_escuelas_rpu_rpu` (`RPU`),
   KEY `idx_escuelas_rpu_escuela_id` (`escuela_id`),
   FOREIGN KEY (`CCT`) REFERENCES `escuelas`(`CCT`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -180,6 +185,8 @@ CREATE TABLE IF NOT EXISTS `cfe_consumos` (
   INDEX `idx_cfe_consumos_rpu` (`RPU`),
   INDEX `idx_cfe_consumos_cct` (`CCT`),
   INDEX `idx_cfe_consumos_reporte` (`reporte_id`),
+  INDEX `idx_cfe_consumos_rpu_cct_hasta` (`RPU`, `CCT`, `hasta`),
+  INDEX `idx_cfe_consumos_rpu_reporte_id` (`RPU`, `reporte_id`, `id`),
   FOREIGN KEY (`reporte_id`) REFERENCES `cfe_reportes`(`id`) ON DELETE CASCADE,
   FOREIGN KEY (`CCT`) REFERENCES `escuelas`(`CCT`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -24,6 +24,9 @@ class AjustesController
         $procesados = [];
         $errores = [];
         $totalRegistros = 0;
+        $periodosManuales = is_array($_POST['periodos_reportes'] ?? null) ? $_POST['periodos_reportes'] : [];
+        $periodosSolicitados = [];
+        $consultaExistente = $conexion->prepare('SELECT 1 FROM cfe_reportes WHERE anio = ? AND mes = ? LIMIT 1');
 
         foreach ($archivos['name'] as $indice => $nombreOriginal) {
             if (($archivos['error'][$indice] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
@@ -31,12 +34,30 @@ class AjustesController
                 continue;
             }
             $extension = strtolower(pathinfo((string) $nombreOriginal, PATHINFO_EXTENSION));
-            if (!in_array($extension, ['xlsx', 'xls'], true)) {
-                $errores[] = ['archivo' => $nombreOriginal, 'error' => 'Solo se admiten archivos XLSX o XLS.'];
+            if (!in_array($extension, ['xlsx', 'xls', 'xlsb', 'xlsm'], true)) {
+                $errores[] = ['archivo' => $nombreOriginal, 'error' => 'Solo se admiten archivos Excel XLS, XLSX, XLSB o XLSM.'];
                 continue;
             }
-            if (!preg_match('/(20\d{2})[-_](0[1-9]|1[0-2])/', (string) $nombreOriginal, $periodo)) {
-                $errores[] = ['archivo' => $nombreOriginal, 'error' => 'El nombre debe incluir el periodo AAAA-MM.'];
+            $periodoManual = trim((string) ($periodosManuales[$indice] ?? ''));
+            if (preg_match('/^(20\d{2})-(0[1-9]|1[0-2])$/', $periodoManual, $periodo)) {
+                $anio = (int) $periodo[1];
+                $mes = (int) $periodo[2];
+            } elseif (preg_match('/(20\d{2})[-_](0[1-9]|1[0-2])/', (string) $nombreOriginal, $periodo)) {
+                $anio = (int) $periodo[1];
+                $mes = (int) $periodo[2];
+            } else {
+                $errores[] = ['archivo' => $nombreOriginal, 'error' => 'Selecciona mes y año para este reporte.'];
+                continue;
+            }
+            $llavePeriodo = sprintf('%04d-%02d', $anio, $mes);
+            if (isset($periodosSolicitados[$llavePeriodo])) {
+                $errores[] = ['archivo' => $nombreOriginal, 'error' => 'El periodo ' . $llavePeriodo . ' está repetido en esta carga.'];
+                continue;
+            }
+            $periodosSolicitados[$llavePeriodo] = true;
+            $consultaExistente->execute([$anio, $mes]);
+            if ($consultaExistente->fetchColumn()) {
+                $errores[] = ['archivo' => $nombreOriginal, 'error' => 'El periodo ' . $llavePeriodo . ' ya existe y no fue modificado.'];
                 continue;
             }
             $ruta = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'cfe_masivo_' . bin2hex(random_bytes(12)) . '.' . $extension;
@@ -44,8 +65,6 @@ class AjustesController
                 if (!move_uploaded_file($archivos['tmp_name'][$indice], $ruta)) {
                     throw new RuntimeException('No fue posible preparar el archivo.');
                 }
-                $anio = (int) $periodo[1];
-                $mes = (int) $periodo[2];
                 $comando = escapeshellarg($python)
                     . ' ' . escapeshellarg($script)
                     . ' ' . escapeshellarg($ruta)
@@ -59,9 +78,7 @@ class AjustesController
                     throw new RuntimeException((string) ($resultado['error'] ?? 'El analizador no devolvio una respuesta valida.'));
                 }
                 $resultado['archivo'] = (string) $nombreOriginal;
-                $conexion->prepare('DELETE FROM cfe_reportes WHERE anio = ? AND mes = ?')->execute([$anio, $mes]);
                 $guardado = $this->guardarHistorial($conexion, $resultado, $anio, $mes, 'automatico');
-                $this->anexarSugerencias($conexion, $guardado);
                 $registros = (int) ($guardado['historial_guardado'] ?? 0);
                 $totalRegistros += $registros;
                 $procesados[] = ['archivo' => $nombreOriginal, 'periodo' => sprintf('%04d-%02d', $anio, $mes), 'registros' => $registros];
@@ -74,13 +91,17 @@ class AjustesController
             }
         }
 
-        $this->responder([
+        $respuesta = [
             'ok' => $procesados !== [],
             'reportes' => count($procesados),
             'registros' => $totalRegistros,
             'procesados' => $procesados,
             'errores' => $errores
-        ], $procesados !== [] ? 200 : 422);
+        ];
+        if ($procesados === [] && $errores) {
+            $respuesta['error'] = implode(' | ', array_map(static fn (array $error): string => (string) $error['archivo'] . ': ' . (string) $error['error'], $errores));
+        }
+        $this->responder($respuesta, $procesados !== [] ? 200 : 422);
     }
 
     public function analizar(): void
@@ -91,8 +112,8 @@ class AjustesController
         }
 
         $extension = strtolower(pathinfo($_FILES['reporte_cfe']['name'], PATHINFO_EXTENSION));
-        if (!in_array($extension, ['xlsx', 'xls'], true)) {
-            $this->responder(['ok' => false, 'error' => 'Solo se admiten reportes Excel XLSX o XLS.'], 422);
+        if (!in_array($extension, ['xlsx', 'xls', 'xlsb', 'xlsm'], true)) {
+            $this->responder(['ok' => false, 'error' => 'Solo se admiten reportes Excel XLS, XLSX, XLSB o XLSM.'], 422);
         }
         $anio = (int) ($_POST['anio_reporte'] ?? 0);
         $mes = (int) ($_POST['mes_reporte'] ?? 0);
@@ -270,9 +291,48 @@ class AjustesController
                 ],
                 'registros' => $registros
             ];
-            $this->responder($this->anexarSugerencias($conexion, $resultado));
+            $this->responder($this->anexarSugerencias($conexion, $resultado, false));
         } catch (Throwable $e) {
             $this->responder(['ok' => false, 'error' => 'No fue posible consultar el reporte guardado: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function recalcularResumenesReportes(): void
+    {
+        $this->validarToken();
+        set_time_limit(0);
+        try {
+            $conexion = Conexion::conectar();
+            $this->prepararHistorialCfe($conexion);
+            $actualizados = $conexion->exec(
+                "UPDATE cfe_reportes cr
+                 INNER JOIN (
+                    SELECT reporte_id,
+                           COUNT(*) AS total_registros,
+                           SUM(CASE WHEN COALESCE(TRIM(alertas), '') <> '' THEN 1 ELSE 0 END) AS con_alerta,
+                           SUM(CASE WHEN severidad >= 4 THEN 1 ELSE 0 END) AS severos,
+                           SUM(CASE WHEN dias IS NOT NULL AND dias >= CASE WHEN tipo_periodo = 'mensual' THEN 25 ELSE 50 END AND dias <= CASE WHEN tipo_periodo = 'mensual' THEN 35 ELSE 75 END THEN 1 ELSE 0 END) AS periodo_correcto,
+                           SUM(CASE WHEN dias > CASE WHEN tipo_periodo = 'mensual' THEN 35 ELSE 75 END THEN 1 ELSE 0 END) AS ajuste_muchos_dias,
+                           SUM(total) AS importe_total
+                    FROM cfe_consumos
+                    GROUP BY reporte_id
+                 ) calculo ON calculo.reporte_id = cr.id
+                 SET cr.total_registros = calculo.total_registros,
+                     cr.con_alerta = calculo.con_alerta,
+                     cr.severos = calculo.severos,
+                     cr.periodo_correcto = calculo.periodo_correcto,
+                     cr.ajuste_muchos_dias = calculo.ajuste_muchos_dias,
+                     cr.importe_total = calculo.importe_total"
+            );
+            $totalReportes = (int) $conexion->query('SELECT COUNT(*) FROM cfe_reportes')->fetchColumn();
+            $this->responder([
+                'ok' => true,
+                'reportes' => $totalReportes,
+                'actualizados' => (int) $actualizados,
+                'mensaje' => 'Los resúmenes de ajustes fueron recalculados.'
+            ]);
+        } catch (Throwable $e) {
+            $this->responder(['ok' => false, 'error' => 'No fue posible recalcular los reportes: ' . $e->getMessage()], 500);
         }
     }
 
@@ -332,6 +392,8 @@ class AjustesController
                 INDEX idx_cfe_consumos_reporte (reporte_id),
                 INDEX idx_cfe_consumos_reporte_rpu_consumo (reporte_id, RPU, consumo),
                 INDEX idx_cfe_consumos_reporte_consumo_rpu (reporte_id, consumo, RPU),
+                INDEX idx_cfe_consumos_rpu_cct_hasta (RPU, CCT, hasta),
+                INDEX idx_cfe_consumos_rpu_reporte_id (RPU, reporte_id, id),
                 FOREIGN KEY (reporte_id) REFERENCES cfe_reportes(id) ON DELETE CASCADE,
                 FOREIGN KEY (CCT) REFERENCES escuelas(CCT) ON DELETE SET NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
@@ -349,6 +411,8 @@ class AjustesController
         $this->asegurarColumna($conexion, 'cfe_reportes', 'sin_alerta_con_aumento', 'INT NOT NULL DEFAULT 0');
         $this->asegurarIndice($conexion, 'cfe_consumos', 'idx_cfe_consumos_reporte_rpu_consumo', 'reporte_id, RPU, consumo');
         $this->asegurarIndice($conexion, 'cfe_consumos', 'idx_cfe_consumos_reporte_consumo_rpu', 'reporte_id, consumo, RPU');
+        $this->asegurarIndice($conexion, 'cfe_consumos', 'idx_cfe_consumos_rpu_cct_hasta', 'RPU, CCT, hasta');
+        $this->asegurarIndice($conexion, 'cfe_consumos', 'idx_cfe_consumos_rpu_reporte_id', 'RPU, reporte_id, id');
     }
 
     private function prepararPagosReales(PDO $conexion): void
@@ -657,11 +721,11 @@ class AjustesController
         }
     }
 
-    private function anexarSugerencias(PDO $conexion, array $resultado): array
+    private function anexarSugerencias(PDO $conexion, array $resultado, bool $incluirHistoricas = true): array
     {
         $registros = is_array($resultado['registros'] ?? null) ? $resultado['registros'] : [];
         $vinculos = $this->obtenerVinculosPorRpu($conexion, array_column($registros, 'rpu'));
-        $historicas = $this->obtenerSugerenciasHistoricas($conexion, array_column($registros, 'rpu'));
+        $historicas = $incluirHistoricas ? $this->obtenerSugerenciasHistoricas($conexion, array_column($registros, 'rpu')) : [];
         $tendencias = $this->obtenerTendencias($conexion, array_column($registros, 'rpu'), (int) ($resultado['reporte_id'] ?? 0));
         $conVinculo = 0;
         $conSugerencia = 0;
@@ -1207,6 +1271,10 @@ if ($accion === 'analizar_ajustes_cfe') {
 
 if ($accion === 'consultar_reporte_guardado') {
     $controlador->consultarReporteGuardado();
+}
+
+if ($accion === 'recalcular_resumenes_reportes') {
+    $controlador->recalcularResumenesReportes();
 }
 
 if ($accion === 'importar_reportes_masivos') {

@@ -121,9 +121,19 @@ if (empty($_SESSION['seg_csrf'])) {
             <small>Pago</small>
         </article>
         <article class="quick-card">
+            <span class="quick-icon"><i class="bi bi-wallet2"></i></span>
+            <div><strong data-rpu-summary="total_acumulado">$0.00</strong><span>Total acumulado</span></div>
+            <small>Todo el historial</small>
+        </article>
+        <article class="quick-card">
             <span class="quick-icon"><i class="bi bi-speedometer2"></i></span>
             <div><strong data-rpu-summary="consumo_actual">0</strong><span>Ultimo consumo</span></div>
             <small>kWh</small>
+        </article>
+        <article class="quick-card">
+            <span class="quick-icon"><i class="bi bi-lightning-charge"></i></span>
+            <div><strong data-rpu-summary="consumo_acumulado">0</strong><span>Consumo acumulado</span></div>
+            <small>kWh historicos</small>
         </article>
         <article class="quick-card">
             <span class="quick-icon"><i class="bi bi-activity"></i></span>
@@ -142,16 +152,17 @@ if (empty($_SESSION['seg_csrf'])) {
         </article>
     </section>
 
-    <section class="dashboard-grid" id="rpu-history-zone" hidden>
-        <article class="results-card">
+    <section class="rpu-history-layout" id="rpu-history-zone" hidden>
+        <article class="results-card rpu-chart-card">
             <div class="results-head">
-                <div><span class="eyebrow">GRAFICA</span><h2>Pagos y consumo</h2></div>
+                <div><span class="eyebrow">HISTORIAL COMPLETO</span><h2>Pagos y consumo por periodo</h2><p class="section-note">Cada barra representa un reporte cargado para este RPU.</p></div>
+                <label class="rpu-history-filter"><span>Año</span><select id="rpu-history-year"><option value="all">Todo el historial</option></select></label>
             </div>
             <div id="rpu-chart" class="rpu-chart"></div>
         </article>
-        <article class="results-card">
+        <article class="results-card rpu-history-card">
             <div class="results-head">
-                <div><span class="eyebrow">HISTORIAL</span><h2>Reportes del RPU</h2></div>
+                <div><span class="eyebrow">DETALLE</span><h2>Reportes del RPU</h2><p class="section-note">Consulta fechas, total, consumo y alertas de cada periodo.</p></div>
             </div>
             <div class="table-wrap">
                 <table class="control-table">
@@ -180,6 +191,7 @@ const schoolBox = document.getElementById('rpu-school');
 const linkState = document.getElementById('rpu-link-state');
 const chart = document.getElementById('rpu-chart');
 const historyBody = document.getElementById('rpu-history-body');
+const historyYearFilter = document.getElementById('rpu-history-year');
 const catalogForm = document.getElementById('cfe-catalog-form');
 const catalogStatus = document.getElementById('cfe-catalog-status');
 const catalogBody = document.getElementById('cfe-catalog-body');
@@ -188,6 +200,7 @@ let currentRpu = '';
 let catalogPage = 1;
 const optionTimers = {};
 let catalogAvailability = {};
+let currentHistory = [];
 
 const money = new Intl.NumberFormat('es-MX', {style: 'currency', currency: 'MXN'});
 const number = new Intl.NumberFormat('es-MX');
@@ -199,7 +212,9 @@ function escapeHtml(value) {
 function setSummary(resumen) {
     summary.querySelector('[data-rpu-summary="registros"]').textContent = number.format(resumen.registros || 0);
     summary.querySelector('[data-rpu-summary="total_actual"]').textContent = money.format(resumen.total_actual || 0);
+    summary.querySelector('[data-rpu-summary="total_acumulado"]').textContent = money.format(resumen.total_acumulado || 0);
     summary.querySelector('[data-rpu-summary="consumo_actual"]').textContent = number.format(resumen.consumo_actual || 0);
+    summary.querySelector('[data-rpu-summary="consumo_acumulado"]').textContent = number.format(resumen.consumo_acumulado || 0);
     summary.querySelector('[data-rpu-summary="estado"]').textContent = resumen.estado || 'Sin historial';
     summary.querySelector('[data-rpu-summary="diferencia_total"]').textContent = resumen.diferencia_total === null || resumen.diferencia_total === undefined
         ? 'Sin comparativo'
@@ -252,9 +267,11 @@ function renderSchool(data) {
 
 function renderChart(historial) {
     if (!historial.length) {
+        chart.classList.remove('is-long-history');
         chart.innerHTML = '<div class="empty-state"><i class="bi bi-bar-chart"></i><strong>Sin historial</strong><span>Guarda reportes CFE para construir la grafica.</span></div>';
         return;
     }
+    chart.classList.toggle('is-long-history', historial.length > 12);
     const maxTotal = Math.max(...historial.map((row) => Number(row.total) || 0), 1);
     chart.innerHTML = historial.map((row) => {
         const total = Number(row.total) || 0;
@@ -279,11 +296,44 @@ function renderHistory(historial) {
         : '<tr><td colspan="4" class="empty-state"><i class="bi bi-clock-history"></i><strong>Sin historial</strong><span>Analiza reportes en Ajustes CFE para alimentar esta vista.</span></td></tr>';
 }
 
+function resumenHistorial(historial) {
+    if (!historial.length) {
+        return {registros: 0, total_actual: 0, consumo_actual: 0, total_acumulado: 0, consumo_acumulado: 0, diferencia_total: null, estado: 'Sin historial'};
+    }
+    const actual = historial[historial.length - 1];
+    const anterior = historial[historial.length - 2];
+    const diferencia = anterior ? Number(actual.total || 0) - Number(anterior.total || 0) : null;
+    return {
+        registros: historial.length,
+        total_actual: Number(actual.total || 0),
+        consumo_actual: Number(actual.consumo || 0),
+        total_acumulado: historial.reduce((suma, fila) => suma + Number(fila.total || 0), 0),
+        consumo_acumulado: historial.reduce((suma, fila) => suma + Number(fila.consumo || 0), 0),
+        diferencia_total: diferencia,
+        estado: diferencia === null ? 'Primer registro' : (diferencia <= 0 ? 'Mejorando' : 'Subiendo')
+    };
+}
+
+function aplicarFiltroHistorial() {
+    const year = historyYearFilter.value;
+    const historial = year === 'all' ? currentHistory : currentHistory.filter((fila) => String(fila.anio) === year);
+    setSummary(resumenHistorial(historial));
+    renderChart(historial);
+    renderHistory(historial);
+}
+
+function cargarAniosHistorial(historial) {
+    const year = historyYearFilter.value;
+    const years = [...new Set(historial.map((fila) => String(fila.anio)))].sort((a, b) => Number(b) - Number(a));
+    historyYearFilter.innerHTML = `<option value="all">Todo el historial</option>${years.map((item) => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`).join('')}`;
+    historyYearFilter.value = years.includes(year) ? year : 'all';
+}
+
 function render(data) {
-    setSummary(data.resumen || {});
+    currentHistory = data.historial || [];
+    cargarAniosHistorial(currentHistory);
     renderSchool(data);
-    renderChart(data.historial || []);
-    renderHistory(data.historial || []);
+    aplicarFiltroHistorial();
     summary.hidden = false;
     workspace.hidden = false;
     historyZone.hidden = false;
@@ -409,6 +459,8 @@ form.addEventListener('submit', async (event) => {
         statusBox.textContent = error.message;
     }
 });
+
+historyYearFilter.addEventListener('change', aplicarFiltroHistorial);
 
 schoolBox.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-unlink-cct]');

@@ -42,15 +42,28 @@ $condiciones = [];
 $parametros = [];
 
 if ($busqueda !== '') {
-    $valorBusqueda = '%' . $busqueda . '%';
-    $columnasBusqueda = ['er.RPU', 'er.CCT', 'er.nombre_recibo_cfe', 'er.poblacion_cfe', 'e.NOMBRECT', 'e.NOMBREMUN', 'e.NOMBRELOC', 'e.DOMICILIO'];
-    $partesBusqueda = [];
-    foreach ($columnasBusqueda as $indice => $columna) {
-        $clave = 'busqueda_' . $indice;
-        $partesBusqueda[] = $columna . ' LIKE :' . $clave;
-        $parametros[$clave] = $valorBusqueda;
+    $identificador = strtoupper(preg_replace('/[\s-]+/', '', $busqueda) ?? '');
+    if (preg_match('/^\d{2}[A-Z]{3}\d{4}[A-Z]$/', $identificador)) {
+        $condiciones[] = '(er.CCT = :cct_exacto OR er.RPU = :rpu_exacto)';
+        $parametros['cct_exacto'] = $identificador;
+        $parametros['rpu_exacto'] = $identificador;
+    } elseif (preg_match('/^\d{8,20}$/', $identificador)) {
+        $condiciones[] = 'er.RPU LIKE :rpu_inicio';
+        $parametros['rpu_inicio'] = $identificador . '%';
+    } elseif (preg_match('/^\d{2}[A-Z]{1,3}\d{0,4}[A-Z]?$/', $identificador)) {
+        $condiciones[] = 'er.CCT LIKE :cct_inicio';
+        $parametros['cct_inicio'] = $identificador . '%';
+    } else {
+        $valorBusqueda = '%' . $busqueda . '%';
+        $columnasBusqueda = ['er.RPU', 'er.CCT', 'er.nombre_recibo_cfe', 'er.poblacion_cfe', 'e.NOMBRECT', 'e.NOMBREMUN', 'e.NOMBRELOC', 'e.DOMICILIO'];
+        $partesBusqueda = [];
+        foreach ($columnasBusqueda as $indice => $columna) {
+            $clave = 'busqueda_' . $indice;
+            $partesBusqueda[] = $columna . ' LIKE :' . $clave;
+            $parametros[$clave] = $valorBusqueda;
+        }
+        $condiciones[] = '(' . implode(' OR ', $partesBusqueda) . ')';
     }
-    $condiciones[] = '(' . implode(' OR ', $partesBusqueda) . ')';
 }
 
 if ($tarifa !== '') {
@@ -179,7 +192,7 @@ $queryBase = $_GET;
             </div>
             <div class="d-flex flex-wrap gap-2"><button id="auto-link-suggestions" class="btn btn-success btn-sm" type="button"><i class="bi bi-lightning-charge me-2"></i>Auto-vincular todas ≥50%</button><button id="refresh-suggestions" class="btn-seg compact-action" type="button"><i class="bi bi-arrow-clockwise me-2"></i>Actualizar</button></div>
         </div>
-        <div id="suggestion-status" class="adjustment-status">Cargando RPUs pendientes de vincular.</div>
+        <div id="suggestion-status" class="adjustment-status">Usa Actualizar para cargar las coincidencias pendientes sin retrasar la búsqueda del padrón.</div>
         <div id="suggestion-list" class="suggestion-list"></div>
         <div id="suggestion-pager" class="pager" hidden></div>
     </section>
@@ -565,9 +578,6 @@ linksBody.addEventListener('click', async (event) => {
     }
 });
 
-cargarSugerencias().catch((error) => {
-    suggestionStatus.textContent = error.message;
-});
 </script>
 </body>
 </html>

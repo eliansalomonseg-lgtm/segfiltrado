@@ -14,6 +14,7 @@ $logoPath = $segBasePath . '../assets/img/logoSeg.png';
         <a class="<?= $paginaActual === 'consolidacion.php' ? 'active' : '' ?>" href="<?= htmlspecialchars($segBasePath . 'consolidacion/consolidacion.php', ENT_QUOTES, 'UTF-8') ?>"><i class="bi bi-lightning-charge"></i>Consolidacion</a>
         <a class="<?= $paginaActual === 'importaciones.php' ? 'active' : '' ?>" href="<?= htmlspecialchars($segBasePath . 'importaciones.php', ENT_QUOTES, 'UTF-8') ?>"><i class="bi bi-table"></i>Padron de vinculos</a>
         <a class="<?= $paginaActual === 'rpus.php' ? 'active' : '' ?>" href="<?= htmlspecialchars($segBasePath . 'rpus.php', ENT_QUOTES, 'UTF-8') ?>"><i class="bi bi-search"></i>Consulta RPU</a>
+        <a class="<?= $paginaActual === 'mapa_rpus.php' ? 'active' : '' ?>" href="<?= htmlspecialchars($segBasePath . 'mapa_rpus.php', ENT_QUOTES, 'UTF-8') ?>"><i class="bi bi-buildings"></i>RPUs con escuelas</a>
         <a class="<?= $paginaActual === 'ajustes.php' ? 'active' : '' ?>" href="<?= htmlspecialchars($segBasePath . 'ajustes.php', ENT_QUOTES, 'UTF-8') ?>"><i class="bi bi-clipboard2-pulse"></i>Reportes CFE</a>
     </div>
 </nav>

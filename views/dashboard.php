@@ -43,10 +43,8 @@ try {
     }
 } catch (Throwable) {
 }
-$etiquetasMensuales = [];
-$pagosMensuales = [];
-$pagosRealesMensuales = [];
-$ajustesMensuales = [];
+$historialGraficas = [];
+$aniosGraficas = [];
 $mesMayorPago = null;
 $mesMayorAjustes = null;
 $importeFacturadoJunio = 0.0;
@@ -56,10 +54,15 @@ foreach ($historialMensual as $registroMensual) {
     $llavePeriodo = (int) $registroMensual['anio'] . '-' . (int) $registroMensual['mes'];
     $pagoReal = $pagosReales[$llavePeriodo] ?? null;
     $ajustes = (int) $registroMensual['ajustes'];
-    $etiquetasMensuales[] = $etiqueta;
-    $pagosMensuales[] = $totalPagado;
-    $pagosRealesMensuales[] = $pagoReal ? (float) $pagoReal['importe_pagado'] : null;
-    $ajustesMensuales[] = $ajustes;
+    $historialGraficas[] = [
+        'anio' => (int) $registroMensual['anio'],
+        'mes' => (int) $registroMensual['mes'],
+        'etiqueta' => $meses[(int) $registroMensual['mes']] ?? 'Mes',
+        'facturado' => $totalPagado,
+        'pagado' => $pagoReal ? (float) $pagoReal['importe_pagado'] : null,
+        'ajustes' => $ajustes
+    ];
+    $aniosGraficas[(int) $registroMensual['anio']] = true;
     if ((int) $registroMensual['anio'] === 2026 && (int) $registroMensual['mes'] === 6) {
         $importeFacturadoJunio = $totalPagado;
     }
@@ -71,6 +74,9 @@ foreach ($historialMensual as $registroMensual) {
         $mesMayorAjustes = ['etiqueta' => $etiqueta, 'valor' => $ajustes];
     }
 }
+$aniosGraficas = array_keys($aniosGraficas);
+sort($aniosGraficas);
+$anioGraficaInicial = $aniosGraficas ? max($aniosGraficas) : 0;
 $pagoRealJunio = $pagosReales['2026-6'] ?? null;
 $importePagadoJunio = $pagoRealJunio ? (float) $pagoRealJunio['importe_pagado'] : 22522000.00;
 $referenciaPagoJunio = (string) ($pagoRealJunio['referencia'] ?? 'Pago negociado informado');
@@ -124,24 +130,30 @@ $referenciaPagoJunio = (string) ($pagoRealJunio['referencia'] ?? 'Pago negociado
             <small><?= number_format($totalLecturasCfe) ?> lecturas</small>
         </article>
     </section>
-    <section class="director-overview">
-        <article class="director-chart-card">
+    <section class="analytics-overview">
+        <div class="analytics-section-head">
+            <div><span class="eyebrow">PANORAMA FINANCIERO CFE</span><h2>Comportamiento mensual</h2><p>Consulta un año a la vez para comparar pagos y ajustes sin saturar las gráficas.</p></div>
+            <label class="analytics-year-filter"><span>Año a consultar</span><select id="dashboard-year-filter"><option value="all">Todos los años</option><?php foreach ($aniosGraficas as $anioGrafica): ?><option value="<?= (int) $anioGrafica ?>" <?= $anioGrafica === $anioGraficaInicial ? 'selected' : '' ?>><?= (int) $anioGrafica ?></option><?php endforeach; ?></select></label>
+        </div>
+        <div id="analytics-totals" class="analytics-totals" hidden></div>
+        <article class="analytics-chart-card">
             <div class="director-card-head">
                 <div><span class="eyebrow">PRESUPUESTO</span><h2>Pago total por mes</h2></div>
                 <i class="bi bi-cash-stack"></i>
             </div>
-            <div class="chart-area"><canvas id="payments-chart"></canvas><p class="chart-empty" id="payments-empty">Carga reportes CFE para ver el comportamiento mensual.</p></div>
+            <div class="analytics-chart-scroll"><div class="analytics-chart-area"><canvas id="payments-chart"></canvas><p class="chart-empty" id="payments-empty">Carga reportes CFE para ver el comportamiento mensual.</p></div></div>
         </article>
-        <article class="director-chart-card">
+        <article class="analytics-chart-card">
             <div class="director-card-head">
                 <div><span class="eyebrow">REVISION</span><h2>Ajustes por mes</h2></div>
                 <i class="bi bi-calendar2-x"></i>
             </div>
-            <div class="chart-area"><canvas id="adjustments-chart"></canvas><p class="chart-empty" id="adjustments-empty">Los ajustes apareceran al cargar reportes con periodos fuera de rango.</p></div>
+            <div class="analytics-chart-scroll"><div class="analytics-chart-area analytics-chart-area-adjustments"><canvas id="adjustments-chart"></canvas><p class="chart-empty" id="adjustments-empty">Los ajustes apareceran al cargar reportes con periodos fuera de rango.</p></div></div>
         </article>
-        <article class="director-insights">
-            <span class="eyebrow">PARA DIRECCION</span>
-            <h2>Lo mas importante</h2>
+    </section>
+    <section class="director-insights dashboard-insights">
+        <div><span class="eyebrow">PARA DIRECCION</span><h2>Lo mas importante</h2></div>
+        <div class="dashboard-insight-list">
             <div class="insight-row">
                 <i class="bi bi-graph-up-arrow"></i>
                 <span><small>Mes con mayor pago<?= !empty($mesMayorPago['conciliado']) ? ' conciliado' : '' ?></small><strong><?= $mesMayorPago ? htmlspecialchars($mesMayorPago['etiqueta'], ENT_QUOTES, 'UTF-8') : 'Sin reportes' ?></strong><b><?= $mesMayorPago ? '$' . number_format($mesMayorPago['valor'], 2) : '$0.00' ?></b></span>
@@ -151,7 +163,7 @@ $referenciaPagoJunio = (string) ($pagoRealJunio['referencia'] ?? 'Pago negociado
                 <span><small>Mes con mas ajustes</small><strong><?= $mesMayorAjustes ? htmlspecialchars($mesMayorAjustes['etiqueta'], ENT_QUOTES, 'UTF-8') : 'Sin reportes' ?></strong><b><?= $mesMayorAjustes ? number_format($mesMayorAjustes['valor']) . ' recibos' : '0 recibos' ?></b></span>
             </div>
             <a href="ajustes.php" class="director-link">Ver reportes CFE <i class="bi bi-arrow-right"></i></a>
-        </article>
+        </div>
     </section>
     <section class="payment-reconciliation-card">
         <div class="payment-reconciliation-head">
@@ -239,34 +251,86 @@ $referenciaPagoJunio = (string) ($pagoRealJunio['referencia'] ?? 'Pago negociado
 </main>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script>
-const dashboardLabels = <?= json_encode($etiquetasMensuales, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
-const dashboardPayments = <?= json_encode($pagosMensuales, JSON_NUMERIC_CHECK | JSON_HEX_TAG) ?>;
-const dashboardRealPayments = <?= json_encode($pagosRealesMensuales, JSON_NUMERIC_CHECK | JSON_HEX_TAG) ?>;
-const dashboardAdjustments = <?= json_encode($ajustesMensuales, JSON_NUMERIC_CHECK | JSON_HEX_TAG) ?>;
+const dashboardHistory = <?= json_encode($historialGraficas, JSON_NUMERIC_CHECK | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const dashboardCsrf = <?= json_encode($_SESSION['seg_csrf'], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+let paymentsChart;
+let adjustmentsChart;
+const moneyFormat = new Intl.NumberFormat('es-MX', {style: 'currency', currency: 'MXN'});
+const compactMoneyFormat = new Intl.NumberFormat('es-MX', {notation: 'compact', maximumFractionDigits: 1});
+const analyticsTotals = document.getElementById('analytics-totals');
 
-if (dashboardLabels.length && window.Chart) {
-    document.getElementById('payments-empty').hidden = true;
-    document.getElementById('adjustments-empty').hidden = true;
-    new Chart(document.getElementById('payments-chart'), {
+function paymentSummary(history) {
+    const facturado = history.reduce((total, item) => total + Number(item.facturado || 0), 0);
+    const pagosConfirmados = history.filter((item) => item.pagado !== null && item.pagado !== undefined);
+    return {
+        periodos: history.length,
+        facturado,
+        pagado: pagosConfirmados.reduce((total, item) => total + Number(item.pagado || 0), 0),
+        pagosConfirmados: pagosConfirmados.length
+    };
+}
+
+function renderAnalyticsTotals(history, year) {
+    if (!history.length) {
+        analyticsTotals.hidden = true;
+        analyticsTotals.innerHTML = '';
+        return;
+    }
+    const total = paymentSummary(history);
+    const byYear = Object.values(history.reduce((groups, item) => {
+        const key = String(item.anio);
+        (groups[key] ||= []).push(item);
+        return groups;
+    }, {})).map((items) => ({year: items[0].anio, ...paymentSummary(items)})).sort((a, b) => a.year - b.year);
+    const annualCards = year === 'all' ? byYear.map((item) => `<article><span>${item.year}</span><strong>${moneyFormat.format(item.facturado)}</strong><small>${item.periodos} reportes${item.pagosConfirmados ? ` · Pago real ${moneyFormat.format(item.pagado)}` : ''}</small></article>`).join('') : '';
+    analyticsTotals.innerHTML = `<article class="analytics-total-main"><span>${year === 'all' ? 'Facturado en todos los años' : `Facturado en ${year}`}</span><strong>${moneyFormat.format(total.facturado)}</strong><small>${total.periodos} reportes incluidos</small></article><article class="analytics-total-main is-confirmed"><span>Pago real confirmado</span><strong>${total.pagosConfirmados ? moneyFormat.format(total.pagado) : 'Sin registro'}</strong><small>${total.pagosConfirmados ? `${total.pagosConfirmados} periodo${total.pagosConfirmados === 1 ? '' : 's'} conciliado${total.pagosConfirmados === 1 ? '' : 's'}` : 'Captura pagos reales para compararlos'}</small></article>${annualCards}`;
+    analyticsTotals.hidden = false;
+}
+
+function renderDashboardCharts(year) {
+    if (!window.Chart) return;
+    const history = year === 'all' ? dashboardHistory : dashboardHistory.filter(item => String(item.anio) === year);
+    const paymentsEmpty = document.getElementById('payments-empty');
+    const adjustmentsEmpty = document.getElementById('adjustments-empty');
+    if (paymentsChart) paymentsChart.destroy();
+    if (adjustmentsChart) adjustmentsChart.destroy();
+    renderAnalyticsTotals(history, year);
+    if (!history.length) {
+        paymentsEmpty.hidden = false;
+        adjustmentsEmpty.hidden = false;
+        return;
+    }
+    paymentsEmpty.hidden = true;
+    adjustmentsEmpty.hidden = true;
+    const series = year === 'all'
+        ? Object.values(history.reduce((groups, item) => {
+            const key = String(item.anio);
+            if (!groups[key]) groups[key] = {label: key, facturado: 0, pagado: 0, tienePago: false, ajustes: 0};
+            groups[key].facturado += Number(item.facturado || 0);
+            groups[key].ajustes += Number(item.ajustes || 0);
+            if (item.pagado !== null && item.pagado !== undefined) {
+                groups[key].pagado += Number(item.pagado || 0);
+                groups[key].tienePago = true;
+            }
+            return groups;
+        }, {})).sort((a, b) => Number(a.label) - Number(b.label))
+        : history.map((item) => ({label: item.etiqueta, facturado: Number(item.facturado || 0), pagado: Number(item.pagado || 0), tienePago: item.pagado !== null && item.pagado !== undefined, ajustes: Number(item.ajustes || 0)}));
+    const labels = series.map(item => item.label);
+    paymentsChart = new Chart(document.getElementById('payments-chart'), {
         type: 'bar',
-        data: {labels: dashboardLabels, datasets: [{label: 'Facturado CFE', data: dashboardPayments, backgroundColor: '#8b1827', borderRadius: 3, maxBarThickness: 38}, {label: 'Pago real confirmado', data: dashboardRealPayments, backgroundColor: '#bfa276', borderRadius: 3, maxBarThickness: 38}]},
-        options: {
-            maintainAspectRatio: false,
-            plugins: {legend: {display: true, position: 'bottom', labels: {boxWidth: 10, font: {size: 10}}}, tooltip: {callbacks: {label: context => `${context.dataset.label}: ${new Intl.NumberFormat('es-MX', {style: 'currency', currency: 'MXN'}).format(context.raw)}`}}},
-            scales: {x: {grid: {display: false}, ticks: {color: '#6b6570', font: {size: 10}}}, y: {beginAtZero: true, grid: {color: '#eee9e4'}, ticks: {color: '#6b6570', font: {size: 10}, callback: value => '$' + new Intl.NumberFormat('es-MX', {notation: 'compact', maximumFractionDigits: 1}).format(value)}}}
-        }
+        data: {labels, datasets: [{label: 'Facturado CFE', data: series.map(item => item.facturado), backgroundColor: '#7d1b2b', borderRadius: 4, maxBarThickness: 48}, {label: 'Pago real confirmado', data: series.map(item => item.tienePago ? item.pagado : null), backgroundColor: '#bfa276', borderRadius: 4, maxBarThickness: 48}]},
+        options: {maintainAspectRatio: false, interaction: {mode: 'index', intersect: false}, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12, padding: 18, font: {size: 12, weight: '600'}}}, tooltip: {callbacks: {label: context => `${context.dataset.label}: ${moneyFormat.format(context.raw || 0)}`}}}, scales: {x: {grid: {display: false}, ticks: {color: '#5d5860', font: {size: 11, weight: '600'}, maxRotation: 0, autoSkip: false}}, y: {beginAtZero: true, grid: {color: '#eee9e4'}, ticks: {color: '#5d5860', font: {size: 11}, callback: value => '$' + compactMoneyFormat.format(value)}}}}
     });
-    new Chart(document.getElementById('adjustments-chart'), {
+    adjustmentsChart = new Chart(document.getElementById('adjustments-chart'), {
         type: 'line',
-        data: {labels: dashboardLabels, datasets: [{data: dashboardAdjustments, borderColor: '#b17b20', backgroundColor: 'rgba(191, 162, 118, .18)', borderWidth: 3, fill: true, tension: .35, pointBackgroundColor: '#8b1827', pointRadius: 4}]},
-        options: {
-            maintainAspectRatio: false,
-            plugins: {legend: {display: false}, tooltip: {callbacks: {label: context => context.raw + ' ajustes'}}},
-            scales: {x: {grid: {display: false}, ticks: {color: '#6b6570', font: {size: 10}}}, y: {beginAtZero: true, ticks: {precision: 0, color: '#6b6570', font: {size: 10}}, grid: {color: '#eee9e4'}}}
-        }
+        data: {labels, datasets: [{label: 'Ajustes detectados', data: series.map(item => item.ajustes), borderColor: '#9a6314', backgroundColor: 'rgba(191, 162, 118, .2)', borderWidth: 3, fill: true, tension: .28, pointBackgroundColor: '#6a1b29', pointBorderColor: '#fff', pointBorderWidth: 2, pointRadius: 5, pointHoverRadius: 7}]},
+        options: {maintainAspectRatio: false, interaction: {mode: 'index', intersect: false}, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12, padding: 18, font: {size: 12, weight: '600'}}}, tooltip: {callbacks: {label: context => `${context.raw || 0} ajustes`}}}, scales: {x: {grid: {display: false}, ticks: {color: '#5d5860', font: {size: 11, weight: '600'}, maxRotation: 0, autoSkip: false}}, y: {beginAtZero: true, ticks: {precision: 0, color: '#5d5860', font: {size: 11}}, grid: {color: '#eee9e4'}}}}
     });
 }
+
+const dashboardYearFilter = document.getElementById('dashboard-year-filter');
+renderDashboardCharts(dashboardYearFilter?.value || 'all');
+dashboardYearFilter?.addEventListener('change', () => renderDashboardCharts(dashboardYearFilter.value));
 
 const paymentForm = document.getElementById('payment-reconciliation-form');
 const paymentStatus = document.getElementById('payment-reconciliation-status');

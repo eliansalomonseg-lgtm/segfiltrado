@@ -68,8 +68,9 @@ if (empty($_SESSION['seg_csrf'])) {
                 </label>
             </div>
             <button class="btn-seg compact-action" type="submit" <?= $reportesDisponibles ? '' : 'disabled' ?>><i class="bi bi-search me-2"></i>Ver ajustes</button>
+            <button id="recalculate-reports" class="btn-seg compact-action btn-sync-catalogs" type="button" <?= $reportesDisponibles ? '' : 'disabled' ?>><i class="bi bi-calculator me-2"></i>Calcular ajustes pendientes</button>
         </form>
-        <div id="adjustment-status" class="adjustment-status"><?= $reportesDisponibles ? 'Selecciona un reporte guardado para consultar su revision.' : 'Aun no hay reportes CFE guardados. Cargalos desde Consolidacion masiva.' ?></div>
+        <div id="adjustment-status" class="adjustment-status"><?= $reportesDisponibles ? 'Selecciona un reporte guardado para consultar su revision o calcula los resúmenes pendientes de todos los reportes.' : 'Aun no hay reportes CFE guardados. Cargalos desde Consolidacion masiva.' ?></div>
     </section>
 
     <section class="results-card adjustment-uploader">
@@ -192,6 +193,7 @@ if (empty($_SESSION['seg_csrf'])) {
 <script>
 const token = document.querySelector('meta[name="csrf-token"]').content;
 const form = document.getElementById('adjustment-form');
+const recalculateReports = document.getElementById('recalculate-reports');
 const statusBox = document.getElementById('adjustment-status');
 const summary = document.getElementById('adjustment-summary');
 const results = document.getElementById('adjustment-results');
@@ -279,6 +281,30 @@ form.addEventListener('submit', async (event) => {
         render(json);
     } catch (error) {
         statusBox.textContent = error.message;
+    }
+});
+
+recalculateReports?.addEventListener('click', async () => {
+    recalculateReports.disabled = true;
+    statusBox.textContent = 'Calculando ajustes y resúmenes de todos los reportes guardados...';
+    try {
+        const data = new FormData();
+        data.append('accion', 'recalcular_resumenes_reportes');
+        data.append('csrf', token);
+        const response = await fetch('../controllers/ajustesController.php', {
+            method: 'POST',
+            headers: {'X-CSRF-Token': token},
+            body: data
+        });
+        const json = await response.json();
+        if (!json.ok) {
+            throw new Error(json.error || 'No fue posible recalcular los reportes.');
+        }
+        statusBox.textContent = `Listo: ${number.format(json.reportes)} reportes recalculados. El Dashboard ya mostrara sus ajustes.`;
+    } catch (error) {
+        statusBox.textContent = error.message;
+    } finally {
+        recalculateReports.disabled = false;
     }
 });
 

@@ -35,6 +35,16 @@ def limpiar(valor):
     return str(valor).strip()
 
 
+def normalizar_tarifa(valor):
+    texto = limpiar(valor).upper()
+    if re.fullmatch(r"\d+(?:\.0+)?", texto):
+        numero_tarifa = int(float(texto))
+        if numero_tarifa in {1, 2, 3}:
+            return f"{numero_tarifa:02d}"
+        return str(numero_tarifa)
+    return texto
+
+
 def numero(valor):
     if valor is None or pd.isna(valor):
         return 0.0
@@ -52,32 +62,62 @@ def numero(valor):
 def fecha(valor):
     if valor is None or pd.isna(valor):
         return None
-    convertido = pd.to_datetime(valor, errors="coerce")
+    texto = str(valor).strip()
+    meses = {
+        "ene": "jan",
+        "abr": "apr",
+        "ago": "aug",
+        "dic": "dec",
+    }
+    for espanol, ingles in meses.items():
+        texto = re.sub(rf"(?i)(?<=-){espanol}(?=-)", ingles, texto)
+    convertido = pd.to_datetime(texto, errors="coerce", dayfirst=True)
     if pd.isna(convertido):
         return None
     return convertido.to_pydatetime()
 
 
+def leer_excel(ruta, **opciones):
+    motor = "pyxlsb" if Path(ruta).suffix.lower() == ".xlsb" else None
+    return pd.read_excel(ruta, engine=motor, **opciones)
+
+
 def buscar_cabecera(ruta):
-    crudos = pd.read_excel(ruta, header=None, dtype=object)
+    crudos = leer_excel(ruta, header=None, dtype=object)
     for indice, fila in crudos.iterrows():
         valores = [normalizar_columna(valor) for valor in fila.values]
-        if "RPU" in valores and "TOTAL" in valores and "DESDE" in valores and "HASTA" in valores:
+        if "RPU" in valores and ("TOTAL" in valores or "IMPORTETOTAL" in valores) and "DESDE" in valores and "HASTA" in valores:
             return indice
     raise ValueError("No se encontro la cabecera del reporte CFE.")
 
 
 def cargar_reporte(ruta):
     cabecera = buscar_cabecera(ruta)
-    datos = pd.read_excel(ruta, header=cabecera, dtype=object)
+    datos = leer_excel(ruta, header=cabecera, dtype=object)
     datos.columns = [normalizar_columna(columna) for columna in datos.columns]
-    requeridas = ["RPU", "NOMBRE", "POBLACION", "TARIFA", "DESDE", "HASTA", "CONSUMO", "ENERGIA", "DAP", "CARGOSYDEPOSITOS", "CREDITOSYREDONDEOS", "TOTAL", "DIFERENCIA"]
+    alias = {
+        "TFA": "TARIFA",
+        "IMPORTEENERGIA": "ENERGIA",
+        "IMPORTEIVA": "IVA",
+        "IMPORTEDAP": "DAP",
+        "IMPORTETOTAL": "TOTAL",
+        "FP": "FACTORPOTENCIA",
+        "FC": "FACTORCARGA",
+    }
+    for origen, destino in alias.items():
+        if destino not in datos.columns and origen in datos.columns:
+            datos[destino] = datos[origen]
+    for opcional in ["CARGOSYDEPOSITOS", "CREDITOSYREDONDEOS", "DIFERENCIA"]:
+        if opcional not in datos.columns:
+            datos[opcional] = 0
+    requeridas = ["RPU", "NOMBRE", "POBLACION", "TARIFA", "DESDE", "HASTA", "CONSUMO", "ENERGIA", "DAP", "TOTAL"]
     faltantes = [columna for columna in requeridas if columna not in datos.columns]
     if faltantes:
         raise ValueError("Faltan columnas del reporte CFE: " + ", ".join(faltantes))
     datos = datos[datos["RPU"].notna()].copy()
     datos["RPU"] = datos["RPU"].map(limpiar)
     datos = datos[datos["RPU"].str.fullmatch(r"\d{8,15}", na=False)]
+    datos["TARIFA"] = datos["TARIFA"].map(normalizar_tarifa)
     return datos
 
 

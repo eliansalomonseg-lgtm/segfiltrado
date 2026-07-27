@@ -129,18 +129,18 @@ try {
                     <div class="source-title"><span>CFE</span>Reportes de consumo</div>
                     <div class="source-stack">
                         <label class="drop-zone cfe-drop" data-input="reportes_cfe">
-                            <input id="reportes_cfe" name="reportes_cfe[]" type="file" accept=".xlsx,.xls" multiple>
+                            <input id="reportes_cfe" name="reportes_cfe[]" type="file" accept=".xlsx,.xls,.xlsb,.xlsm" multiple>
                             <span class="file-icon">3</span>
                             <strong>2. Reportes CFE</strong>
-                            <small>Selecciona uno o varios archivos para analizarlos automaticamente</small>
+                            <small>Selecciona reportes Excel XLS, XLSX, XLSB o XLSM para analizarlos automaticamente</small>
                             <em class="file-name">Seleccionar uno o varios archivos Excel</em>
                         </label>
-                        <div id="selected-reports" class="selected-reports"><strong>Sin reportes seleccionados</strong><span>Los archivos deben incluir el periodo AAAA-MM en su nombre.</span></div>
+                        <div id="selected-reports" class="selected-reports"><strong>Sin reportes seleccionados</strong><span>Selecciona los archivos y asigna mes y año a cada uno.</span></div>
                     </div>
                 </section>
             </div>
         </div>
-        <div class="load-actions"><span class="load-note"><i class="bi bi-lightning-charge"></i>Al seleccionar reportes CFE, el análisis y guardado iniciarán automáticamente.</span></div>
+        <div class="load-actions"><span class="load-note"><i class="bi bi-calendar3"></i>Asigna mes y año a cada reporte antes de guardarlo. Los periodos existentes no se reemplazan.</span><button id="upload-cfe-reports" class="btn-seg compact-action" type="submit" disabled><i class="bi bi-cloud-arrow-up me-2"></i>Guardar reportes CFE</button></div>
         <div id="progress" class="progress-box" hidden>
             <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
             <span id="progress-text" class="progress-text">Preparando archivos...</span>
@@ -180,6 +180,11 @@ try {
     const resultSearch = document.getElementById('result-search');
     const autoLinkSafe = document.getElementById('auto-link-safe');
     const exportLinks = document.getElementById('export-links');
+    const uploadCfeReports = document.getElementById('upload-cfe-reports');
+    const months = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    let selectedReportFiles = [];
+    const reportPeriods = new Map();
+    const reportFileKey = file => `${file.name}|${file.size}|${file.lastModified}`;
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character]));
     const parseServerJson = text => {
         try {
@@ -191,6 +196,13 @@ try {
     };
     document.querySelectorAll('.drop-zone').forEach(zone => {
         const input = document.getElementById(zone.dataset.input);
+        const rememberReportPeriods = () => {
+            selectedReportFiles.forEach((archivo, indice) => {
+                const mes = document.querySelector(`[data-report-month="${indice}"]`)?.value || '';
+                const anio = document.querySelector(`[data-report-year="${indice}"]`)?.value || '';
+                if (mes || anio) reportPeriods.set(reportFileKey(archivo), {mes, anio});
+            });
+        };
         const update = () => {
             zone.classList.toggle('ready', input.files.length > 0);
             const fallback = input.id === 'archivo_seg' ? 'Seleccionar CSV o Excel' : 'Seleccionar archivo Excel';
@@ -200,15 +212,45 @@ try {
             if (input.id === 'reportes_cfe') {
                 const preview = document.getElementById('selected-reports');
                 const archivos = Array.from(input.files);
+                uploadCfeReports.disabled = !archivos.length;
                 preview.innerHTML = archivos.length
-                    ? `<strong>${archivos.length} reportes listos para cargar</strong><ul>${archivos.map(archivo => `<li>${escapeHtml(archivo.name)}</li>`).join('')}</ul>`
-                    : '<strong>Sin reportes seleccionados</strong><span>Los archivos deben incluir el periodo AAAA-MM en su nombre.</span>';
+                    ? `<strong>${archivos.length} reportes listos para clasificar</strong><div class="report-period-list">${archivos.map((archivo, indice) => {
+                        const coincidencia = archivo.name.match(/(20\d{2})[-_](0[1-9]|1[0-2])/);
+                        const guardado = reportPeriods.get(reportFileKey(archivo));
+                        const anio = guardado?.anio || (coincidencia ? coincidencia[1] : '');
+                        const mes = guardado?.mes || (coincidencia ? String(Number(coincidencia[2])) : '');
+                        return `<div class="report-period-row"><span title="${escapeHtml(archivo.name)}">${escapeHtml(archivo.name)}</span><label><small>Mes</small><select data-report-month="${indice}"><option value="">Mes</option>${months.map((nombre, numero) => `<option value="${numero + 1}" ${mes === String(numero + 1) ? 'selected' : ''}>${nombre}</option>`).join('')}</select></label><label><small>Año</small><input data-report-year="${indice}" type="number" min="2020" max="2100" value="${anio}" placeholder="2021"></label><button class="report-remove" type="button" data-remove-report="${indice}" title="Quitar archivo" aria-label="Quitar ${escapeHtml(archivo.name)}"><i class="bi bi-x-lg"></i></button></div>`;
+                    }).join('')}</div>`
+                    : '<strong>Sin reportes seleccionados</strong><span>Selecciona los archivos y asigna mes y año a cada uno.</span>';
+                preview.querySelectorAll('[data-report-month],[data-report-year]').forEach(control => control.addEventListener('change', rememberReportPeriods));
+                preview.querySelectorAll('[data-remove-report]').forEach(control => control.addEventListener('click', () => {
+                    rememberReportPeriods();
+                    const indice = Number(control.dataset.removeReport);
+                    const eliminado = selectedReportFiles[indice];
+                    if (eliminado) reportPeriods.delete(reportFileKey(eliminado));
+                    selectedReportFiles.splice(indice, 1);
+                    const transferencia = new DataTransfer();
+                    selectedReportFiles.forEach(archivo => transferencia.items.add(archivo));
+                    input.files = transferencia.files;
+                    update();
+                }));
             }
         };
-        input.addEventListener('change', () => {
+        const accumulateReports = files => {
+            rememberReportPeriods();
+            const acumulados = new Map(selectedReportFiles.map(archivo => [reportFileKey(archivo), archivo]));
+            files.forEach(archivo => acumulados.set(reportFileKey(archivo), archivo));
+            selectedReportFiles = Array.from(acumulados.values());
+            const transferencia = new DataTransfer();
+            selectedReportFiles.forEach(archivo => transferencia.items.add(archivo));
+            input.files = transferencia.files;
             update();
-            if (input.id === 'reportes_cfe' && input.files.length) {
-                form.requestSubmit();
+        };
+        input.addEventListener('change', () => {
+            if (input.id === 'reportes_cfe') {
+                accumulateReports(Array.from(input.files));
+            } else {
+                update();
             }
         });
         ['dragenter','dragover'].forEach(name => zone.addEventListener(name, event => {
@@ -223,12 +265,13 @@ try {
             const files = new DataTransfer();
             const droppedFiles = Array.from(event.dataTransfer.files);
             const selectedFiles = input.multiple ? droppedFiles : droppedFiles.slice(0, 1);
+            if (input.id === 'reportes_cfe') {
+                accumulateReports(selectedFiles);
+                return;
+            }
             selectedFiles.forEach(file => files.items.add(file));
             input.files = files.files;
             update();
-            if (input.id === 'reportes_cfe' && input.files.length) {
-                form.requestSubmit();
-            }
         });
     });
     syncButton.addEventListener('click', async () => {
@@ -265,11 +308,25 @@ try {
                 Swal.fire({icon:'warning',title:'Sin reportes CFE',text:'Selecciona uno o varios archivos Excel de CFE.',confirmButtonColor:'#6c1d24'});
                 return;
             }
+            const periodos = Array.from(reportes).map((_, indice) => {
+                const mes = document.querySelector(`[data-report-month="${indice}"]`)?.value || '';
+                const anio = document.querySelector(`[data-report-year="${indice}"]`)?.value.trim() || '';
+                return mes && /^20\d{2}$/.test(anio) ? `${anio}-${String(mes).padStart(2, '0')}` : '';
+            });
+            if (periodos.some(periodo => !periodo)) {
+                Swal.fire({icon:'warning',title:'Falta periodo',text:'Selecciona mes y año para cada reporte CFE.',confirmButtonColor:'#6c1d24'});
+                return;
+            }
+            if (new Set(periodos).size !== periodos.length) {
+                Swal.fire({icon:'warning',title:'Periodo repetido',text:'No puedes cargar dos archivos para el mismo mes y año en una sola operación.',confirmButtonColor:'#6c1d24'});
+                return;
+            }
             const button = document.getElementById('reportes_cfe');
             const progress = document.getElementById('progress');
             const bar = document.getElementById('progress-bar');
             const text = document.getElementById('progress-text');
             button.disabled = true;
+            uploadCfeReports.disabled = true;
             progress.hidden = false;
             bar.style.width = '12%';
             text.textContent = `Preparando ${reportes.length} reportes CFE...`;
@@ -277,20 +334,29 @@ try {
             body.append('accion', 'importar_reportes_masivos');
             body.append('csrf', token);
             Array.from(reportes).forEach(reporte => body.append('reportes_cfe[]', reporte));
+            periodos.forEach(periodo => body.append('periodos_reportes[]', periodo));
             try {
                 const response = await fetch(ajustesController, {method:'POST',headers:{'X-CSRF-Token':token},body});
                 const data = parseServerJson(await response.text());
-                if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible guardar los reportes CFE.');
+                const detalleErrores = (data.errores || []).map(item => `${item.archivo}: ${item.error}`).join('\n');
+                if (!response.ok || !data.ok) throw new Error(data.error || detalleErrores || 'No fue posible guardar los reportes CFE.');
                 bar.style.width = '100%';
                 text.textContent = `${data.reportes} reportes guardados con ${Number(data.registros || 0).toLocaleString('es-MX')} registros.`;
-                const errores = (data.errores || []).length ? ` ${data.errores.length} archivos no se procesaron.` : '';
-                Swal.fire({icon:'success',title:'Carga CFE terminada',text:`Se guardaron ${data.reportes} reportes.${errores}`,confirmButtonColor:'#6c1d24'});
+                const errores = data.errores || [];
+                const detalle = errores.map(item => `<li><strong>${escapeHtml(item.archivo)}</strong>: ${escapeHtml(item.error)}</li>`).join('');
+                Swal.fire({
+                    icon: errores.length ? 'warning' : 'success',
+                    title: errores.length ? 'Carga CFE parcial' : 'Carga CFE terminada',
+                    html: `<p>Se guardaron ${data.reportes} reportes con ${Number(data.registros || 0).toLocaleString('es-MX')} registros.</p>${detalle ? `<ul class="text-start small">${detalle}</ul>` : ''}`,
+                    confirmButtonColor:'#6c1d24'
+                });
             } catch (error) {
                 bar.style.width = '0%';
                 text.textContent = 'No se completó la carga.';
                 Swal.fire({icon:'error',title:'Error al cargar reportes',text:error.message,confirmButtonColor:'#6c1d24'});
             } finally {
                 button.disabled = false;
+                uploadCfeReports.disabled = false;
             }
         })();
         return;

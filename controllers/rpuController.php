@@ -6,6 +6,8 @@ session_start();
 
 require_once dirname(__DIR__) . '/services/conexion.php';
 
+session_write_close();
+
 class RpuController
 {
     public function sugerirMalos(): void
@@ -13,7 +15,6 @@ class RpuController
         $this->validarToken();
         try {
             $conexion = Conexion::conectar();
-            $this->prepararTablas($conexion);
             $periodos = $conexion->query(
                 'SELECT DISTINCT anio, mes FROM cfe_reportes ORDER BY anio DESC, mes DESC LIMIT 6'
             )->fetchAll();
@@ -177,7 +178,6 @@ class RpuController
             }
 
             $conexion = Conexion::conectar();
-            $this->prepararTablas($conexion);
             $historial = $this->historial($conexion, $rpu);
             $vinculos = $this->vinculos($conexion, $rpu);
             $ultimo = $historial[0] ?? null;
@@ -218,7 +218,6 @@ class RpuController
         $this->validarToken();
         try {
             $conexion = Conexion::conectar();
-            $this->prepararTablas($conexion);
             $q = trim((string) ($_POST['q'] ?? ''));
             $nombre = trim((string) ($_POST['nombre'] ?? ''));
             $direccion = trim((string) ($_POST['direccion'] ?? ''));
@@ -320,7 +319,6 @@ class RpuController
         $this->validarToken();
         try {
             $conexion = Conexion::conectar();
-            $this->prepararTablas($conexion);
             $pagina = max(1, (int) ($_POST['pagina'] ?? 1));
             $porPagina = 10;
             $offset = ($pagina - 1) * $porPagina;
@@ -389,7 +387,6 @@ class RpuController
         $this->validarToken();
         try {
             $conexion = Conexion::conectar();
-            $this->prepararTablas($conexion);
             $campo = (string) ($_POST['campo'] ?? '');
             $termino = trim((string) ($_POST['termino'] ?? ''));
             $columnas = [
@@ -935,11 +932,17 @@ class RpuController
         if ($referencia['localidad'] !== '' && $referencia['municipio'] !== '') {
             $filtrosGeograficos[] = [
                 'NOMBRELOC LIKE :localidad AND NOMBREMUN LIKE :municipio',
+                ['localidad' => $referencia['localidad'] . '%', 'municipio' => $referencia['municipio'] . '%']
+            ];
+            $filtrosGeograficos[] = [
+                'NOMBRELOC LIKE :localidad AND NOMBREMUN LIKE :municipio',
                 ['localidad' => '%' . $referencia['localidad'] . '%', 'municipio' => '%' . $referencia['municipio'] . '%']
             ];
         } elseif ($referencia['localidad'] !== '') {
+            $filtrosGeograficos[] = ['NOMBRELOC LIKE :localidad', ['localidad' => $referencia['localidad'] . '%']];
             $filtrosGeograficos[] = ['NOMBRELOC LIKE :localidad', ['localidad' => '%' . $referencia['localidad'] . '%']];
         } elseif ($referencia['municipio'] !== '') {
+            $filtrosGeograficos[] = ['NOMBREMUN LIKE :municipio', ['municipio' => $referencia['municipio'] . '%']];
             $filtrosGeograficos[] = ['NOMBREMUN LIKE :municipio', ['municipio' => '%' . $referencia['municipio'] . '%']];
         }
         $filas = [];
@@ -1141,7 +1144,7 @@ class RpuController
     private function resumen(array $historial): array
     {
         if (!$historial) {
-            return ['registros' => 0, 'total_actual' => 0, 'consumo_actual' => 0, 'diferencia_total' => null, 'estado' => 'Sin historial'];
+            return ['registros' => 0, 'total_actual' => 0, 'consumo_actual' => 0, 'total_acumulado' => 0, 'consumo_acumulado' => 0, 'diferencia_total' => null, 'estado' => 'Sin historial'];
         }
         $actual = $historial[0];
         $anterior = $historial[1] ?? null;
@@ -1150,6 +1153,8 @@ class RpuController
             'registros' => count($historial),
             'total_actual' => (float) $actual['total'],
             'consumo_actual' => (float) $actual['consumo'],
+            'total_acumulado' => array_sum(array_map(static fn (array $fila): float => (float) ($fila['total'] ?? 0), $historial)),
+            'consumo_acumulado' => array_sum(array_map(static fn (array $fila): float => (float) ($fila['consumo'] ?? 0), $historial)),
             'diferencia_total' => $diferencia,
             'estado' => $diferencia === null ? 'Primer registro' : ($diferencia <= 0 ? 'Mejorando' : 'Subiendo')
         ];

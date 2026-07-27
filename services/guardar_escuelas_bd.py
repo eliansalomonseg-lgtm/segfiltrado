@@ -222,7 +222,7 @@ def preparar_maestro(cursor):
         "LONGITUD VARCHAR(80) NULL, NOM_DIR VARCHAR(255) NULL, APELLIDO1 VARCHAR(255) NULL, APELLIDO2 VARCHAR(255) NULL, "
         "TELEFONO1 VARCHAR(100) NULL, CORREOELE VARCHAR(255) NULL, CLASIFICACION VARCHAR(120) NOT NULL, "
         "ORIGEN VARCHAR(100) NOT NULL, DATOS_SEG_JSON LONGTEXT NULL, DATOS_OFICIALIZACION_JSON LONGTEXT NULL, "
-        "INDEX idx_escuelas_clasificacion (CLASIFICACION), INDEX idx_escuelas_municipio (NOMBREMUN), INDEX idx_escuelas_localidad (NOMBRELOC)"
+        "INDEX idx_escuelas_clasificacion (CLASIFICACION), INDEX idx_escuelas_municipio (NOMBREMUN), INDEX idx_escuelas_localidad (NOMBRELOC), INDEX idx_escuelas_localidad_municipio (NOMBRELOC, NOMBREMUN), INDEX idx_escuelas_subnivel (SUBNIVEL), INDEX idx_escuelas_status (STATUS)"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     )
     columnas = {fila[0].upper() for fila in cursor.execute("SHOW COLUMNS FROM escuelas") or cursor.fetchall()}
@@ -238,6 +238,10 @@ def preparar_maestro(cursor):
     for columna, definicion in adicionales.items():
         if columna not in columnas:
             cursor.execute(f"ALTER TABLE escuelas ADD COLUMN `{columna}` {definicion}")
+    for indice, columna in [("idx_escuelas_subnivel", "SUBNIVEL"), ("idx_escuelas_status", "STATUS"), ("idx_escuelas_municipio", "NOMBREMUN"), ("idx_escuelas_localidad_municipio", "NOMBRELOC, NOMBREMUN")]:
+        cursor.execute(f"SHOW INDEX FROM escuelas WHERE Key_name = '{indice}'")
+        if cursor.fetchone() is None:
+            cursor.execute(f"ALTER TABLE escuelas ADD INDEX {indice} ({columna})")
 
 
 def preparar_referencias(cursor):
@@ -246,6 +250,9 @@ def preparar_referencias(cursor):
     if "ESCUELA_ID" not in columnas_vinculos:
         cursor.execute("ALTER TABLE escuelas_rpu ADD COLUMN escuela_id BIGINT UNSIGNED NULL AFTER CCT")
         cursor.execute("ALTER TABLE escuelas_rpu ADD INDEX idx_escuelas_rpu_escuela_id (escuela_id)")
+    cursor.execute("SHOW INDEX FROM escuelas_rpu WHERE Key_name = 'idx_escuelas_rpu_rpu'")
+    if cursor.fetchone() is None:
+        cursor.execute("ALTER TABLE escuelas_rpu ADD INDEX idx_escuelas_rpu_rpu (RPU)")
     cursor.execute("SHOW COLUMNS FROM cfe_consumos")
     columnas_consumos = {fila[0].upper() for fila in cursor.fetchall()}
     if "ESCUELA_ID" not in columnas_consumos:
