@@ -17,7 +17,7 @@ try {
     $estadoCarga['escuelas'] = (int) $conexionCarga->query('SELECT COUNT(*) FROM escuelas')->fetchColumn();
     $estadoCarga['vinculos'] = (int) $conexionCarga->query('SELECT COUNT(*) FROM escuelas_rpu')->fetchColumn();
     $estadoCarga['reportes'] = (int) $conexionCarga->query('SELECT COUNT(*) FROM cfe_reportes')->fetchColumn();
-    $estadoCarga['consumos'] = (int) $conexionCarga->query('SELECT COUNT(*) FROM cfe_consumos')->fetchColumn();
+    $estadoCarga['consumos'] = (int) $conexionCarga->query('SELECT COALESCE(SUM(total_registros), 0) FROM cfe_reportes')->fetchColumn();
 } catch (Throwable) {
 }
 ?>
@@ -27,6 +27,9 @@ try {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="<?= htmlspecialchars($_SESSION['seg_csrf'], ENT_QUOTES, 'UTF-8') ?>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <title>Consolidación Predictiva | SEG Guerrero</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
@@ -74,19 +77,28 @@ try {
         @media(max-width:520px){.load-state{grid-template-columns:1fr}}
         @media(max-width:900px){.drop-grid{gap:10px;grid-template-columns:1fr}.cross{margin:-19px auto}.options{min-width:360px}}
         @media(max-width:600px){.workflow{align-items:stretch;flex-direction:column}.workflow span{text-align:center}}
+        .consolidation-view,.consolidation-view button,.consolidation-view input,.consolidation-view select{font-family:"Montserrat","Segoe UI",Arial,sans-serif}
+        .consolidation-view .heading{padding:26px 28px!important}.consolidation-view .heading h1{font-family:"Montserrat","Segoe UI",Arial,sans-serif;font-size:29px!important;font-weight:700}.consolidation-view .heading p{font-size:14px!important}
+        .consolidation-view .load-state{gap:14px;margin-bottom:20px}.consolidation-view .load-state article{border-left:4px solid #bfa276;min-height:88px;padding:15px}.consolidation-view .load-state i{border-radius:12px;font-size:19px;height:44px;width:44px}.consolidation-view .load-state strong{font-size:23px}.consolidation-view .load-state small{font-size:12px;line-height:1.35;margin-top:4px}
+        .consolidation-view .load-shell{padding:22px}.consolidation-view .source-column{height:100%;padding:19px!important}.consolidation-view .source-title{align-items:center;display:flex;font-family:"Montserrat","Segoe UI",Arial,sans-serif;font-size:18px!important;font-weight:700;gap:10px;margin-bottom:16px!important}.consolidation-view .source-title span{align-items:center;border-radius:10px;display:flex;font-size:15px;height:38px;justify-content:center;width:38px}
+        .consolidation-view .source-stack{gap:12px}.consolidation-view .source-stack .drop-zone{align-items:center;min-height:148px;padding:18px}.consolidation-view .file-icon{border-radius:12px;font-size:20px;height:48px;margin-bottom:11px;width:48px}.consolidation-view .drop-zone strong{font-size:14px!important}.consolidation-view .drop-zone small{font-size:12px!important;line-height:1.45}.consolidation-view .file-name{font-size:11px!important}.consolidation-view .btn-sync-catalogs{border-radius:6px;font-size:13px;margin-top:14px;min-height:44px}.consolidation-view .btn-sync-catalogs i{font-size:16px}
+        .consolidation-view .cfe-drop{min-height:208px!important}.consolidation-view .selected-reports{font-size:12px;max-height:144px;padding:12px}.consolidation-view .selected-reports strong{font-size:12px}.consolidation-view .load-actions{margin-top:20px;padding-top:18px}.consolidation-view .load-note{font-size:12px}.consolidation-view .load-actions .btn-seg{font-size:13px;min-height:42px;padding:10px 16px}
+        .consolidation-view #results{margin-top:22px;padding:22px!important}.consolidation-view .results-head h2{font-family:"Montserrat","Segoe UI",Arial,sans-serif;font-size:22px}.consolidation-view .result-search{font-size:13px;min-height:40px}.consolidation-view .summary strong{font-size:20px}.consolidation-view .option{background:#fff;border-radius:7px;gap:10px;grid-template-columns:minmax(260px,1fr) auto auto auto auto;padding:12px}.consolidation-view .option-data strong{font-size:13px!important}.consolidation-view .option-data small{font-size:11px!important;line-height:1.5}.consolidation-view .tag,.consolidation-view .score,.consolidation-view .confirm,.consolidation-view .manual-search{font-size:10px!important}.consolidation-view .confirm{min-height:34px;padding:7px 10px}
+        @media(max-width:950px){.consolidation-view .load-state{grid-template-columns:repeat(2,minmax(0,1fr))}.consolidation-view .option{grid-template-columns:1fr auto auto}.consolidation-view .option-data{grid-column:span 3}}
+        @media(max-width:600px){.consolidation-view .heading{padding:20px!important}.consolidation-view .heading h1{font-size:25px!important}.consolidation-view .load-state{grid-template-columns:1fr}.consolidation-view .load-shell,.consolidation-view #results{padding:15px!important}.consolidation-view .option{grid-template-columns:1fr}.consolidation-view .option-data{grid-column:auto}.consolidation-view .confirm{width:100%}.consolidation-view .result-search{min-width:100%;width:100%}}
     </style>
 </head>
 <body>
 <?php include_once dirname(__DIR__) . '/fragments/navbar.php'; ?>
 <?php include_once dirname(__DIR__) . '/fragments/sidebar.php'; ?>
-<main class="workspace">
+<main class="workspace consolidation-view">
     <section class="heading">
         <div>
             <span class="eyebrow">CENTRO DE CARGA</span>
-            <h1>Actualización de padrones y reportes CFE</h1>
-            <p>Actualiza el catálogo maestro y guarda todos los periodos CFE en un solo lugar.</p>
+            <h1>Cargar información</h1>
+            <p>Actualiza las escuelas y guarda los reportes de CFE.</p>
         </div>
-        <span class="alert-gold">Padrón maestro y CFE</span>
+        <span class="alert-gold">Catálogos y reportes</span>
     </section>
     <section class="load-state" aria-label="Estado de información local">
         <article><i class="bi bi-buildings"></i><span><strong><?= number_format($estadoCarga['escuelas']) ?></strong><small>Perfiles en padrón maestro</small></span></article>
@@ -100,24 +112,24 @@ try {
         <div class="row g-3 align-items-stretch">
             <div class="col-lg-6">
                 <section class="source-column">
-                    <div class="source-title"><span>SEG</span>Estructura educativa</div>
+                    <div class="source-title"><span><i class="bi bi-buildings"></i></span>Catálogos escolares</div>
                     <div class="source-stack">
                         <label class="drop-zone" data-input="archivo_seg">
                             <input id="archivo_seg" name="archivo_seg" type="file" accept=".csv,.xlsx,.xls">
-                            <span class="file-icon seg">1</span>
-                            <strong>1. Catálogo Institucional SEG</strong>
-                            <small>66 columnas de inmuebles, ubicacion, directorio y contacto</small>
+                            <span class="file-icon seg"><i class="bi bi-building"></i></span>
+                            <strong>Catálogo institucional SEG</strong>
+                            <small>Escuelas, inmuebles, ubicación y contacto.</small>
                             <em class="file-name">Seleccionar CSV o Excel</em>
                         </label>
                         <label class="drop-zone" data-input="archivo_oficializacion">
                             <input id="archivo_oficializacion" name="archivo_oficializacion" type="file" accept=".xlsx,.xls">
-                            <span class="file-icon seg">2</span>
-                            <strong>2. Oficialización Básica (Datos 911)</strong>
-                            <small>169 columnas de estadistica, nivel, turno y matricula</small>
+                            <span class="file-icon seg"><i class="bi bi-mortarboard"></i></span>
+                            <strong>Oficialización básica 911</strong>
+                            <small>Escuelas activas, nivel, turno y matrícula.</small>
                             <em class="file-name">Seleccionar archivo Excel</em>
                         </label>
                     </div>
-                    <button id="sync-catalogs" class="btn-sync-catalogs" type="button">1. Actualizar padrón maestro</button>
+                    <button id="sync-catalogs" class="btn-sync-catalogs" type="button"><i class="bi bi-database-up"></i>Actualizar padrón de escuelas</button>
                     <div id="sync-status" class="sync-status" hidden>
                         <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
                         <span>Guardando escuelas en base de datos local...</span>
@@ -126,13 +138,13 @@ try {
             </div>
             <div class="col-lg-6">
                 <section class="source-column">
-                    <div class="source-title"><span>CFE</span>Reportes de consumo</div>
+                    <div class="source-title"><span><i class="bi bi-lightning-charge"></i></span>Reportes CFE</div>
                     <div class="source-stack">
                         <label class="drop-zone cfe-drop" data-input="reportes_cfe">
                             <input id="reportes_cfe" name="reportes_cfe[]" type="file" accept=".xlsx,.xls,.xlsb,.xlsm" multiple>
-                            <span class="file-icon">3</span>
-                            <strong>2. Reportes CFE</strong>
-                            <small>Selecciona reportes Excel XLS, XLSX, XLSB o XLSM para analizarlos automaticamente</small>
+                            <span class="file-icon"><i class="bi bi-file-earmark-spreadsheet"></i></span>
+                            <strong>Selecciona los reportes de CFE</strong>
+                            <small>Puedes seleccionar uno o varios archivos de Excel.</small>
                             <em class="file-name">Seleccionar uno o varios archivos Excel</em>
                         </label>
                         <div id="selected-reports" class="selected-reports"><strong>Sin reportes seleccionados</strong><span>Selecciona los archivos y asigna mes y año a cada uno.</span></div>
@@ -140,7 +152,7 @@ try {
                 </section>
             </div>
         </div>
-        <div class="load-actions"><span class="load-note"><i class="bi bi-calendar3"></i>Asigna mes y año a cada reporte antes de guardarlo. Los periodos existentes no se reemplazan.</span><button id="upload-cfe-reports" class="btn-seg compact-action" type="submit" disabled><i class="bi bi-cloud-arrow-up me-2"></i>Guardar reportes CFE</button></div>
+        <div class="load-actions"><span class="load-note"><i class="bi bi-calendar3"></i>Indica el mes y año de cada archivo antes de guardarlo.</span><button id="upload-cfe-reports" class="btn-seg compact-action" type="submit" disabled><i class="bi bi-cloud-arrow-up me-2"></i>Guardar reportes</button></div>
         <div id="progress" class="progress-box" hidden>
             <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
             <span id="progress-text" class="progress-text">Preparando archivos...</span>
@@ -148,18 +160,13 @@ try {
     </form>
     <section id="results" class="results-card" hidden>
         <div class="results-head">
-            <div><span class="eyebrow">RESULTADOS</span><h2>RPUs únicos y escuelas sugeridas</h2></div>
+            <div><span class="eyebrow">REVISIÓN DE VÍNCULOS</span><h2>Escuelas sugeridas para cada RPU</h2></div>
             <div class="results-tools">
                 <button id="auto-link-safe" class="btn btn-success btn-sm" type="button">⚡ Auto-Vincular Casos Seguros (≥50%)</button>
                 <button id="export-links" class="btn btn-outline-dark btn-sm" type="button">Exportar vinculos</button>
                 <input id="result-search" class="result-search" type="search" placeholder="Buscar RPU, CCT o escuela">
                 <div id="summary" class="summary"></div>
             </div>
-        </div>
-        <div class="module-tabs" aria-label="Estados de coincidencias">
-            <button class="active" type="button">Pendientes</button>
-            <button type="button">Auto-Vinculados</button>
-            <button type="button">Conflictos</button>
         </div>
         <div class="table-wrap">
             <table>

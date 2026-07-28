@@ -22,8 +22,8 @@ $totalEscuelas = dashboardCount($conexion, 'SELECT COUNT(*) FROM escuelas');
 $totalVinculos = dashboardCount($conexion, 'SELECT COUNT(*) FROM escuelas_rpu');
 $rpusVinculados = dashboardCount($conexion, 'SELECT COUNT(DISTINCT RPU) FROM escuelas_rpu');
 $totalReportesCfe = dashboardCount($conexion, 'SELECT COUNT(*) FROM cfe_reportes');
-$totalLecturasCfe = dashboardCount($conexion, 'SELECT COUNT(*) FROM cfe_consumos');
-$casosCfe = dashboardCount($conexion, 'SELECT COUNT(*) FROM cfe_consumos WHERE severidad >= 3');
+$totalLecturasCfe = dashboardCount($conexion, 'SELECT COALESCE(SUM(total_registros), 0) FROM cfe_reportes');
+$casosCfe = dashboardCount($conexion, 'SELECT COALESCE(SUM(con_alerta), 0) FROM cfe_reportes');
 $reportesCeroRecientes = $conexion->query('SELECT id FROM cfe_reportes ORDER BY anio DESC, mes DESC, id DESC LIMIT 6')->fetchAll();
 $totalReportesCeroRecientes = count($reportesCeroRecientes);
 $ultimoReporte = $conexion->query('SELECT anio, mes FROM cfe_reportes ORDER BY anio DESC, mes DESC, id DESC LIMIT 1')->fetch();
@@ -47,7 +47,6 @@ $historialGraficas = [];
 $aniosGraficas = [];
 $mesMayorPago = null;
 $mesMayorAjustes = null;
-$importeFacturadoJunio = 0.0;
 foreach ($historialMensual as $registroMensual) {
     $etiqueta = ($meses[(int) $registroMensual['mes']] ?? 'Mes') . ' ' . $registroMensual['anio'];
     $totalPagado = (float) $registroMensual['total_pagado'];
@@ -60,12 +59,10 @@ foreach ($historialMensual as $registroMensual) {
         'etiqueta' => $meses[(int) $registroMensual['mes']] ?? 'Mes',
         'facturado' => $totalPagado,
         'pagado' => $pagoReal ? (float) $pagoReal['importe_pagado'] : null,
+        'referencia' => $pagoReal['referencia'] ?? '',
         'ajustes' => $ajustes
     ];
     $aniosGraficas[(int) $registroMensual['anio']] = true;
-    if ((int) $registroMensual['anio'] === 2026 && (int) $registroMensual['mes'] === 6) {
-        $importeFacturadoJunio = $totalPagado;
-    }
     $pagoParaResumen = $pagoReal ? (float) $pagoReal['importe_pagado'] : $totalPagado;
     if ($mesMayorPago === null || $pagoParaResumen > $mesMayorPago['valor']) {
         $mesMayorPago = ['etiqueta' => $etiqueta, 'valor' => $pagoParaResumen, 'conciliado' => $pagoReal !== null];
@@ -77,9 +74,9 @@ foreach ($historialMensual as $registroMensual) {
 $aniosGraficas = array_keys($aniosGraficas);
 sort($aniosGraficas);
 $anioGraficaInicial = $aniosGraficas ? max($aniosGraficas) : 0;
-$pagoRealJunio = $pagosReales['2026-6'] ?? null;
-$importePagadoJunio = $pagoRealJunio ? (float) $pagoRealJunio['importe_pagado'] : 22522000.00;
-$referenciaPagoJunio = (string) ($pagoRealJunio['referencia'] ?? 'Pago negociado informado');
+$periodosConciliacion = $historialGraficas;
+usort($periodosConciliacion, static fn (array $a, array $b): int => ($b['anio'] <=> $a['anio']) ?: ($b['mes'] <=> $a['mes']));
+$periodoConciliacionInicial = $periodosConciliacion[0] ?? null;
 ?>
 <!doctype html>
 <html lang="es">
@@ -87,6 +84,9 @@ $referenciaPagoJunio = (string) ($pagoRealJunio['referencia'] ?? 'Pago negociado
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Panel de Control | SEG Guerrero</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <link href="../assets/css/seg-executive.css" rel="stylesheet">
@@ -94,7 +94,7 @@ $referenciaPagoJunio = (string) ($pagoRealJunio['referencia'] ?? 'Pago negociado
 <body>
 <?php include_once __DIR__ . '/fragments/navbar.php'; ?>
 <?php include_once __DIR__ . '/fragments/sidebar.php'; ?>
-<main class="content">
+<main class="content dashboard-view">
     <section class="heading">
         <div>
             <span class="eyebrow">SISTEMA INTEGRAL SEG</span>
@@ -104,27 +104,27 @@ $referenciaPagoJunio = (string) ($pagoRealJunio['referencia'] ?? 'Pago negociado
         <a class="btn-seg compact-action" href="consolidacion/consolidacion.php"><i class="bi bi-lightning-charge me-2"></i>Consolidar archivos</a>
     </section>
     <section class="quick-actions">
-        <article class="quick-card">
+        <article class="quick-card dashboard-metric-schools">
             <span class="quick-icon"><i class="bi bi-building-check"></i></span>
             <div><strong><?= number_format($totalEscuelas) ?></strong><span>Escuelas insertadas</span></div>
             <small>Catalogos</small>
         </article>
-        <article class="quick-card">
+        <article class="quick-card dashboard-metric-links">
             <span class="quick-icon"><i class="bi bi-diagram-3"></i></span>
             <div><strong><?= number_format($totalVinculos) ?></strong><span>Vinculos guardados</span></div>
             <small>RPU-CCT</small>
         </article>
-        <article class="quick-card">
+        <article class="quick-card dashboard-metric-progress">
             <span class="quick-icon"><i class="bi bi-speedometer2"></i></span>
             <div><strong><?= number_format($avance, 1) ?>%</strong><span>Avance de vinculacion</span></div>
             <small><?= number_format($rpusVinculados) ?> RPU</small>
         </article>
-        <article class="quick-card">
+        <article class="quick-card dashboard-metric-reports">
             <span class="quick-icon"><i class="bi bi-file-earmark-bar-graph"></i></span>
             <div><strong><?= number_format($totalReportesCfe) ?></strong><span>Reportes CFE cargados</span></div>
             <small><?= $ultimoReporte ? htmlspecialchars(sprintf('%02d/%d', $ultimoReporte['mes'], $ultimoReporte['anio']), ENT_QUOTES, 'UTF-8') : 'Sin carga' ?></small>
         </article>
-        <article class="quick-card <?= $casosCfe > 0 ? 'quick-card-warning' : '' ?>">
+        <article class="quick-card dashboard-metric-alerts <?= $casosCfe > 0 ? 'quick-card-warning' : '' ?>">
             <span class="quick-icon"><i class="bi bi-exclamation-triangle"></i></span>
             <div><strong><?= number_format($casosCfe) ?></strong><span>Casos CFE por revisar</span></div>
             <small><?= number_format($totalLecturasCfe) ?> lecturas</small>
@@ -169,22 +169,22 @@ $referenciaPagoJunio = (string) ($pagoRealJunio['referencia'] ?? 'Pago negociado
         <div class="payment-reconciliation-head">
             <div>
                 <span class="eyebrow">CONCILIACION DE PAGO</span>
-                <h2>Junio 2026</h2>
+                <h2 id="payment-period-title"><?= $periodoConciliacionInicial ? htmlspecialchars(($meses[$periodoConciliacionInicial['mes']] ?? 'Mes') . ' ' . $periodoConciliacionInicial['anio'], ENT_QUOTES, 'UTF-8') : 'Selecciona un periodo' ?></h2>
                 <p>El importe facturado permanece como referencia; el pago real confirmado se muestra por separado en la gráfica.</p>
             </div>
-            <span class="payment-reconciliation-badge"><i class="bi bi-receipt-cutoff"></i>Dato conciliado</span>
+            <label class="payment-period-select"><span>Mes a conciliar</span><select id="payment-period-select" <?= $periodosConciliacion ? '' : 'disabled' ?>><?php foreach ($periodosConciliacion as $periodo): ?><option value="<?= (int) $periodo['anio'] ?>-<?= (int) $periodo['mes'] ?>"><?= htmlspecialchars(($meses[$periodo['mes']] ?? 'Mes') . ' ' . $periodo['anio'], ENT_QUOTES, 'UTF-8') ?></option><?php endforeach; ?></select></label>
         </div>
         <div class="payment-reconciliation-grid">
-            <div class="payment-amount"><span>Facturado por CFE</span><strong>$<?= number_format($importeFacturadoJunio, 2) ?></strong></div>
-            <div class="payment-amount payment-amount-real"><span>Pagado real</span><strong>$<?= number_format($importePagadoJunio, 2) ?></strong></div>
-            <div class="payment-amount payment-amount-difference"><span>Diferencia negociada</span><strong>$<?= number_format(max(0, $importeFacturadoJunio - $importePagadoJunio), 2) ?></strong></div>
+            <div class="payment-amount"><span>Facturado por CFE</span><strong id="payment-facturado">$<?= number_format((float) ($periodoConciliacionInicial['facturado'] ?? 0), 2) ?></strong></div>
+            <div class="payment-amount payment-amount-real"><span>Pagado real</span><strong id="payment-pagado"><?= isset($periodoConciliacionInicial['pagado']) && $periodoConciliacionInicial['pagado'] !== null ? '$' . number_format((float) $periodoConciliacionInicial['pagado'], 2) : 'Sin registrar' ?></strong></div>
+            <div class="payment-amount payment-amount-difference"><span>Diferencia</span><strong id="payment-diferencia"><?= isset($periodoConciliacionInicial['pagado']) && $periodoConciliacionInicial['pagado'] !== null ? '$' . number_format(max(0, (float) $periodoConciliacionInicial['facturado'] - (float) $periodoConciliacionInicial['pagado']), 2) : 'Pendiente' ?></strong></div>
         </div>
         <form id="payment-reconciliation-form" class="payment-reconciliation-form">
-            <input type="hidden" name="anio" value="2026">
-            <input type="hidden" name="mes" value="6">
-            <label><span>Pago real MXN</span><input name="importe_pagado" type="number" min="0" step="0.01" value="<?= htmlspecialchars(number_format($importePagadoJunio, 2, '.', ''), ENT_QUOTES, 'UTF-8') ?>" required></label>
-            <label><span>Referencia o comprobante</span><input name="referencia" type="text" maxlength="255" value="<?= htmlspecialchars($referenciaPagoJunio, ENT_QUOTES, 'UTF-8') ?>" placeholder="Folio, oficio o referencia"></label>
-            <button class="btn-seg compact-action" type="submit"><i class="bi bi-check2-circle me-2"></i>Guardar pago real</button>
+            <input id="payment-year" type="hidden" name="anio" value="<?= (int) ($periodoConciliacionInicial['anio'] ?? 0) ?>">
+            <input id="payment-month" type="hidden" name="mes" value="<?= (int) ($periodoConciliacionInicial['mes'] ?? 0) ?>">
+            <label><span>Pago real MXN</span><input id="payment-amount-input" name="importe_pagado" type="number" min="0" step="0.01" value="<?= isset($periodoConciliacionInicial['pagado']) && $periodoConciliacionInicial['pagado'] !== null ? htmlspecialchars(number_format((float) $periodoConciliacionInicial['pagado'], 2, '.', ''), ENT_QUOTES, 'UTF-8') : '' ?>" required <?= $periodoConciliacionInicial ? '' : 'disabled' ?>></label>
+            <label><span>Referencia o comprobante</span><input id="payment-reference-input" name="referencia" type="text" maxlength="255" value="<?= htmlspecialchars((string) ($periodoConciliacionInicial['referencia'] ?? ''), ENT_QUOTES, 'UTF-8') ?>" placeholder="Folio, oficio o referencia" <?= $periodoConciliacionInicial ? '' : 'disabled' ?>></label>
+            <button class="btn-seg compact-action" type="submit" <?= $periodoConciliacionInicial ? '' : 'disabled' ?>><i class="bi bi-check2-circle me-2"></i>Guardar pago real</button>
         </form>
         <div id="payment-reconciliation-status" class="payment-reconciliation-status"></div>
     </section>
@@ -224,35 +224,12 @@ $referenciaPagoJunio = (string) ($pagoRealJunio['referencia'] ?? 'Pago negociado
             </article>
         </div>
     </section>
-    <section class="dashboard-grid">
-        <article class="panel-card">
-            <div class="panel-head">
-                <div><span class="eyebrow">FLUJO</span><h2>Proceso operativo</h2></div>
-            </div>
-            <div class="process-list">
-                <div><b>1</b><span><strong>Sincroniza catalogos</strong><small>Carga SEG y Oficializacion para poblar escuelas.</small></span></div>
-                <div><b>2</b><span><strong>Carga un reporte CFE</strong><small>Guarda cada RPU con sus importes y periodo facturado.</small></span></div>
-                <div><b>3</b><span><strong>Confirma vinculos</strong><small>Guarda coincidencias seguras o revisadas.</small></span></div>
-                <div><b>4</b><span><strong>Revisa cobros</strong><small>Identifica ajustes, consumo bajo y aumentos importantes.</small></span></div>
-            </div>
-        </article>
-        <article class="panel-card">
-            <div class="panel-head">
-                <div><span class="eyebrow">MODULOS</span><h2>Accesos principales</h2></div>
-            </div>
-            <div class="module-list">
-                <a href="consolidacion/consolidacion.php"><i class="bi bi-lightning-charge"></i><span><strong>Consolidacion Masiva</strong><small>Cruce predictivo y vinculacion.</small></span></a>
-                <a href="importaciones.php"><i class="bi bi-table"></i><span><strong>Importaciones</strong><small>Resumen de tablas locales.</small></span></a>
-                <a href="rpus.php"><i class="bi bi-pin-map"></i><span><strong>Expediente RPU</strong><small>Mapa, sugerencias e historial.</small></span></a>
-                <a href="ajustes.php"><i class="bi bi-exclamation-diamond"></i><span><strong>Ajustes CFE</strong><small>Auditoria de cobros y periodos.</small></span></a>
-            </div>
-        </article>
-    </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script>
 const dashboardHistory = <?= json_encode($historialGraficas, JSON_NUMERIC_CHECK | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 const dashboardCsrf = <?= json_encode($_SESSION['seg_csrf'], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+const dashboardMonths = <?= json_encode($meses, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 let paymentsChart;
 let adjustmentsChart;
 const moneyFormat = new Intl.NumberFormat('es-MX', {style: 'currency', currency: 'MXN'});
@@ -334,11 +311,38 @@ dashboardYearFilter?.addEventListener('change', () => renderDashboardCharts(dash
 
 const paymentForm = document.getElementById('payment-reconciliation-form');
 const paymentStatus = document.getElementById('payment-reconciliation-status');
+const paymentPeriodSelect = document.getElementById('payment-period-select');
+const paymentPeriodTitle = document.getElementById('payment-period-title');
+const paymentYear = document.getElementById('payment-year');
+const paymentMonth = document.getElementById('payment-month');
+const paymentAmount = document.getElementById('payment-amount-input');
+const paymentReference = document.getElementById('payment-reference-input');
+const paymentFacturado = document.getElementById('payment-facturado');
+const paymentPagado = document.getElementById('payment-pagado');
+const paymentDiferencia = document.getElementById('payment-diferencia');
+
+function actualizarConciliacionPeriodo() {
+    const [anio, mes] = String(paymentPeriodSelect?.value || '').split('-').map(Number);
+    const periodo = dashboardHistory.find((item) => Number(item.anio) === anio && Number(item.mes) === mes);
+    if (!periodo) return;
+    const pagado = periodo.pagado === null || periodo.pagado === undefined ? null : Number(periodo.pagado);
+    paymentYear.value = String(anio);
+    paymentMonth.value = String(mes);
+    paymentPeriodTitle.textContent = `${dashboardMonths[mes] || 'Mes'} ${anio}`;
+    paymentFacturado.textContent = moneyFormat.format(periodo.facturado || 0);
+    paymentPagado.textContent = pagado === null ? 'Sin registrar' : moneyFormat.format(pagado);
+    paymentDiferencia.textContent = pagado === null ? 'Pendiente' : moneyFormat.format(Math.max(0, Number(periodo.facturado || 0) - pagado));
+    paymentAmount.value = pagado === null ? '' : pagado.toFixed(2);
+    paymentReference.value = periodo.referencia || '';
+    paymentStatus.textContent = '';
+}
+
+paymentPeriodSelect?.addEventListener('change', actualizarConciliacionPeriodo);
 paymentForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const button = paymentForm.querySelector('button');
     button.disabled = true;
-    paymentStatus.textContent = 'Guardando pago real de junio de 2026...';
+    paymentStatus.textContent = `Guardando pago real de ${paymentPeriodTitle.textContent}...`;
     try {
         const body = new URLSearchParams(new FormData(paymentForm));
         body.set('accion', 'guardar_pago_real');

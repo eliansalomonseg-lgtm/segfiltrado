@@ -90,7 +90,8 @@ CREATE TABLE IF NOT EXISTS `escuelas` (
   INDEX `idx_escuelas_subnivel` (`SUBNIVEL`),
   INDEX `idx_escuelas_status` (`STATUS`),
   INDEX `idx_escuelas_localidad_municipio` (`NOMBRELOC`, `NOMBREMUN`),
-  INDEX `idx_escuelas_municipio` (`NOMBREMUN`)
+  INDEX `idx_escuelas_municipio` (`NOMBREMUN`),
+  INDEX `idx_escuelas_municipio_localidad` (`NOMBREMUN`, `NOMBRELOC`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `catalogo_columnas` (
@@ -183,6 +184,7 @@ CREATE TABLE IF NOT EXISTS `cfe_consumos` (
   `severidad` INT NOT NULL DEFAULT 0,
   `alertas` TEXT NULL,
   INDEX `idx_cfe_consumos_rpu` (`RPU`),
+  INDEX `idx_cfe_consumos_rpu_id` (`RPU`, `id`),
   INDEX `idx_cfe_consumos_cct` (`CCT`),
   INDEX `idx_cfe_consumos_reporte` (`reporte_id`),
   INDEX `idx_cfe_consumos_rpu_cct_hasta` (`RPU`, `CCT`, `hasta`),

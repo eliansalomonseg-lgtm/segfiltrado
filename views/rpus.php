@@ -17,6 +17,9 @@ if (empty($_SESSION['seg_csrf'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="<?= htmlspecialchars($_SESSION['seg_csrf'], ENT_QUOTES, 'UTF-8') ?>">
     <title>Expediente RPU | SEG Guerrero</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <link href="../assets/css/seg-executive.css" rel="stylesheet">
@@ -24,118 +27,55 @@ if (empty($_SESSION['seg_csrf'])) {
 <body>
 <?php include_once __DIR__ . '/fragments/navbar.php'; ?>
 <?php include_once __DIR__ . '/fragments/sidebar.php'; ?>
-<main class="content">
+<main class="content rpu-directory-view">
     <section class="heading">
         <div>
-            <span class="eyebrow">EXPEDIENTE ENERGETICO</span>
+            <span class="eyebrow">EXPEDIENTE ENERGÉTICO</span>
             <h1>Consulta por RPU</h1>
-            <p>Verifica si un medidor esta vinculado, revisa su escuela, mapa, sugerencias, historial y tendencia de pagos.</p>
+            <p>Consulta el recibo, la escuela vinculada y el historial de pagos.</p>
         </div>
-        <span class="alert-gold">RPU -> escuela -> historial</span>
+        <span class="alert-gold">RPU y escuela</span>
     </section>
 
     <section class="results-card rpu-search-card">
+        <div class="rpu-search-heading"><span class="quick-icon"><i class="bi bi-lightning-charge"></i></span><div><span class="eyebrow">BÚSQUEDA</span><h2>Localizar medidor</h2></div></div>
         <form id="rpu-form" class="rpu-search-form">
             <label class="search-field">
                 <i class="bi bi-search"></i>
                 <input type="search" name="rpu" placeholder="Buscar RPU" required>
             </label>
-            <button class="btn-seg compact-action" type="submit"><i class="bi bi-lightning-charge me-2"></i>Consultar</button>
+            <button class="btn-seg compact-action" type="submit"><i class="bi bi-search me-2"></i>Consultar RPU</button>
         </form>
         <div id="rpu-status" class="adjustment-status">Captura un RPU para revisar su expediente.</div>
     </section>
 
-    <section class="results-card rpu-risk-card">
-        <div class="results-head">
-            <div>
-                <span class="eyebrow">BUSCADOR CFE</span>
-                <h2>Descartar RPUs no vinculados</h2>
-                <p class="section-note">Busca en los reportes CFE cargados por RPU, nombre del servicio, direccion, poblacion, division o tarifa.</p>
-            </div>
-        </div>
-        <form id="cfe-catalog-form" class="import-filters">
-            <label class="search-field">
-                <i class="bi bi-search"></i>
-                <input type="search" name="q" placeholder="RPU">
-            </label>
-            <label class="search-field">
-                <i class="bi bi-building"></i>
-                <input type="search" name="nombre" list="cfe-nombre-options" data-cfe-option="nombre" placeholder="Nombre del servicio">
-            </label>
-            <label class="search-field">
-                <i class="bi bi-signpost"></i>
-                <input type="search" name="direccion" list="cfe-direccion-options" data-cfe-option="direccion" data-optional-cfe="direccion" placeholder="Direccion del reporte">
-            </label>
-            <label class="search-field">
-                <i class="bi bi-geo-alt"></i>
-                <input type="search" name="poblacion" list="cfe-poblacion-options" data-cfe-option="poblacion" placeholder="Municipio o poblacion CFE">
-            </label>
-            <label class="search-field">
-                <i class="bi bi-lightning"></i>
-                <input type="search" name="tarifa" list="cfe-tarifa-options" data-cfe-option="tarifa" placeholder="Tarifa">
-            </label>
-            <label class="search-field">
-                <i class="bi bi-diagram-3"></i>
-                <input type="search" name="division" list="cfe-division-options" data-cfe-option="division" data-optional-cfe="division" placeholder="Division">
-            </label>
-            <label class="search-field">
-                <input type="checkbox" name="sin_vinculo" value="1" checked>
-                <span>Solo sin vinculo</span>
-            </label>
-            <button class="btn-seg compact-action" type="submit"><i class="bi bi-search me-2"></i>Buscar</button>
-        </form>
-        <datalist id="cfe-nombre-options"></datalist>
-        <datalist id="cfe-direccion-options"></datalist>
-        <datalist id="cfe-poblacion-options"></datalist>
-        <datalist id="cfe-tarifa-options"></datalist>
-        <datalist id="cfe-division-options"></datalist>
-        <div id="cfe-catalog-status" class="adjustment-status">Usa los filtros para localizar medidores de escuelas que todavia no tienen RPU confirmado.</div>
-        <div class="table-wrap">
-            <table class="control-table">
-                <thead>
-                    <tr>
-                        <th>Division</th>
-                        <th>RPU</th>
-                        <th>Nombre del servicio</th>
-                        <th>Direccion</th>
-                        <th>Poblacion</th>
-                        <th>Tarifa</th>
-                        <th>Vinculo</th>
-                    </tr>
-                </thead>
-                <tbody id="cfe-catalog-body"></tbody>
-            </table>
-        </div>
-        <div id="cfe-catalog-pager" class="risk-pager" hidden></div>
-    </section>
-
     <section id="rpu-summary" class="quick-actions" hidden>
-        <article class="quick-card">
+        <article class="quick-card rpu-metric-reports">
             <span class="quick-icon"><i class="bi bi-receipt"></i></span>
             <div><strong data-rpu-summary="registros">0</strong><span>Reportes guardados</span></div>
             <small>Historial</small>
         </article>
-        <article class="quick-card">
+        <article class="quick-card rpu-metric-current">
             <span class="quick-icon"><i class="bi bi-cash-coin"></i></span>
             <div><strong data-rpu-summary="total_actual">$0.00</strong><span>Ultimo total</span></div>
             <small>Pago</small>
         </article>
-        <article class="quick-card">
+        <article class="quick-card rpu-metric-total">
             <span class="quick-icon"><i class="bi bi-wallet2"></i></span>
             <div><strong data-rpu-summary="total_acumulado">$0.00</strong><span>Total acumulado</span></div>
             <small>Todo el historial</small>
         </article>
-        <article class="quick-card">
+        <article class="quick-card rpu-metric-consumption">
             <span class="quick-icon"><i class="bi bi-speedometer2"></i></span>
             <div><strong data-rpu-summary="consumo_actual">0</strong><span>Ultimo consumo</span></div>
             <small>kWh</small>
         </article>
-        <article class="quick-card">
+        <article class="quick-card rpu-metric-energy">
             <span class="quick-icon"><i class="bi bi-lightning-charge"></i></span>
             <div><strong data-rpu-summary="consumo_acumulado">0</strong><span>Consumo acumulado</span></div>
             <small>kWh historicos</small>
         </article>
-        <article class="quick-card">
+        <article class="quick-card rpu-metric-trend">
             <span class="quick-icon"><i class="bi bi-activity"></i></span>
             <div><strong data-rpu-summary="estado">Sin historial</strong><span>Tendencia</span></div>
             <small data-rpu-summary="diferencia_total">Sin comparativo</small>
@@ -156,7 +96,11 @@ if (empty($_SESSION['seg_csrf'])) {
         <article class="results-card rpu-chart-card">
             <div class="results-head">
                 <div><span class="eyebrow">HISTORIAL COMPLETO</span><h2>Pagos y consumo por periodo</h2><p class="section-note">Cada barra representa un reporte cargado para este RPU.</p></div>
+            </div>
+            <div class="rpu-history-tools">
                 <label class="rpu-history-filter"><span>Año</span><select id="rpu-history-year"><option value="all">Todo el historial</option></select></label>
+                <label class="rpu-print-filter"><span>Formato de impresión</span><select id="rpu-print-mode"><option value="summary">Todo el periodo seleccionado</option><option value="periods">Un periodo por hoja</option></select></label>
+                <button id="print-rpu-history" class="btn-seg compact-action" type="button"><i class="bi bi-printer me-2"></i>Imprimir RPU</button>
             </div>
             <div id="rpu-chart" class="rpu-chart"></div>
         </article>
@@ -192,14 +136,9 @@ const linkState = document.getElementById('rpu-link-state');
 const chart = document.getElementById('rpu-chart');
 const historyBody = document.getElementById('rpu-history-body');
 const historyYearFilter = document.getElementById('rpu-history-year');
-const catalogForm = document.getElementById('cfe-catalog-form');
-const catalogStatus = document.getElementById('cfe-catalog-status');
-const catalogBody = document.getElementById('cfe-catalog-body');
-const catalogPager = document.getElementById('cfe-catalog-pager');
+const printModeFilter = document.getElementById('rpu-print-mode');
+const printRpuHistory = document.getElementById('print-rpu-history');
 let currentRpu = '';
-let catalogPage = 1;
-const optionTimers = {};
-let catalogAvailability = {};
 let currentHistory = [];
 
 const money = new Intl.NumberFormat('es-MX', {style: 'currency', currency: 'MXN'});
@@ -315,11 +254,53 @@ function resumenHistorial(historial) {
 }
 
 function aplicarFiltroHistorial() {
-    const year = historyYearFilter.value;
-    const historial = year === 'all' ? currentHistory : currentHistory.filter((fila) => String(fila.anio) === year);
+    const historial = historialFiltrado();
     setSummary(resumenHistorial(historial));
     renderChart(historial);
     renderHistory(historial);
+}
+
+function historialFiltrado() {
+    const year = historyYearFilter.value;
+    return year === 'all' ? currentHistory : currentHistory.filter((fila) => String(fila.anio) === year);
+}
+
+function abrirImpresionRpu() {
+    const historial = historialFiltrado();
+    if (!currentRpu || !historial.length) {
+        statusBox.textContent = 'Consulta un RPU con historial antes de imprimir.';
+        return;
+    }
+    const mode = printModeFilter.value;
+    const yearLabel = historyYearFilter.value === 'all' ? 'Todo el historial' : `Año ${historyYearFilter.value}`;
+    const resumen = resumenHistorial(historial);
+    const maxTotal = Math.max(...historial.map((fila) => Number(fila.total) || 0), 1);
+    const resumenEnHoja = (filas, etiqueta) => {
+        const suma = resumenHistorial(filas);
+        const maximo = Math.max(...filas.map((fila) => Number(fila.total) || 0), 1);
+        const barras = filas.map((fila) => {
+            const height = Math.max(10, Math.round((Number(fila.total) || 0) / maximo * 180));
+            return `<div class="bar"><i style="height:${height}px"></i><strong>${money.format(fila.total || 0)}</strong><small>${escapeHtml(fila.anio)}-${String(fila.mes).padStart(2, '0')}<br>${number.format(fila.consumo || 0)} kWh</small></div>`;
+        }).join('');
+        return `<section class="summary-sheet"><header><span>SECRETARÍA DE EDUCACIÓN GUERRERO</span><h1>RPU ${escapeHtml(currentRpu)}</h1><p>${escapeHtml(etiqueta)} · ${number.format(suma.registros)} reportes · Total acumulado ${money.format(suma.total_acumulado)} · Consumo ${number.format(suma.consumo_acumulado)} kWh</p></header><div class="chart">${barras}</div><table><thead><tr><th>Periodo</th><th>Total</th><th>Consumo</th><th>Tarifa</th><th>Alertas</th></tr></thead><tbody>${filas.slice().reverse().map((fila) => `<tr><td>${escapeHtml(fila.anio)}-${String(fila.mes).padStart(2, '0')}</td><td>${money.format(fila.total || 0)}</td><td>${number.format(fila.consumo || 0)} kWh</td><td>${escapeHtml(fila.tarifa_cfe || 'Sin tarifa')}</td><td>${escapeHtml(fila.alertas || 'Sin alertas')}</td></tr>`).join('')}</tbody></table></section>`;
+    };
+    const detallePorPeriodo = historial.map((fila, index) => `<section class="period-sheet"><header><span>SECRETARÍA DE EDUCACIÓN GUERRERO</span><h1>RPU ${escapeHtml(currentRpu)}</h1><p>Periodo ${escapeHtml(fila.anio)}-${String(fila.mes).padStart(2, '0')} · Hoja ${index + 1} de ${historial.length}</p></header><div class="period-grid"><div><span>Total facturado</span><strong>${money.format(fila.total || 0)}</strong></div><div><span>Consumo</span><strong>${number.format(fila.consumo || 0)} kWh</strong></div><div><span>Tarifa</span><strong>${escapeHtml(fila.tarifa_cfe || 'Sin tarifa')}</strong></div><div><span>Fechas del recibo</span><strong>${escapeHtml(fila.desde || 'Sin fecha')} / ${escapeHtml(fila.hasta || 'Sin fecha')}</strong></div></div><div class="single-bar"><i style="height:${Math.max(30, Math.round((Number(fila.total) || 0) / maxTotal * 260))}px"></i><strong>${money.format(fila.total || 0)}</strong></div><p class="alerts"><b>Alertas:</b> ${escapeHtml(fila.alertas || 'Sin alertas')}</p></section>`).join('');
+    const resumenesPorAnio = historyYearFilter.value === 'all'
+        ? Object.values(historial.reduce((grupos, fila) => {
+            (grupos[fila.anio] ||= []).push(fila);
+            return grupos;
+        }, {})).sort((a, b) => Number(a[0].anio) - Number(b[0].anio)).map((filas) => resumenEnHoja(filas, `Año ${filas[0].anio}`)).join('')
+        : resumenEnHoja(historial, yearLabel);
+    const content = mode === 'periods' ? detallePorPeriodo : resumenesPorAnio;
+    const printWindow = window.open('', '_blank', 'width=1200,height=900');
+    if (!printWindow) {
+        statusBox.textContent = 'El navegador bloqueo la ventana de impresión. Permite ventanas emergentes e inténtalo otra vez.';
+        return;
+    }
+    printWindow.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>RPU ${escapeHtml(currentRpu)}</title><style>@page{size:landscape;margin:12mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{color:#222;font-family:Arial,sans-serif;margin:0}header{border-bottom:3px solid #6a1b29;margin-bottom:18px;padding-bottom:10px}header span{color:#6a1b29;font-size:10px;font-weight:800;letter-spacing:1.2px}h1{font-size:25px;margin:5px 0}header p{color:#555;font-size:12px;margin:0}.summary-sheet,.period-sheet{break-after:page;min-height:180mm}.chart{align-items:end;display:flex;gap:10px;justify-content:space-around;min-height:265px;padding:18px 4px}.bar{align-items:center;display:grid;gap:6px;justify-items:center;min-width:58px}.bar i,.single-bar i{background:#bfa276;border:2px solid #6a1b29;border-radius:8px 8px 2px 2px;display:block;width:25px}.bar strong{font-size:10px;text-align:center}.bar small{color:#555;font-size:9px;line-height:1.3;text-align:center}table{border-collapse:collapse;font-size:10px;width:100%}th{background:#6a1b29;color:#fff;text-align:left}th,td{border:1px solid #d9d4d0;padding:6px;vertical-align:top}.period-grid{display:grid;gap:10px;grid-template-columns:repeat(4,1fr)}.period-grid div{border:1px solid #d9d4d0;padding:12px}.period-grid span,.period-grid strong{display:block}.period-grid span{color:#666;font-size:11px}.period-grid strong{font-size:17px;margin-top:5px}.single-bar{align-items:center;display:grid;gap:10px;justify-content:center;justify-items:center;min-height:310px}.single-bar strong{font-size:20px}.alerts{border-top:1px solid #d9d4d0;font-size:12px;padding-top:10px}@media print{.summary-sheet:last-child,.period-sheet:last-child{break-after:auto}}</style></head><body>${content}</body></html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    window.setTimeout(() => printWindow.print(), 800);
 }
 
 function cargarAniosHistorial(historial) {
@@ -339,109 +320,10 @@ function render(data) {
     historyZone.hidden = false;
 }
 
-function renderCatalog(data) {
-    const rows = data.rpus || [];
-    catalogAvailability = data.disponibles || catalogAvailability || {};
-    updateCatalogAvailability();
-    const missing = [];
-    if (!Number(catalogAvailability.direccion || 0)) {
-        missing.push('direccion_cfe no tiene datos cargados');
-    }
-    if (!Number(catalogAvailability.division || 0)) {
-        missing.push('division_cfe no tiene datos cargados');
-    }
-    catalogStatus.textContent = `${number.format(data.total || 0)} RPUs encontrados en reportes CFE cargados.${missing.length ? ' Nota: ' + missing.join(' y ') + '.' : ''}`;
-    catalogBody.innerHTML = rows.length
-        ? rows.map((row) => {
-            const linked = row.ccts && String(row.ccts).trim() !== '';
-            return `<tr data-rpu="${escapeHtml(row.RPU)}">
-                <td><strong>${escapeHtml(row.division_cfe || 'Sin division')}</strong><small>${escapeHtml(row.anio)}-${String(row.mes).padStart(2, '0')}</small></td>
-                <td><button class="link-button" type="button" data-rpu="${escapeHtml(row.RPU)}">${escapeHtml(row.RPU)}</button></td>
-                <td><strong>${escapeHtml(row.nombre_cfe || 'Sin nombre')}</strong><small>Total ${money.format(row.total || 0)} - ${number.format(row.consumo || 0)} kWh</small></td>
-                <td>${escapeHtml(row.direccion_cfe || 'No cargada en cfe_consumos')}</td>
-                <td>${escapeHtml(row.poblacion_cfe || 'Sin poblacion')}</td>
-                <td><span class="status-pill">${escapeHtml(row.tarifa_cfe || 'N/D')}</span></td>
-                <td><span class="status-pill ${linked ? 'status-ok' : 'status-warn'}">${linked ? escapeHtml(row.ccts) : 'Sin vinculo'}</span></td>
-            </tr>`;
-        }).join('')
-        : '<tr><td colspan="7" class="empty-state"><i class="bi bi-search"></i><strong>Sin resultados</strong><span>Cambia los filtros o desactiva "solo sin vinculo".</span></td></tr>';
-    catalogPager.hidden = Number(data.paginas || 1) <= 1;
-    catalogPager.innerHTML = Number(data.paginas || 1) > 1
-        ? `<button type="button" data-catalog-page="prev" ${Number(data.pagina || 1) <= 1 ? 'disabled' : ''}>Anterior</button><span>Pagina ${number.format(data.pagina || 1)} de ${number.format(data.paginas || 1)}</span><button type="button" data-catalog-page="next" ${Number(data.pagina || 1) >= Number(data.paginas || 1) ? 'disabled' : ''}>Siguiente</button>`
-        : '';
-}
-
-function updateCatalogAvailability() {
-    catalogForm.querySelectorAll('[data-optional-cfe]').forEach((input) => {
-        const key = input.dataset.optionalCfe;
-        const hasData = Number(catalogAvailability[key] || 0) > 0;
-        input.disabled = !hasData;
-        input.placeholder = hasData
-            ? (key === 'direccion' ? 'Direccion del reporte' : 'Division')
-            : (key === 'direccion' ? 'Direccion no cargada' : 'Division no cargada');
-        if (!hasData) {
-            input.value = '';
-        }
-    });
-}
-
-async function searchCatalog(page = 1) {
-    catalogPage = page;
-    catalogStatus.textContent = 'Buscando en reportes CFE cargados...';
-    const data = new FormData(catalogForm);
-    const body = new URLSearchParams();
-    body.set('accion', 'buscar_catalogo_cfe');
-    body.set('csrf', token);
-    body.set('pagina', String(catalogPage));
-    for (const [key, value] of data.entries()) {
-        body.set(key, value);
-    }
-    if (!catalogForm.sin_vinculo.checked) {
-        body.delete('sin_vinculo');
-    }
-    const response = await fetch('../controllers/rpuController.php', {method: 'POST', body});
-    const result = await response.json();
-    if (!result.ok) {
-        throw new Error(result.error || 'No fue posible buscar en CFE.');
-    }
-    renderCatalog(result);
-}
-
-async function loadCfeOptions(input) {
-    const campo = input.dataset.cfeOption;
-    const list = document.getElementById(input.getAttribute('list'));
-    if (!campo || !list) {
-        return;
-    }
-    const body = new URLSearchParams({
-        accion: 'opciones_catalogo_cfe',
-        csrf: token,
-        campo,
-        termino: input.value.trim()
-    });
-    const formData = new FormData(catalogForm);
-    for (const [key, value] of formData.entries()) {
-        if (key !== campo) {
-            body.set(key, value);
-        }
-    }
-    if (!catalogForm.sin_vinculo.checked) {
-        body.delete('sin_vinculo');
-    }
-    const response = await fetch('../controllers/rpuController.php', {method: 'POST', body});
-    const data = await response.json();
-    if (!data.ok) {
-        return;
-    }
-    catalogAvailability = data.disponibles || catalogAvailability || {};
-    updateCatalogAvailability();
-    list.innerHTML = (data.opciones || []).map((value) => `<option value="${escapeHtml(value)}"></option>`).join('');
-}
-
 async function searchRpu(rpu) {
     currentRpu = rpu;
     statusBox.textContent = 'Consultando vinculos, historial y sugerencias...';
-    const body = new URLSearchParams({accion: 'buscar_rpu', csrf: token, rpu});
+    const body = new URLSearchParams({accion: 'buscar_rpu', csrf: token, rpu, incluir_sugerencias: '0'});
     const response = await fetch('../controllers/rpuController.php', {method: 'POST', body});
     const data = await response.json();
     if (!data.ok) {
@@ -461,6 +343,7 @@ form.addEventListener('submit', async (event) => {
 });
 
 historyYearFilter.addEventListener('change', aplicarFiltroHistorial);
+printRpuHistory.addEventListener('click', abrirImpresionRpu);
 
 schoolBox.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-unlink-cct]');
@@ -488,51 +371,6 @@ schoolBox.addEventListener('click', async (event) => {
     }
 });
 
-catalogBody.addEventListener('click', async (event) => {
-    const button = event.target.closest('[data-rpu]');
-    if (!button) {
-        return;
-    }
-    form.rpu.value = button.dataset.rpu;
-    try {
-        await searchRpu(button.dataset.rpu);
-    } catch (error) {
-        statusBox.textContent = error.message;
-    }
-});
-
-catalogForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try {
-        await searchCatalog(1);
-    } catch (error) {
-        catalogStatus.textContent = error.message;
-    }
-});
-
-catalogForm.querySelectorAll('[data-cfe-option]').forEach((input) => {
-    input.addEventListener('focus', () => loadCfeOptions(input));
-    input.addEventListener('input', () => {
-        clearTimeout(optionTimers[input.name]);
-        optionTimers[input.name] = setTimeout(() => loadCfeOptions(input), 250);
-    });
-});
-
-catalogPager.addEventListener('click', async (event) => {
-    const button = event.target.closest('button[data-catalog-page]');
-    if (!button) {
-        return;
-    }
-    try {
-        await searchCatalog(catalogPage + (button.dataset.catalogPage === 'next' ? 1 : -1));
-    } catch (error) {
-        catalogStatus.textContent = error.message;
-    }
-});
-
-searchCatalog(1).catch((error) => {
-    catalogStatus.textContent = error.message;
-});
 </script>
 </body>
 </html>

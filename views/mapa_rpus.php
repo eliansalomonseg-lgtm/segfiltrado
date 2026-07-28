@@ -68,6 +68,9 @@ $etiquetaReporte = $ultimoReporte ? ($meses[(int) $ultimoReporte['mes']] ?? 'Mes
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RPUs con escuelas | SEG Guerrero</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -78,7 +81,7 @@ $etiquetaReporte = $ultimoReporte ? ($meses[(int) $ultimoReporte['mes']] ?? 'Mes
 <body>
 <?php include_once __DIR__ . '/fragments/navbar.php'; ?>
 <?php include_once __DIR__ . '/fragments/sidebar.php'; ?>
-<main class="content">
+<main class="content map-directory-view">
     <section class="heading">
         <div>
             <span class="eyebrow">COBERTURA TERRITORIAL</span>
@@ -112,10 +115,13 @@ $etiquetaReporte = $ultimoReporte ? ($meses[(int) $ultimoReporte['mes']] ?? 'Mes
             <select id="map-municipio" class="form-select map-rpu-select">
                 <option value="">Todos los municipios</option>
             </select>
-            <label class="map-rpu-select-label map-rpu-level-label" for="map-nivel">Nivel educativo</label>
-            <select id="map-nivel" class="form-select map-rpu-select">
-                <option value="">Todos los niveles</option>
-            </select>
+            <span class="map-rpu-select-label map-rpu-level-label">Nivel educativo</span>
+            <div class="map-level-filter" role="group" aria-label="Filtrar por nivel educativo">
+                <button class="active" type="button" data-map-level=""><i class="bi bi-grid-3x3-gap"></i><span>Todo</span></button>
+                <button type="button" data-map-level="PREESCOLAR"><img src="../imgs/prescolar.png" alt=""><span>Preescolar</span></button>
+                <button type="button" data-map-level="PRIMARIA"><img src="../imgs/primaria.png" alt=""><span>Primaria</span></button>
+                <button type="button" data-map-level="SECUNDARIA"><img src="../imgs/secundaria.png" alt=""><span>Secundaria</span></button>
+            </div>
             <div class="map-rpu-filter-actions">
                 <button id="map-alert-filter" class="map-rpu-eye-filter" type="button" aria-pressed="false" title="Mostrar solo escuelas con alerta en el último reporte">
                     <i class="bi bi-eye"></i><span>Solo con alertas</span>
@@ -129,7 +135,12 @@ $etiquetaReporte = $ultimoReporte ? ($meses[(int) $ultimoReporte['mes']] ?? 'Mes
             <div class="map-rpu-map-head">
                 <div class="map-rpu-map-title"><i class="bi bi-buildings"></i><span>Escuelas con RPU confirmado</span></div>
                 <div class="map-rpu-map-tools">
-                    <div class="map-rpu-legend"><span><i></i>Sin alerta</span><span class="alert"><i></i>Alerta reciente</span></div>
+                    <div class="map-rpu-legend">
+                        <span><img src="../imgs/prescolar.png" alt="">Preescolar</span>
+                        <span><img src="../imgs/primaria.png" alt="">Primaria</span>
+                        <span><img src="../imgs/secundaria.png" alt="">Secundaria</span>
+                        <span class="alert"><i></i>Alerta</span>
+                    </div>
                     <button id="map-recenter" class="map-canvas-action" type="button" title="Mostrar todo Guerrero" aria-label="Mostrar todo Guerrero"><i class="bi bi-arrows-angle-contract"></i></button>
                     <button id="map-fullscreen" class="map-canvas-action" type="button" title="Pantalla completa" aria-label="Pantalla completa"><i class="bi bi-fullscreen"></i></button>
                 </div>
@@ -149,7 +160,6 @@ mapa.addLayer(agrupador);
 
 const campoBusqueda = document.getElementById('map-rpu-search');
 const municipio = document.getElementById('map-municipio');
-const nivel = document.getElementById('map-nivel');
 const botonAlertas = document.getElementById('map-alert-filter');
 const lista = document.getElementById('map-rpu-list');
 const contador = document.getElementById('map-visible-count');
@@ -157,32 +167,48 @@ let soloAlertas = false;
 let marcadores = new Map();
 let resultadoActivo = '';
 let temporizadorBusqueda;
+let nivelSeleccionado = '';
 
 const textoSeguro = (valor) => String(valor || '').replace(/[&<>"']/g, (caracter) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[caracter]));
 const normalizar = (valor) => String(valor || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
 const moneda = (valor) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 }).format(Number(valor || 0));
+const iconosNivel = {
+    PREESCOLAR: '../imgs/prescolar.png',
+    PRIMARIA: '../imgs/primaria.png',
+    SECUNDARIA: '../imgs/secundaria.png'
+};
 
 const municipios = [...new Set(puntosRpu.map((punto) => punto.municipio).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
 municipios.forEach((nombre) => municipio.insertAdjacentHTML('beforeend', `<option value="${textoSeguro(nombre)}">${textoSeguro(nombre)}</option>`));
-const niveles = [...new Set(puntosRpu.map((punto) => punto.nivel).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
-niveles.forEach((nombre) => nivel.insertAdjacentHTML('beforeend', `<option value="${textoSeguro(nombre)}">${textoSeguro(nombre)}</option>`));
 document.getElementById('map-total-links').textContent = puntosRpu.length.toLocaleString('es-MX');
 document.getElementById('map-total-municipios').textContent = municipios.length.toLocaleString('es-MX');
 document.getElementById('map-total-alerts').textContent = puntosRpu.filter((punto) => punto.alerta).length.toLocaleString('es-MX');
 document.getElementById('map-total-normal').textContent = puntosRpu.filter((punto) => !punto.alerta).length.toLocaleString('es-MX');
 
 puntosRpu.forEach((punto) => {
-    const marcador = L.marker([punto.latitud, punto.longitud], { icon: iconoPunto(punto.alerta), title: `${punto.rpu} - ${punto.nombre}` }).bindPopup(popupPunto(punto));
+    const marcador = L.marker([punto.latitud, punto.longitud], { icon: iconoPunto(punto), title: `${punto.rpu} - ${punto.nombre}` }).bindPopup(popupPunto(punto));
     marcadores.set(clavePunto(punto), marcador);
 });
 
-function iconoPunto(alerta) {
+function categoriaNivel(punto) {
+    const texto = normalizar(`${punto.nivel || ''} ${punto.subnivel || ''}`);
+    if (texto.includes('PREESCOLAR') || texto.includes('JARDIN') || texto.includes('KINDER')) return 'PREESCOLAR';
+    if (texto.includes('PRIMARIA')) return 'PRIMARIA';
+    if (texto.includes('SECUNDARIA') || texto.includes('TELESECUNDARIA')) return 'SECUNDARIA';
+    return 'OTRO';
+}
+
+function iconoPunto(punto) {
+    const categoria = categoriaNivel(punto);
+    const imagen = iconosNivel[categoria];
     return L.divIcon({
         className: 'map-rpu-marker-wrap',
-        html: `<span class="map-rpu-marker${alerta ? ' is-alert' : ''}"><i class="bi ${alerta ? 'bi-exclamation-lg' : 'bi-building'}"></i></span>`,
-        iconSize: [34, 34],
-        iconAnchor: [17, 17],
-        popupAnchor: [0, -18]
+        html: imagen
+            ? `<span class="map-rpu-marker map-rpu-marker-image${punto.alerta ? ' is-alert' : ''}"><img src="${imagen}" alt="${categoria}">${punto.alerta ? '<b><i class="bi bi-exclamation"></i></b>' : ''}</span>`
+            : `<span class="map-rpu-marker${punto.alerta ? ' is-alert' : ''}"><i class="bi ${punto.alerta ? 'bi-exclamation-lg' : 'bi-building'}"></i></span>`,
+        iconSize: imagen ? [46, 46] : [34, 34],
+        iconAnchor: imagen ? [23, 23] : [17, 17],
+        popupAnchor: [0, imagen ? -24 : -18]
     });
 }
 
@@ -200,10 +226,9 @@ function popupPunto(punto) {
 function obtenerVisibles() {
     const termino = normalizar(campoBusqueda.value);
     const municipioElegido = normalizar(municipio.value);
-    const nivelElegido = normalizar(nivel.value);
     return puntosRpu.filter((punto) => {
         const contenido = normalizar([punto.rpu, punto.cct, punto.nombre, punto.municipio, punto.localidad, punto.nivel, punto.subnivel].join(' '));
-        return (!termino || contenido.includes(termino)) && (!municipioElegido || normalizar(punto.municipio) === municipioElegido) && (!nivelElegido || normalizar(punto.nivel) === nivelElegido) && (!soloAlertas || punto.alerta);
+        return (!termino || contenido.includes(termino)) && (!municipioElegido || normalizar(punto.municipio) === municipioElegido) && (!nivelSeleccionado || categoriaNivel(punto) === nivelSeleccionado) && (!soloAlertas || punto.alerta);
     });
 }
 
@@ -217,6 +242,17 @@ function pintarMapa(ajustarVista = false) {
         const identificador = clavePunto(punto);
         return `<button class="map-rpu-result${punto.alerta ? ' is-alert' : ''}${resultadoActivo === identificador ? ' is-selected' : ''}" type="button" data-marker="${textoSeguro(identificador)}"><span>${textoSeguro(punto.rpu)}</span><strong>${textoSeguro(punto.nombre)}</strong><small>${textoSeguro(punto.localidad)} · ${textoSeguro(punto.municipio)}</small>${punto.alerta ? '<em><i class="bi bi-eye-fill"></i> Alerta reciente</em>' : ''}</button>`;
     }).join('') : '<div class="map-rpu-empty">No hay escuelas que coincidan con estos filtros.</div>';
+    muestra.forEach((punto) => {
+        const resultado = lista.querySelector(`[data-marker="${CSS.escape(clavePunto(punto))}"]`);
+        if (!resultado) return;
+        const categoria = categoriaNivel(punto);
+        const imagen = iconosNivel[categoria];
+        resultado.insertAdjacentHTML('afterbegin', imagen ? `<img src="${imagen}" alt="${categoria}">` : '<i class="bi bi-building"></i>');
+        const nivelResultado = document.createElement('small');
+        nivelResultado.className = 'map-rpu-result-level';
+        nivelResultado.textContent = punto.nivel || 'Nivel no registrado';
+        resultado.appendChild(nivelResultado);
+    });
     if (visibles.length > muestra.length) lista.insertAdjacentHTML('beforeend', `<div class="map-rpu-empty">Se muestran las primeras ${muestra.length} escuelas. Acota la búsqueda para ver las demás.</div>`);
     if (ajustarVista && visibles.length) mapa.fitBounds(L.latLngBounds(visibles.map((punto) => [punto.latitud, punto.longitud])), { padding: [34, 34], maxZoom: 13 });
 }
@@ -237,7 +273,13 @@ campoBusqueda.addEventListener('input', () => {
     temporizadorBusqueda = window.setTimeout(() => pintarMapa(false), 300);
 });
 municipio.addEventListener('change', () => pintarMapa(true));
-nivel.addEventListener('change', () => pintarMapa(true));
+document.querySelectorAll('[data-map-level]').forEach((boton) => {
+    boton.addEventListener('click', () => {
+        nivelSeleccionado = boton.dataset.mapLevel;
+        document.querySelectorAll('[data-map-level]').forEach((item) => item.classList.toggle('active', item === boton));
+        pintarMapa(true);
+    });
+});
 botonAlertas.addEventListener('click', () => {
     soloAlertas = !soloAlertas;
     botonAlertas.classList.toggle('is-active', soloAlertas);
@@ -248,7 +290,8 @@ botonAlertas.addEventListener('click', () => {
 document.getElementById('map-reset-filter').addEventListener('click', () => {
     campoBusqueda.value = '';
     municipio.value = '';
-    nivel.value = '';
+    nivelSeleccionado = '';
+    document.querySelectorAll('[data-map-level]').forEach((item) => item.classList.toggle('active', item.dataset.mapLevel === ''));
     soloAlertas = false;
     botonAlertas.classList.remove('is-active');
     botonAlertas.setAttribute('aria-pressed', 'false');

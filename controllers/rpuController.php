@@ -182,10 +182,13 @@ class RpuController
             $vinculos = $this->vinculos($conexion, $rpu);
             $ultimo = $historial[0] ?? null;
             $cctsVinculados = array_flip(array_map(static fn (array $vinculo): string => (string) $vinculo['cct'], $vinculos));
-            $sugerencias = array_values(array_filter(
-                $this->sugerencias($conexion, $rpu, $ultimo),
-                static fn (array $escuela): bool => !isset($cctsVinculados[(string) $escuela['cct']])
-            ));
+            $incluirSugerencias = (string) ($_POST['incluir_sugerencias'] ?? '1') !== '0';
+            $sugerencias = $incluirSugerencias
+                ? array_values(array_filter(
+                    $this->sugerencias($conexion, $rpu, $ultimo),
+                    static fn (array $escuela): bool => !isset($cctsVinculados[(string) $escuela['cct']])
+                ))
+                : [];
             $mapa = $this->mapa($vinculos[0] ?? $sugerencias[0] ?? null);
 
             $this->responder([
@@ -319,6 +322,9 @@ class RpuController
         $this->validarToken();
         try {
             $conexion = Conexion::conectar();
+            $this->asegurarIndice($conexion, 'cfe_consumos', 'idx_cfe_consumos_rpu_id', 'RPU, id');
+            $this->asegurarIndice($conexion, 'escuelas', 'idx_escuelas_localidad_municipio', 'NOMBRELOC, NOMBREMUN');
+            $this->asegurarIndice($conexion, 'escuelas', 'idx_escuelas_municipio_localidad', 'NOMBREMUN, NOMBRELOC');
             $pagina = max(1, (int) ($_POST['pagina'] ?? 1));
             $porPagina = 10;
             $offset = ($pagina - 1) * $porPagina;
@@ -326,7 +332,7 @@ class RpuController
                 'SELECT COUNT(*)
                  FROM (
                     SELECT MAX(id) AS consumo_id
-                    FROM cfe_consumos
+                    FROM cfe_consumos FORCE INDEX (idx_cfe_consumos_rpu_id)
                     GROUP BY RPU
                  ) ultimos
                  INNER JOIN cfe_consumos cc ON cc.id = ultimos.consumo_id
@@ -341,7 +347,7 @@ class RpuController
                 'SELECT cc.RPU, cc.division_cfe, cc.nombre_cfe, cc.direccion_cfe, cc.poblacion_cfe, cc.tarifa_cfe, cc.desde, cc.hasta, cc.total, cc.consumo
                  FROM (
                     SELECT MAX(id) AS consumo_id
-                    FROM cfe_consumos
+                    FROM cfe_consumos FORCE INDEX (idx_cfe_consumos_rpu_id)
                     GROUP BY RPU
                  ) ultimos
                  INNER JOIN cfe_consumos cc ON cc.id = ultimos.consumo_id
@@ -354,7 +360,9 @@ class RpuController
             $consulta->bindValue(':offset', $offset, PDO::PARAM_INT);
             $consulta->execute();
             $coincidencias = [];
+            $indiceEscuelas = $this->indiceEscuelasPorUbicacion($conexion);
             foreach ($consulta->fetchAll() as $fila) {
+                $referencia = $this->referenciaGeograficaCfe((string) ($fila['poblacion_cfe'] ?? ''));
                 $coincidencias[] = [
                     'rpu' => (string) $fila['RPU'],
                     'cfe' => [
@@ -367,7 +375,12 @@ class RpuController
                         'total' => (float) $fila['total'],
                         'consumo' => (float) $fila['consumo']
                     ],
-                    'sugerencias' => $this->sugerencias($conexion, (string) $fila['RPU'], $fila)
+                    'sugerencias' => $this->evaluarSugerencias(
+                        $this->candidatosRapidosPorUbicacion($indiceEscuelas, $referencia),
+                        (string) ($fila['nombre_cfe'] ?? ''),
+                        $referencia,
+                        (string) ($fila['direccion_cfe'] ?? '')
+                    )
                 ];
             }
             $this->responder([
@@ -855,6 +868,9 @@ class RpuController
         $this->asegurarColumna($conexion, 'cfe_consumos', 'formula_validacion', 'DECIMAL(14,2) NOT NULL DEFAULT 0');
         $this->asegurarColumna($conexion, 'cfe_consumos', 'escuela_id', 'BIGINT UNSIGNED NULL');
         $this->asegurarColumna($conexion, 'escuelas_rpu', 'escuela_id', 'BIGINT UNSIGNED NULL');
+        $this->asegurarIndice($conexion, 'cfe_consumos', 'idx_cfe_consumos_rpu_id', 'RPU, id');
+        $this->asegurarIndice($conexion, 'escuelas', 'idx_escuelas_localidad_municipio', 'NOMBRELOC, NOMBREMUN');
+        $this->asegurarIndice($conexion, 'escuelas', 'idx_escuelas_municipio_localidad', 'NOMBREMUN, NOMBRELOC');
     }
 
     private function asegurarColumna(PDO $conexion, string $tabla, string $columna, string $definicion): void
@@ -865,6 +881,17 @@ class RpuController
         $consulta->execute([$tabla, $columna]);
         if ((int) $consulta->fetchColumn() === 0) {
             $conexion->exec('ALTER TABLE `' . $tabla . '` ADD COLUMN `' . $columna . '` ' . $definicion);
+        }
+    }
+
+    private function asegurarIndice(PDO $conexion, string $tabla, string $indice, string $columnas): void
+    {
+        $consulta = $conexion->prepare(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?'
+        );
+        $consulta->execute([$tabla, $indice]);
+        if ((int) $consulta->fetchColumn() === 0) {
+            $conexion->exec('ALTER TABLE `' . $tabla . '` ADD INDEX `' . $indice . '` (' . $columnas . ')');
         }
     }
 
@@ -916,7 +943,7 @@ class RpuController
         return array_map(fn (array $fila): array => $this->escuelaDesdeFila($fila, 100, 'Vinculo confirmado'), $consulta->fetchAll());
     }
 
-    private function sugerencias(PDO $conexion, string $rpu, ?array $ultimo): array
+    private function sugerencias(PDO $conexion, string $rpu, ?array $ultimo, bool $busquedaAmplia = true): array
     {
         if (!$ultimo) {
             return [];
@@ -959,8 +986,50 @@ class RpuController
             if ($filas) {
                 break;
             }
+            if (!$busquedaAmplia) {
+                break;
+            }
         }
         return $this->evaluarSugerencias($filas, $nombre, $referencia, $direccion);
+    }
+
+    private function indiceEscuelasPorUbicacion(PDO $conexion): array
+    {
+        $filas = $conexion->query(
+            'SELECT id, CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL, NIVEL, HOMO, TURNO, ZONA, SECTOR, ORIGEN, CLASIFICACION, TIPOCT
+             FROM escuelas
+             WHERE NOMBRELOC IS NOT NULL AND NOMBRELOC <> ""'
+        )->fetchAll();
+        $porLocalidad = [];
+        $porMunicipio = [];
+        $porUbicacion = [];
+        foreach ($filas as $fila) {
+            $localidad = $this->normalizar((string) ($fila['NOMBRELOC'] ?? ''));
+            $municipio = $this->normalizar((string) ($fila['NOMBREMUN'] ?? ''));
+            if ($localidad !== '') {
+                $porLocalidad[$localidad][] = $fila;
+            }
+            if ($municipio !== '') {
+                $porMunicipio[$municipio][] = $fila;
+            }
+            if ($localidad !== '' && $municipio !== '') {
+                $porUbicacion[$localidad . '|' . $municipio][] = $fila;
+            }
+        }
+        return ['localidad' => $porLocalidad, 'municipio' => $porMunicipio, 'ubicacion' => $porUbicacion];
+    }
+
+    private function candidatosRapidosPorUbicacion(array $indice, array $referencia): array
+    {
+        $localidad = $this->normalizar((string) ($referencia['localidad'] ?? ''));
+        $municipio = $this->normalizar((string) ($referencia['municipio'] ?? ''));
+        if ($localidad !== '' && $municipio !== '') {
+            return $indice['ubicacion'][$localidad . '|' . $municipio] ?? [];
+        }
+        if ($localidad !== '') {
+            return $indice['localidad'][$localidad] ?? [];
+        }
+        return $municipio !== '' ? ($indice['municipio'][$municipio] ?? []) : [];
     }
 
     private function evaluarSugerencias(array $filas, string $nombre, array $referencia, string $direccion): array

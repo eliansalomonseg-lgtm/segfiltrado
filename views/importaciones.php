@@ -127,6 +127,9 @@ $queryBase = $_GET;
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Vinculos RPU-CCT | SEG Guerrero</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <link href="../assets/css/seg-executive.css" rel="stylesheet">
@@ -134,12 +137,12 @@ $queryBase = $_GET;
 <body>
 <?php include_once __DIR__ . '/fragments/navbar.php'; ?>
 <?php include_once __DIR__ . '/fragments/sidebar.php'; ?>
-<main class="content">
+<main class="content link-directory-view">
     <section class="heading">
         <div>
-            <span class="eyebrow">ESCUELAS_RPU</span>
-            <h1>Vinculos RPU-CCT</h1>
-            <p>Consulta y exporta las relaciones confirmadas entre medidores de luz (RPU) y escuelas oficiales (CCT). Filtra por tarifa, subnivel educativo o estatus.</p>
+            <span class="eyebrow">PADRÓN DE VÍNCULOS</span>
+            <h1>Vínculos RPU-CCT</h1>
+            <p>Consulta vínculos confirmados, busca un RPU o revisa sugerencias pendientes.</p>
         </div>
         <span class="alert-gold"><i class="bi bi-eye me-1"></i><?= number_format($totalFiltrado) ?> visibles</span>
     </section>
@@ -165,12 +168,17 @@ $queryBase = $_GET;
             <small>Compartidos</small>
         </article>
     </section>
-    <section class="results-card link-workbench">
+    <nav class="link-view-tabs" aria-label="Secciones del padrón de vínculos">
+        <button class="active" type="button" data-link-tab="confirmed"><i class="bi bi-link-45deg"></i>Vínculos confirmados</button>
+        <button type="button" data-link-tab="manual"><i class="bi bi-search"></i>Buscar y vincular</button>
+        <button type="button" data-link-tab="suggestions"><i class="bi bi-stars"></i>Sugerencias pendientes</button>
+    </nav>
+    <section class="results-card link-workbench" data-link-panel="manual" hidden>
         <div class="results-head">
             <div>
-                <span class="eyebrow">EMPAREJAR RPU</span>
-                <h2>Relaciona un medidor con el padrón maestro</h2>
-                <p>Busca un RPU cargado y revisa escuelas sugeridas por nombre, domicilio, localidad, nivel y estatus.</p>
+                <span class="eyebrow">BÚSQUEDA INDIVIDUAL</span>
+                <h2>Buscar un RPU</h2>
+                <p>Consulta el recibo y vincúlalo con la escuela correcta.</p>
             </div>
         </div>
         <form id="rpu-match-form" class="import-filters link-match-form">
@@ -183,24 +191,24 @@ $queryBase = $_GET;
         <div id="rpu-match-status" class="adjustment-status">Consulta un RPU que ya exista en los reportes CFE cargados.</div>
         <div id="rpu-match-result" class="link-match-result" hidden></div>
     </section>
-    <section class="results-card suggestion-inbox">
+    <section class="results-card suggestion-inbox" data-link-panel="suggestions" hidden>
         <div class="results-head">
             <div>
                 <span class="eyebrow">COINCIDENCIAS PENDIENTES</span>
                 <h2>RPUs sin vínculo con escuelas sugeridas</h2>
-                <p>El sistema toma el último recibo de cada RPU y prioriza coincidencias del padrón maestro.</p>
+                <p>Revisa únicamente los medidores que todavía no tienen escuela confirmada.</p>
             </div>
             <div class="d-flex flex-wrap gap-2"><button id="auto-link-suggestions" class="btn btn-success btn-sm" type="button"><i class="bi bi-lightning-charge me-2"></i>Auto-vincular todas ≥50%</button><button id="refresh-suggestions" class="btn-seg compact-action" type="button"><i class="bi bi-arrow-clockwise me-2"></i>Actualizar</button></div>
         </div>
-        <div id="suggestion-status" class="adjustment-status">Usa Actualizar para cargar las coincidencias pendientes sin retrasar la búsqueda del padrón.</div>
+        <div id="suggestion-status" class="adjustment-status">Abre esta sección para cargar las coincidencias pendientes.</div>
         <div id="suggestion-list" class="suggestion-list"></div>
         <div id="suggestion-pager" class="pager" hidden></div>
     </section>
-    <section class="results-card import-control">
+    <section class="results-card import-control" data-link-panel="confirmed">
         <div class="results-head">
             <div>
                 <span class="eyebrow">CONTROL</span>
-                <h2>Padron de vinculos confirmados</h2>
+                <h2>Padrón de vínculos confirmados</h2>
             </div>
             <form class="export-form" method="post" action="../controllers/escuelaController.php">
                 <input type="hidden" name="accion" value="exportar_vinculos">
@@ -283,7 +291,7 @@ $queryBase = $_GET;
                         <td><span class="status-pill"><?= htmlspecialchars((string) ($vinculo['tarifa_cfe'] ?: 'N/D'), ENT_QUOTES, 'UTF-8') ?></span></td>
                         <td><span class="status-pill <?= (int) ($vinculo['total_rpu'] ?? 0) > 1 ? 'status-warn' : 'status-ok' ?>"><?= number_format((int) ($vinculo['total_rpu'] ?? 0)) ?> CCT</span></td>
                         <td><span class="status-pill status-ok">STATUS <?= htmlspecialchars((string) ($vinculo['STATUS'] ?: 'N/D'), ENT_QUOTES, 'UTF-8') ?></span></td>
-                        <td><button class="unlink-link" type="button" data-unlink-rpu="<?= htmlspecialchars((string) $vinculo['RPU'], ENT_QUOTES, 'UTF-8') ?>" data-unlink-cct="<?= htmlspecialchars((string) $vinculo['CCT'], ENT_QUOTES, 'UTF-8') ?>"><i class="bi bi-link-45deg"></i> Desvincular</button></td>
+                        <td><button class="unlink-link" type="button" data-unlink-rpu="<?= htmlspecialchars((string) $vinculo['RPU'], ENT_QUOTES, 'UTF-8') ?>" data-unlink-cct="<?= htmlspecialchars((string) $vinculo['CCT'], ENT_QUOTES, 'UTF-8') ?>"><i class="bi <?= (int) ($vinculo['total_rpu'] ?? 0) > 1 ? 'bi-diagram-3' : 'bi-link-45deg' ?>"></i> <?= (int) ($vinculo['total_rpu'] ?? 0) > 1 ? 'Elegir CCT' : 'Desvincular' ?></button></td>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
@@ -300,6 +308,7 @@ $queryBase = $_GET;
         </div>
     </section>
 </main>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
 const autoFilter = document.querySelector('[data-auto-filter]');
 if (autoFilter) {
@@ -329,9 +338,59 @@ const suggestionPager = document.getElementById('suggestion-pager');
 const refreshSuggestions = document.getElementById('refresh-suggestions');
 const autoLinkSuggestions = document.getElementById('auto-link-suggestions');
 const linksBody = document.getElementById('links-body');
+const linkTabs = document.querySelectorAll('[data-link-tab]');
+const linkPanels = document.querySelectorAll('[data-link-panel]');
 let suggestionPage = 1;
 let currentSuggestionRows = [];
+let suggestionsLoaded = false;
 const matchEscape = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character]));
+
+async function leerRespuestaJson(response, mensajeBase) {
+    const texto = await response.text();
+    try {
+        const datos = JSON.parse(texto);
+        if (!response.ok || !datos.ok) {
+            throw new Error(datos.error || mensajeBase);
+        }
+        return datos;
+    } catch (error) {
+        if (error instanceof SyntaxError) {
+            const detalle = texto.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+            throw new Error(detalle || mensajeBase);
+        }
+        throw error;
+    }
+}
+
+function abrirCargaSugerencias() {
+    if (!window.Swal) {
+        return () => {};
+    }
+    Swal.fire({
+        title: 'Buscando sugerencias',
+        text: 'Revisando los RPUs pendientes y sus escuelas cercanas.',
+        allowEscapeKey: false,
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading()
+    });
+    return () => Swal.close();
+}
+
+function mostrarSeccionVinculos(seccion) {
+    linkTabs.forEach((tab) => tab.classList.toggle('active', tab.dataset.linkTab === seccion));
+    linkPanels.forEach((panel) => {
+        panel.hidden = panel.dataset.linkPanel !== seccion;
+    });
+    if (seccion === 'suggestions' && !suggestionsLoaded) {
+        cargarSugerencias(1).then(() => {
+            suggestionsLoaded = true;
+        }).catch((error) => {
+            suggestionStatus.textContent = error.message;
+        });
+    }
+}
+
+linkTabs.forEach((tab) => tab.addEventListener('click', () => mostrarSeccionVinculos(tab.dataset.linkTab)));
 
 function controlCctManual(rpu) {
     return `<form class="manual-cct-link" data-manual-cct-rpu="${matchEscape(rpu)}"><label>Asignar CCT manualmente</label><div><input name="cct" type="text" maxlength="20" autocomplete="off" placeholder="Escribe el CCT correcto"><button class="btn-seg compact-action" type="submit"><i class="bi bi-link-45deg me-1"></i>Vincular CCT</button></div></form>`;
@@ -442,10 +501,14 @@ async function cargarSugerencias(pagina = 1) {
     suggestionPage = pagina;
     suggestionStatus.textContent = 'Buscando coincidencias en el padrón maestro...';
     const body = new URLSearchParams({accion: 'sugerir_vinculos_paginados', csrf, pagina: String(pagina)});
-    const response = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body});
-    const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible cargar las coincidencias.');
-    renderSugerencias(data);
+    const cerrarCarga = abrirCargaSugerencias();
+    try {
+        const response = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body});
+        const data = await leerRespuestaJson(response, 'No fue posible cargar las coincidencias.');
+        renderSugerencias(data);
+    } finally {
+        cerrarCarga();
+    }
 }
 
 suggestionList.addEventListener('click', async (event) => {
@@ -563,18 +626,51 @@ linksBody.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-unlink-rpu]');
     if (!button) return;
     const rpu = button.dataset.unlinkRpu;
-    const cct = button.dataset.unlinkCct;
-    if (!window.confirm(`¿Confirmas desvincular el RPU ${rpu} del CCT ${cct}?`)) return;
-    button.disabled = true;
     try {
+        const consulta = new URLSearchParams({accion: 'buscar_rpu', csrf, rpu});
+        const respuestaConsulta = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body: consulta});
+        const expediente = await leerRespuestaJson(respuestaConsulta, 'No fue posible consultar los CCT vinculados.');
+        const vinculos = expediente.vinculos || [];
+        let cct = button.dataset.unlinkCct;
+        if (vinculos.length > 1) {
+            const opciones = Object.fromEntries(vinculos.map((vinculo) => [
+                vinculo.cct,
+                `${vinculo.cct} - ${vinculo.nombre || 'Escuela sin nombre'} - ${vinculo.localidad || 'Sin localidad'}`
+            ]));
+            const seleccion = await Swal.fire({
+                title: `RPU ${rpu}`,
+                text: 'Este RPU está vinculado a más de una escuela. Elige el CCT que deseas desvincular.',
+                input: 'select',
+                inputOptions: opciones,
+                inputValue: cct,
+                showCancelButton: true,
+                confirmButtonText: 'Desvincular CCT seleccionado',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#6a1b29'
+            });
+            if (!seleccion.isConfirmed) return;
+            cct = seleccion.value;
+        } else {
+            const confirmacion = await Swal.fire({
+                icon: 'warning',
+                title: 'Desvincular escuela',
+                text: `¿Deseas quitar el vínculo entre el RPU ${rpu} y el CCT ${cct}?`,
+                showCancelButton: true,
+                confirmButtonText: 'Desvincular',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#6a1b29'
+            });
+            if (!confirmacion.isConfirmed) return;
+        }
+        button.disabled = true;
         const body = new URLSearchParams({accion: 'desvincular_rpu', csrf, rpu, cct});
         const response = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body});
-        const data = await response.json();
-        if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible desvincular.');
+        await leerRespuestaJson(response, 'No fue posible desvincular.');
+        await Swal.fire({icon: 'success', title: 'Vínculo eliminado', text: `El CCT ${cct} ya no está asociado al RPU ${rpu}.`, confirmButtonColor: '#6a1b29'});
         window.location.reload();
     } catch (error) {
         button.disabled = false;
-        window.alert(error.message);
+        Swal.fire({icon: 'error', title: 'No se pudo desvincular', text: error.message, confirmButtonColor: '#6a1b29'});
     }
 });
 
