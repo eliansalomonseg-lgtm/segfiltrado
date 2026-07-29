@@ -278,9 +278,9 @@ function historialFiltrado() {
 
 function datosEncabezadoRpu() {
     return {
-        nombre: currentSchool.nombre || currentCfe.nombre || 'Sin nombre registrado',
-        domicilio: currentSchool.domicilio || currentCfe.direccion || 'Sin domicilio registrado',
-        localidad: currentSchool.localidad || currentCfe.poblacion || '',
+        nombre: currentCfe.nombre || currentSchool.nombre || 'Sin nombre registrado',
+        domicilio: currentCfe.direccion || currentSchool.domicilio || 'Sin domicilio registrado',
+        localidad: currentCfe.poblacion || currentSchool.localidad || '',
         municipio: currentSchool.municipio || ''
     };
 }
