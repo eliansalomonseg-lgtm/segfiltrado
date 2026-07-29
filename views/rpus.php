@@ -155,6 +155,10 @@ function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
 }
 
+function normalizar(value) {
+    return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+}
+
 function setSummary(resumen) {
     summary.querySelector('[data-rpu-summary="registros"]').textContent = number.format(resumen.registros || 0);
     summary.querySelector('[data-rpu-summary="total_actual"]').textContent = money.format(resumen.total_actual || 0);
@@ -415,12 +419,12 @@ function validarTablaRpu() {
 function imprimirTablaRpu() {
     const historial = validarTablaRpu();
     if (!historial) return;
+    const contenido = contenidoImpresionFormal(historial);
     const printWindow = window.open('', '_blank', 'width=1150,height=850');
     if (!printWindow) {
         statusBox.textContent = 'El navegador bloqueo la ventana de impresion. Permite ventanas emergentes e intentalo otra vez.';
         return;
     }
-    const contenido = contenidoImpresionFormal(historial);
     printWindow.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>RPU ${escapeHtml(currentRpu)}</title><style>@page{size:landscape;margin:12mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{color:#222;font-family:Arial,sans-serif;margin:0}.rpu-export-header{border-bottom:3px solid #6a1b29;margin-bottom:16px;padding-bottom:10px}.rpu-export-header span{color:#6a1b29;font-size:10px;font-weight:800;letter-spacing:1.1px}.rpu-export-header h1{font-size:26px;margin:5px 0}.rpu-export-header p{font-size:12px;margin:3px 0}.rpu-export-header small{color:#666;font-size:10px}.rpu-export-table{border-collapse:collapse;font-size:10px;width:100%}.rpu-export-table th{background:#6a1b29;color:#fff;text-align:left}.rpu-export-table th,.rpu-export-table td{border:1px solid #d9d4d0;padding:7px;vertical-align:top}.rpu-year-label td{background:#f6efe2;color:#6a1b29;font-size:11px;font-weight:800}.rpu-year-total td{background:#f8f0f1;font-weight:800}.rpu-export-table td:nth-child(5),.rpu-export-table td:nth-child(6){text-align:right;white-space:nowrap}</style></head><body>${contenido}</body></html>`);
     printWindow.document.close();
     printWindow.focus();
