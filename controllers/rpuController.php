@@ -180,6 +180,7 @@ class RpuController
             $conexion = Conexion::conectar();
             $historial = $this->historial($conexion, $rpu);
             $vinculos = $this->vinculos($conexion, $rpu);
+            $ultimoPeriodoSistema = $conexion->query('SELECT anio, mes FROM cfe_reportes ORDER BY anio DESC, mes DESC, id DESC LIMIT 1')->fetch();
             $ultimo = $historial[0] ?? null;
             $cctsVinculados = array_flip(array_map(static fn (array $vinculo): string => (string) $vinculo['cct'], $vinculos));
             $incluirSugerencias = (string) ($_POST['incluir_sugerencias'] ?? '1') !== '0';
@@ -209,7 +210,10 @@ class RpuController
                 'sugerencias' => $sugerencias,
                 'historial' => array_reverse($historial),
                 'mapa' => $mapa,
-                'resumen' => $this->resumen($historial)
+                'resumen' => $this->resumen($historial),
+                'ultimo_periodo_sistema' => $ultimoPeriodoSistema
+                    ? sprintf('%04d-%02d', (int) $ultimoPeriodoSistema['anio'], (int) $ultimoPeriodoSistema['mes'])
+                    : ''
             ]);
         } catch (Throwable $e) {
             $this->responder(['ok' => false, 'error' => $e->getMessage()], 500);

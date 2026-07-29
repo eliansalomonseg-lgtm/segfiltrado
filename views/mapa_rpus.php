@@ -135,6 +135,10 @@ $etiquetaReporte = $ultimoReporte ? ($meses[(int) $ultimoReporte['mes']] ?? 'Mes
             <div class="map-rpu-map-head">
                 <div class="map-rpu-map-title"><i class="bi bi-buildings"></i><span>Escuelas con RPU confirmado</span></div>
                 <div class="map-rpu-map-tools">
+                    <div class="map-view-mode" role="group" aria-label="Tipo de mapa">
+                        <button class="active" type="button" data-map-base="plano"><i class="bi bi-map"></i><span>Plano</span></button>
+                        <button type="button" data-map-base="satelital"><i class="bi bi-globe-americas"></i><span>Satelital</span></button>
+                    </div>
                     <div class="map-rpu-legend">
                         <span><img src="../imgs/prescolar.png" alt="">Preescolar</span>
                         <span><img src="../imgs/primaria.png" alt="">Primaria</span>
@@ -154,8 +158,28 @@ $etiquetaReporte = $ultimoReporte ? ($meses[(int) $ultimoReporte['mes']] ?? 'Mes
 <script>
 const puntosRpu = <?= json_encode($puntos, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 const mapa = L.map('map-rpu-canvas', { zoomControl: true }).setView([17.55, -99.55], 7);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '&copy; OpenStreetMap' }).addTo(mapa);
-const agrupador = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 48, chunkedLoading: true, chunkInterval: 80, chunkDelay: 18 });
+const capasBase = {
+    plano: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '&copy; OpenStreetMap' }),
+    satelital: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18, attribution: 'Tiles &copy; Esri' })
+};
+let capaBaseActiva = capasBase.plano;
+capaBaseActiva.addTo(mapa);
+const agrupador = L.markerClusterGroup({
+    showCoverageOnHover: false,
+    maxClusterRadius: 52,
+    chunkedLoading: true,
+    chunkInterval: 80,
+    chunkDelay: 18,
+    iconCreateFunction: (grupo) => {
+        const total = grupo.getChildCount();
+        return L.divIcon({
+            className: 'map-rpu-cluster-wrap',
+            html: `<span class="map-rpu-cluster"><strong>${total.toLocaleString('es-MX')}</strong><small>escuelas</small></span>`,
+            iconSize: [64, 64],
+            iconAnchor: [32, 32]
+        });
+    }
+});
 mapa.addLayer(agrupador);
 
 const campoBusqueda = document.getElementById('map-rpu-search');
@@ -278,6 +302,16 @@ document.querySelectorAll('[data-map-level]').forEach((boton) => {
         nivelSeleccionado = boton.dataset.mapLevel;
         document.querySelectorAll('[data-map-level]').forEach((item) => item.classList.toggle('active', item === boton));
         pintarMapa(true);
+    });
+});
+document.querySelectorAll('[data-map-base]').forEach((boton) => {
+    boton.addEventListener('click', () => {
+        const base = boton.dataset.mapBase;
+        if (!capasBase[base] || capaBaseActiva === capasBase[base]) return;
+        mapa.removeLayer(capaBaseActiva);
+        capaBaseActiva = capasBase[base];
+        capaBaseActiva.addTo(mapa);
+        document.querySelectorAll('[data-map-base]').forEach((item) => item.classList.toggle('active', item === boton));
     });
 });
 botonAlertas.addEventListener('click', () => {

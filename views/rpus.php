@@ -101,6 +101,8 @@ if (empty($_SESSION['seg_csrf'])) {
                 <label class="rpu-history-filter"><span>Año</span><select id="rpu-history-year"><option value="all">Todo el historial</option></select></label>
                 <label class="rpu-print-filter"><span>Formato de impresión</span><select id="rpu-print-mode"><option value="summary">Todo el periodo seleccionado</option><option value="periods">Un periodo por hoja</option></select></label>
                 <button id="print-rpu-history" class="btn-seg compact-action" type="button"><i class="bi bi-printer me-2"></i>Imprimir RPU</button>
+                <button id="print-rpu-table" class="btn btn-outline-dark compact-action" type="button"><i class="bi bi-table me-2"></i>Imprimir tabla</button>
+                <button id="export-rpu-excel" class="btn btn-outline-dark compact-action" type="button"><i class="bi bi-file-earmark-excel me-2"></i>Exportar Excel</button>
             </div>
             <div id="rpu-chart" class="rpu-chart"></div>
         </article>
@@ -138,8 +140,13 @@ const historyBody = document.getElementById('rpu-history-body');
 const historyYearFilter = document.getElementById('rpu-history-year');
 const printModeFilter = document.getElementById('rpu-print-mode');
 const printRpuHistory = document.getElementById('print-rpu-history');
+const printRpuTable = document.getElementById('print-rpu-table');
+const exportRpuExcel = document.getElementById('export-rpu-excel');
 let currentRpu = '';
 let currentHistory = [];
+let currentSchool = {};
+let currentCfe = {};
+let currentSystemPeriod = '';
 
 const money = new Intl.NumberFormat('es-MX', {style: 'currency', currency: 'MXN'});
 const number = new Intl.NumberFormat('es-MX');
@@ -265,6 +272,176 @@ function historialFiltrado() {
     return year === 'all' ? currentHistory : currentHistory.filter((fila) => String(fila.anio) === year);
 }
 
+function datosEncabezadoRpu() {
+    return {
+        nombre: currentSchool.nombre || currentCfe.nombre || 'Sin nombre registrado',
+        domicilio: currentSchool.domicilio || currentCfe.direccion || 'Sin domicilio registrado',
+        localidad: currentSchool.localidad || currentCfe.poblacion || '',
+        municipio: currentSchool.municipio || ''
+    };
+}
+
+function gruposAnuales(historial) {
+    return Object.entries(historial.reduce((grupos, fila) => {
+        (grupos[fila.anio] ||= []).push(fila);
+        return grupos;
+    }, {})).sort((a, b) => Number(a[0]) - Number(b[0]));
+}
+
+function tablaRpuAnual(historial, paraExcel = false) {
+    return gruposAnuales(historial).map(([anio, filas]) => {
+        const total = filas.reduce((suma, fila) => suma + Number(fila.total || 0), 0);
+        const consumo = filas.reduce((suma, fila) => suma + Number(fila.consumo || 0), 0);
+        const detalle = filas.slice().reverse().map((fila) => `<tr><td>${escapeHtml(fila.anio)}-${String(fila.mes).padStart(2, '0')}</td><td>${escapeHtml(fila.desde || 'Sin fecha')}</td><td>${escapeHtml(fila.hasta || 'Sin fecha')}</td><td>${escapeHtml(fila.tarifa_cfe || 'Sin tarifa')}</td><td class="currency">${paraExcel ? Number(fila.total || 0).toFixed(2) : money.format(fila.total || 0)}</td><td>${paraExcel ? Number(fila.consumo || 0).toFixed(0) : `${number.format(fila.consumo || 0)} kWh`}</td><td>${escapeHtml(fila.alertas || 'Sin alertas')}</td></tr>`).join('');
+        const subtotal = `<tr class="rpu-year-total"><td colspan="4">TOTAL DEL AÑO ${escapeHtml(anio)} - ${number.format(filas.length)} reportes</td><td class="currency">${paraExcel ? total.toFixed(2) : money.format(total)}</td><td>${paraExcel ? consumo.toFixed(0) : `${number.format(consumo)} kWh`}</td><td></td></tr>`;
+        return `<tr class="rpu-year-label"><td colspan="7">AÑO ${escapeHtml(anio)}</td></tr>${detalle}${subtotal}`;
+    }).join('');
+}
+
+function resumenGeneralRpu(historial) {
+    return {
+        reportes: historial.length,
+        total: historial.reduce((suma, fila) => suma + Number(fila.total || 0), 0),
+        consumo: historial.reduce((suma, fila) => suma + Number(fila.consumo || 0), 0)
+    };
+}
+
+function nombrePeriodo(anio, mes) {
+    const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    return `${meses[Math.max(1, Math.min(12, Number(mes) || 1)) - 1]} ${anio}`;
+}
+
+function nombrePeriodoClave(periodo) {
+    const [anio, mes] = String(periodo || '').split('-');
+    return anio && mes ? nombrePeriodo(anio, mes) : 'Sin registros';
+}
+
+function diferenciaMeses(periodoInicial, periodoFinal) {
+    const [anioInicial, mesInicial] = String(periodoInicial || '').split('-').map(Number);
+    const [anioFinal, mesFinal] = String(periodoFinal || '').split('-').map(Number);
+    if (!anioInicial || !mesInicial || !anioFinal || !mesFinal) return Number.POSITIVE_INFINITY;
+    return (anioFinal - anioInicial) * 12 + (mesFinal - mesInicial);
+}
+
+function esCobroBimestral(fila) {
+    const tipo = normalizar(fila.tipo_periodo || '');
+    const tarifa = normalizar(fila.tarifa_cfe || '').replace(/\s/g, '');
+    if (tipo.includes('MENSUAL')) return false;
+    if (tipo.includes('BIMESTRAL')) return true;
+    return !['03', '68', '78'].includes(tarifa);
+}
+
+function estadoVigenciaRpu() {
+    if (!currentHistory.length) {
+        return {desde: 'Sin registros', hasta: 'Sin registros', estado: 'Sin historial'};
+    }
+    const primero = currentHistory[0];
+    const ultimo = currentHistory[currentHistory.length - 1];
+    const desdeClave = `${primero.anio}-${String(primero.mes).padStart(2, '0')}`;
+    const hastaClave = `${ultimo.anio}-${String(ultimo.mes).padStart(2, '0')}`;
+    const bimestral = esCobroBimestral(ultimo);
+    const diferencia = diferenciaMeses(hastaClave, currentSystemPeriod);
+    const activo = currentSystemPeriod !== '' && (diferencia === 0 || (bimestral && diferencia === 1));
+    return {
+        desde: nombrePeriodoClave(desdeClave),
+        hasta: nombrePeriodoClave(hastaClave),
+        estado: activo && bimestral && diferencia === 1 ? 'ACTIVO (BIMESTRAL)' : (activo ? 'ACTIVO' : 'INACTIVO'),
+        activo
+    };
+}
+
+function encabezadoFormalRpu(etiqueta) {
+    const encabezado = datosEncabezadoRpu();
+    const ubicacion = [encabezado.domicilio, encabezado.localidad, encabezado.municipio].filter(Boolean).map(escapeHtml).join(' - ');
+    return `<header class="rpu-export-header"><span>SECRETARIA DE EDUCACION GUERRERO</span><h1>RPU ${escapeHtml(currentRpu)}</h1><p class="rpu-export-name">${escapeHtml(encabezado.nombre)}</p><p>${ubicacion}</p><small>${escapeHtml(etiqueta)}</small></header>`;
+}
+
+function contenidoImpresionFormal(historial) {
+    const hojas = gruposAnuales(historial).map(([anio, filas]) => `<section class="rpu-print-sheet" style="break-after:page;min-height:180mm">${encabezadoFormalRpu(`Relacion anual de pagos - ${anio}`)}<table class="rpu-export-table"><thead><tr><th>Periodo</th><th>Desde</th><th>Hasta</th><th>Tarifa</th><th>Importe pagado</th><th>Consumo</th><th>Alertas</th></tr></thead><tbody>${tablaRpuAnual(filas)}</tbody></table></section>`).join('');
+    const resumen = resumenGeneralRpu(historial);
+    const vigencia = estadoVigenciaRpu();
+    const filasResumen = gruposAnuales(historial).map(([anio, filas]) => {
+        const totalAnual = resumenGeneralRpu(filas);
+        return `<tr><td>AÑO ${escapeHtml(anio)}</td><td>${number.format(totalAnual.reportes)}</td><td>${money.format(totalAnual.total)}</td><td>${number.format(totalAnual.consumo)} kWh</td></tr>`;
+    }).join('');
+    const tablaResumen = `<table class="rpu-export-table"><thead><tr><th>Año</th><th>Reportes</th><th>Importe pagado</th><th>Consumo</th></tr></thead><tbody>${filasResumen}<tr class="rpu-year-total"><td>TOTAL DE TODOS LOS AÑOS</td><td>${number.format(resumen.reportes)}</td><td>${money.format(resumen.total)}</td><td>${number.format(resumen.consumo)} kWh</td></tr></tbody></table>`;
+    const colorEstatus = vigencia.activo ? '#087957' : '#a34726';
+    const tablaVigencia = `<table class="rpu-export-table" style="margin-bottom:16px"><thead><tr><th>Primer periodo con reporte</th><th>Ultimo periodo con reporte</th><th>Estatus del RPU</th></tr></thead><tbody><tr><td>${escapeHtml(vigencia.desde)}</td><td>${escapeHtml(vigencia.hasta)}</td><td style="color:${colorEstatus};font-weight:800">${escapeHtml(vigencia.estado)}</td></tr></tbody></table>`;
+    return `${hojas}<section class="rpu-print-total" style="min-height:180mm">${encabezadoFormalRpu('Resumen general del historial')}${tablaVigencia}${tablaResumen}</section>`;
+}
+
+function escapeXml(value) {
+    return String(value ?? '').replace(/[<>&'\"]/g, (char) => ({'<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;'}[char]));
+}
+
+function celdaExcel(valor, tipo = 'String', estilo = '') {
+    return `<Cell${estilo ? ` ss:StyleID="${estilo}"` : ''}><Data ss:Type="${tipo}">${escapeXml(valor)}</Data></Cell>`;
+}
+
+function hojaExcelAnual(anio, filas) {
+    const encabezado = datosEncabezadoRpu();
+    const total = resumenGeneralRpu(filas);
+    const datos = filas.slice().reverse().map((fila) => `<Row>${celdaExcel(`${fila.anio}-${String(fila.mes).padStart(2, '0')}`)}${celdaExcel(fila.desde || 'Sin fecha')}${celdaExcel(fila.hasta || 'Sin fecha')}${celdaExcel(fila.tarifa_cfe || 'Sin tarifa')}${celdaExcel(Number(fila.total || 0), 'Number', 'Currency')}${celdaExcel(Number(fila.consumo || 0), 'Number', 'Integer')}${celdaExcel(fila.alertas || 'Sin alertas')}</Row>`).join('');
+    return `<Worksheet ss:Name="${escapeXml(String(anio))}"><Table><Column ss:Width="90"/><Column ss:Width="95"/><Column ss:Width="95"/><Column ss:Width="65"/><Column ss:Width="105"/><Column ss:Width="90"/><Column ss:Width="260"/><Row><Cell ss:MergeAcross="6" ss:StyleID="Institution"><Data ss:Type="String">SECRETARIA DE EDUCACION GUERRERO</Data></Cell></Row><Row><Cell ss:MergeAcross="6" ss:StyleID="Title"><Data ss:Type="String">RPU ${escapeXml(currentRpu)}</Data></Cell></Row><Row><Cell ss:MergeAcross="6" ss:StyleID="Name"><Data ss:Type="String">${escapeXml(encabezado.nombre)}</Data></Cell></Row><Row><Cell ss:MergeAcross="6"><Data ss:Type="String">${escapeXml([encabezado.domicilio, encabezado.localidad, encabezado.municipio].filter(Boolean).join(' - '))}</Data></Cell></Row><Row/><Row>${['Periodo', 'Desde', 'Hasta', 'Tarifa', 'Importe pagado', 'Consumo', 'Alertas'].map((titulo) => celdaExcel(titulo, 'String', 'TableHeader')).join('')}</Row>${datos}<Row>${celdaExcel(`TOTAL ${anio} - ${filas.length} reportes`, 'String', 'TotalLabel')}<Cell ss:MergeAcross="2" ss:StyleID="TotalLabel"/><Cell ss:StyleID="TotalLabel"/>${celdaExcel(total.total, 'Number', 'TotalCurrency')}${celdaExcel(total.consumo, 'Number', 'TotalInteger')}<Cell ss:StyleID="TotalLabel"/></Row></Table></Worksheet>`;
+}
+
+function libroExcelRpu(historial) {
+    const grupos = gruposAnuales(historial);
+    const resumen = resumenGeneralRpu(historial);
+    const vigencia = estadoVigenciaRpu();
+    const filasResumen = grupos.map(([anio, filas]) => {
+        const total = resumenGeneralRpu(filas);
+        return `<Row>${celdaExcel(anio)}${celdaExcel(filas.length, 'Number', 'Integer')}${celdaExcel(total.total, 'Number', 'Currency')}${celdaExcel(total.consumo, 'Number', 'Integer')}</Row>`;
+    }).join('');
+    const resumenHoja = `<Worksheet ss:Name="Resumen general"><Table><Column ss:Width="120"/><Column ss:Width="100"/><Column ss:Width="130"/><Column ss:Width="180"/><Row><Cell ss:MergeAcross="3" ss:StyleID="Institution"><Data ss:Type="String">SECRETARIA DE EDUCACION GUERRERO</Data></Cell></Row><Row><Cell ss:MergeAcross="3" ss:StyleID="Title"><Data ss:Type="String">RPU ${escapeXml(currentRpu)} - RESUMEN GENERAL</Data></Cell></Row><Row/><Row>${['Primer periodo con reporte', 'Ultimo periodo con reporte', 'Estatus del RPU'].map((titulo) => celdaExcel(titulo, 'String', 'TableHeader')).join('')}<Cell ss:StyleID="TableHeader"/></Row><Row>${celdaExcel(vigencia.desde)}${celdaExcel(vigencia.hasta)}${celdaExcel(vigencia.estado)}<Cell/></Row><Row/><Row>${['Año', 'Reportes', 'Importe pagado', 'Consumo'].map((titulo) => celdaExcel(titulo, 'String', 'TableHeader')).join('')}</Row>${filasResumen}<Row>${celdaExcel('TOTAL TODOS LOS AÑOS', 'String', 'TotalLabel')}${celdaExcel(resumen.reportes, 'Number', 'TotalInteger')}${celdaExcel(resumen.total, 'Number', 'TotalCurrency')}${celdaExcel(resumen.consumo, 'Number', 'TotalInteger')}</Row></Table></Worksheet>`;
+    return '<' + '?xml version="1.0" encoding="UTF-8"?' + '>' + `<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Styles><Style ss:ID="Institution"><Font ss:Bold="1" ss:Color="#6A1B29" ss:Size="11"/></Style><Style ss:ID="Title"><Font ss:Bold="1" ss:Size="16"/></Style><Style ss:ID="Name"><Font ss:Bold="1" ss:Size="12"/></Style><Style ss:ID="TableHeader"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#6A1B29" ss:Pattern="Solid"/></Style><Style ss:ID="Currency"><NumberFormat ss:Format="\$#,##0.00"/></Style><Style ss:ID="Integer"><NumberFormat ss:Format="#\,##0"/></Style><Style ss:ID="TotalLabel"><Font ss:Bold="1"/><Interior ss:Color="#F8F0F1" ss:Pattern="Solid"/></Style><Style ss:ID="TotalCurrency"><Font ss:Bold="1"/><Interior ss:Color="#F8F0F1" ss:Pattern="Solid"/><NumberFormat ss:Format="\$#,##0.00"/></Style><Style ss:ID="TotalInteger"><Font ss:Bold="1"/><Interior ss:Color="#F8F0F1" ss:Pattern="Solid"/><NumberFormat ss:Format="#\,##0"/></Style></Styles>${grupos.map(([anio, filas]) => hojaExcelAnual(anio, filas)).join('')}${resumenHoja}</Workbook>`;
+}
+
+function contenidoTablaRpu(historial, paraExcel = false) {
+    const encabezado = datosEncabezadoRpu();
+    const etiqueta = historyYearFilter.value === 'all' ? 'Todos los años disponibles' : `Año ${historyYearFilter.value}`;
+    return `<header class="rpu-export-header"><span>SECRETARIA DE EDUCACION GUERRERO</span><h1>RPU ${escapeHtml(currentRpu)}</h1><p><b>${escapeHtml(encabezado.nombre)}</b></p><p>${escapeHtml(encabezado.domicilio)}${encabezado.localidad ? ` - ${escapeHtml(encabezado.localidad)}` : ''}${encabezado.municipio ? ` - ${escapeHtml(encabezado.municipio)}` : ''}</p><small>${escapeHtml(etiqueta)} - Reportes CFE cargados</small></header><table class="rpu-export-table"><thead><tr><th>Periodo</th><th>Desde</th><th>Hasta</th><th>Tarifa</th><th>Importe pagado</th><th>Consumo</th><th>Alertas</th></tr></thead><tbody>${tablaRpuAnual(historial, paraExcel)}</tbody></table>`;
+}
+
+function validarTablaRpu() {
+    const historial = historialFiltrado();
+    if (!currentRpu || !historial.length) {
+        statusBox.textContent = 'Consulta un RPU con historial antes de imprimir o exportar.';
+        return null;
+    }
+    return historial;
+}
+
+function imprimirTablaRpu() {
+    const historial = validarTablaRpu();
+    if (!historial) return;
+    const printWindow = window.open('', '_blank', 'width=1150,height=850');
+    if (!printWindow) {
+        statusBox.textContent = 'El navegador bloqueo la ventana de impresion. Permite ventanas emergentes e intentalo otra vez.';
+        return;
+    }
+    const contenido = contenidoImpresionFormal(historial);
+    printWindow.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>RPU ${escapeHtml(currentRpu)}</title><style>@page{size:landscape;margin:12mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{color:#222;font-family:Arial,sans-serif;margin:0}.rpu-export-header{border-bottom:3px solid #6a1b29;margin-bottom:16px;padding-bottom:10px}.rpu-export-header span{color:#6a1b29;font-size:10px;font-weight:800;letter-spacing:1.1px}.rpu-export-header h1{font-size:26px;margin:5px 0}.rpu-export-header p{font-size:12px;margin:3px 0}.rpu-export-header small{color:#666;font-size:10px}.rpu-export-table{border-collapse:collapse;font-size:10px;width:100%}.rpu-export-table th{background:#6a1b29;color:#fff;text-align:left}.rpu-export-table th,.rpu-export-table td{border:1px solid #d9d4d0;padding:7px;vertical-align:top}.rpu-year-label td{background:#f6efe2;color:#6a1b29;font-size:11px;font-weight:800}.rpu-year-total td{background:#f8f0f1;font-weight:800}.rpu-export-table td:nth-child(5),.rpu-export-table td:nth-child(6){text-align:right;white-space:nowrap}</style></head><body>${contenido}</body></html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    window.setTimeout(() => printWindow.print(), 700);
+}
+
+function exportarTablaRpuExcel() {
+    const historial = validarTablaRpu();
+    if (!historial) return;
+    const libro = libroExcelRpu(historial);
+    const archivo = new Blob(['\ufeff', libro], {type: 'application/vnd.ms-excel;charset=utf-8'});
+    const enlace = document.createElement('a');
+    const etiqueta = historyYearFilter.value === 'all' ? 'historial' : historyYearFilter.value;
+    enlace.href = URL.createObjectURL(archivo);
+    enlace.download = `RPU_${currentRpu}_${etiqueta}.xls`;
+    document.body.appendChild(enlace);
+    enlace.click();
+    enlace.remove();
+    URL.revokeObjectURL(enlace.href);
+}
+
 function abrirImpresionRpu() {
     const historial = historialFiltrado();
     if (!currentRpu || !historial.length) {
@@ -312,6 +489,9 @@ function cargarAniosHistorial(historial) {
 
 function render(data) {
     currentHistory = data.historial || [];
+    currentSchool = (data.vinculos || [])[0] || {};
+    currentCfe = data.cfe || {};
+    currentSystemPeriod = data.ultimo_periodo_sistema || '';
     cargarAniosHistorial(currentHistory);
     renderSchool(data);
     aplicarFiltroHistorial();
@@ -344,6 +524,8 @@ form.addEventListener('submit', async (event) => {
 
 historyYearFilter.addEventListener('change', aplicarFiltroHistorial);
 printRpuHistory.addEventListener('click', abrirImpresionRpu);
+printRpuTable.addEventListener('click', imprimirTablaRpu);
+exportRpuExcel.addEventListener('click', exportarTablaRpuExcel);
 
 schoolBox.addEventListener('click', async (event) => {
     const button = event.target.closest('[data-unlink-cct]');
