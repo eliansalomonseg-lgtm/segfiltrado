@@ -377,6 +377,20 @@ function abrirCargaSugerencias() {
     return () => Swal.close();
 }
 
+function abrirCargaVinculo(rpu, cct) {
+    if (!window.Swal) {
+        return () => {};
+    }
+    Swal.fire({
+        title: 'Vinculando escuela',
+        html: `<strong>RPU ${matchEscape(rpu)}</strong><br><span>Guardando la relación con el CCT ${matchEscape(cct)}...</span>`,
+        allowEscapeKey: false,
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading()
+    });
+    return () => Swal.close();
+}
+
 function mostrarSeccionVinculos(seccion) {
     linkTabs.forEach((tab) => tab.classList.toggle('active', tab.dataset.linkTab === seccion));
     linkPanels.forEach((panel) => {
@@ -399,10 +413,13 @@ function controlCctManual(rpu) {
 
 async function vincularCct(rpu, cct) {
     const body = new URLSearchParams({accion: 'vincular_rpu', csrf, rpu, cct});
-    const response = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body});
-    const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible guardar el vínculo.');
-    return data;
+    const cerrarCarga = abrirCargaVinculo(rpu, cct);
+    try {
+        const response = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body});
+        return await leerRespuestaJson(response, 'No fue posible guardar el vínculo.');
+    } finally {
+        cerrarCarga();
+    }
 }
 
 function renderRpuMatch(data) {
@@ -498,11 +515,11 @@ function renderSugerencias(data) {
     suggestionPager.innerHTML = Number(data.paginas || 1) > 1 ? `<span>Página ${data.pagina} de ${data.paginas}</span><div><button type="button" data-suggestion-page="prev" ${Number(data.pagina) <= 1 ? 'disabled' : ''}>Anterior</button><label class="suggestion-page-jump">Ir a <input type="number" min="1" max="${data.paginas}" value="${data.pagina}" data-suggestion-page-input></label><button type="button" data-suggestion-jump>Ir</button><button type="button" data-suggestion-page="next" ${Number(data.pagina) >= Number(data.paginas) ? 'disabled' : ''}>Siguiente</button></div>` : '';
 }
 
-async function cargarSugerencias(pagina = 1) {
+async function cargarSugerencias(pagina = 1, mostrarModal = true) {
     suggestionPage = pagina;
     suggestionStatus.textContent = 'Buscando coincidencias en el padrón maestro...';
     const body = new URLSearchParams({accion: 'sugerir_vinculos_paginados', csrf, pagina: String(pagina)});
-    const cerrarCarga = abrirCargaSugerencias();
+    const cerrarCarga = mostrarModal ? abrirCargaSugerencias() : () => {};
     try {
         const response = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body});
         const data = await leerRespuestaJson(response, 'No fue posible cargar las coincidencias.');
@@ -529,7 +546,7 @@ suggestionList.addEventListener('click', async (event) => {
     try {
         const data = await vincularCct(rpu, cct);
         suggestionStatus.textContent = data.mensaje;
-        await cargarSugerencias(suggestionPage);
+        await cargarSugerencias(suggestionPage, false);
     } catch (error) {
         suggestionStatus.textContent = error.message;
         button.disabled = false;
@@ -554,7 +571,7 @@ suggestionList.addEventListener('submit', async (event) => {
     try {
         const data = await vincularCct(rpu, cct);
         suggestionStatus.textContent = data.mensaje;
-        await cargarSugerencias(suggestionPage);
+        await cargarSugerencias(suggestionPage, false);
     } catch (error) {
         suggestionStatus.textContent = error.message;
         button.disabled = false;
