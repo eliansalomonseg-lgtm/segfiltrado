@@ -192,3 +192,47 @@ CREATE TABLE IF NOT EXISTS `cfe_consumos` (
   FOREIGN KEY (`reporte_id`) REFERENCES `cfe_reportes`(`id`) ON DELETE CASCADE,
   FOREIGN KEY (`CCT`) REFERENCES `escuelas`(`CCT`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `roles` (
+  `id` TINYINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `nombre` VARCHAR(30) NOT NULL,
+  `descripcion` VARCHAR(120) NULL,
+  UNIQUE KEY `uniq_roles_nombre` (`nombre`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `usuarios` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  `usuario` VARCHAR(60) NOT NULL,
+  `contrasena_hash` VARCHAR(255) NOT NULL,
+  `nombre` VARCHAR(100) NOT NULL,
+  `apellido_paterno` VARCHAR(100) NOT NULL,
+  `apellido_materno` VARCHAR(100) NULL,
+  `activo` TINYINT(1) NOT NULL DEFAULT 1,
+  `creado_en` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `actualizado_en` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uniq_usuarios_usuario` (`usuario`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `usuario_roles` (
+  `usuario_id` INT UNSIGNED NOT NULL,
+  `rol_id` TINYINT UNSIGNED NOT NULL,
+  PRIMARY KEY (`usuario_id`, `rol_id`),
+  CONSTRAINT `fk_usuario_roles_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios`(`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_usuario_roles_rol` FOREIGN KEY (`rol_id`) REFERENCES `roles`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO `roles` (`nombre`, `descripcion`) VALUES
+  ('admin', 'Acceso completo, incluida consolidacion'),
+  ('consultor', 'Consulta y operacion sin consolidacion')
+ON DUPLICATE KEY UPDATE `descripcion` = VALUES(`descripcion`);
+
+INSERT INTO `usuarios` (`usuario`, `contrasena_hash`, `nombre`, `apellido_paterno`, `apellido_materno`)
+SELECT 'admin', '$2y$10$BhrtHSS9m0V25cjgjWvocuqgSNTZCtFuaMHNQy2EZsnfjscSxYixm', 'Administrador', 'SEG', ''
+WHERE NOT EXISTS (SELECT 1 FROM `usuarios` WHERE `usuario` = 'admin');
+
+INSERT INTO `usuario_roles` (`usuario_id`, `rol_id`)
+SELECT u.id, r.id
+FROM `usuarios` u
+INNER JOIN `roles` r ON r.nombre = 'admin'
+WHERE u.usuario = 'admin'
+ON DUPLICATE KEY UPDATE `rol_id` = VALUES(`rol_id`);

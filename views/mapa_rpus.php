@@ -2,7 +2,8 @@
 
 declare(strict_types=1);
 
-session_start();
+require_once dirname(__DIR__) . '/services/auth.php';
+segRequireLogin('../login.php');
 
 require_once dirname(__DIR__) . '/services/conexion.php';
 
@@ -76,7 +77,7 @@ $etiquetaReporte = $ultimoReporte ? ($meses[(int) $ultimoReporte['mes']] ?? 'Mes
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-    <link href="../assets/css/seg-executive.css" rel="stylesheet">
+    <link href="css/seg-executive.css" rel="stylesheet">
 </head>
 <body>
 <?php include_once __DIR__ . '/fragments/navbar.php'; ?>

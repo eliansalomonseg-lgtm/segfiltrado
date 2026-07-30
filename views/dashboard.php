@@ -2,7 +2,8 @@
 
 declare(strict_types=1);
 
-session_start();
+require_once dirname(__DIR__) . '/services/auth.php';
+segRequireLogin('../login.php');
 
 require_once dirname(__DIR__) . '/services/conexion.php';
 
@@ -83,13 +84,13 @@ $periodoConciliacionInicial = $periodosConciliacion[0] ?? null;
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Panel de Control | SEG Guerrero</title>
+    <title>SIEE Guerrero | Panel de Control</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="../assets/css/seg-executive.css" rel="stylesheet">
+    <link href="css/seg-executive.css" rel="stylesheet">
 </head>
 <body>
 <?php include_once __DIR__ . '/fragments/navbar.php'; ?>
@@ -97,11 +98,13 @@ $periodoConciliacionInicial = $periodosConciliacion[0] ?? null;
 <main class="content dashboard-view">
     <section class="heading">
         <div>
-            <span class="eyebrow">SISTEMA INTEGRAL SEG</span>
-            <h1>Resumen de operacion</h1>
-            <p>Consulta en un vistazo las escuelas cargadas, los medidores vinculados y el historial de cobros CFE.</p>
+            <span class="eyebrow">SIEE GUERRERO</span>
+            <h1>Inteligencia energetica educativa</h1>
+            <p>Consulta escuelas, medidores vinculados y el historial de cobros CFE desde una sola plataforma institucional.</p>
         </div>
-        <a class="btn-seg compact-action" href="consolidacion/consolidacion.php"><i class="bi bi-lightning-charge me-2"></i>Consolidar archivos</a>
+        <?php if (segIsAdmin()): ?>
+            <a class="btn-seg compact-action" href="consolidacion/consolidacion.php"><i class="bi bi-lightning-charge me-2"></i>Consolidar archivos</a>
+        <?php endif; ?>
     </section>
     <section class="quick-actions">
         <article class="quick-card dashboard-metric-schools">

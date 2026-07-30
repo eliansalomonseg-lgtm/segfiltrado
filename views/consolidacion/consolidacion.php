@@ -2,7 +2,8 @@
 
 declare(strict_types=1);
 
-session_start();
+require_once dirname(__DIR__, 2) . '/services/auth.php';
+segRequireAdmin('../dashboard.php');
 
 require_once dirname(__DIR__, 2) . '/services/conexion.php';
 
@@ -33,7 +34,7 @@ try {
     <title>Consolidación Predictiva | SEG Guerrero</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="../../assets/css/seg-executive.css" rel="stylesheet">
+    <link href="../css/seg-executive.css" rel="stylesheet">
     <style>
         /* Consolidacion-specific styles only */
         .drop-grid{align-items:center;display:grid;grid-template-columns:1fr 38px 1fr}

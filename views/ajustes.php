@@ -2,7 +2,8 @@
 
 declare(strict_types=1);
 
-session_start();
+require_once dirname(__DIR__) . '/services/auth.php';
+segRequireLogin('../login.php');
 
 require_once __DIR__ . '/../services/conexion.php';
 
@@ -37,7 +38,7 @@ if (empty($_SESSION['seg_csrf'])) {
     <title>Ajustes CFE | SEG Guerrero</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="../assets/css/seg-executive.css" rel="stylesheet">
+    <link href="css/seg-executive.css" rel="stylesheet">
 </head>
 <body>
 <?php include_once __DIR__ . '/fragments/navbar.php'; ?>

@@ -134,6 +134,127 @@ body {
     padding: 0 !important;
 }
 
+.seg-user-session {
+    align-items: center;
+    color: #fff;
+    display: flex;
+    font-size: 11px;
+    font-weight: 700;
+    gap: 12px;
+}
+
+.seg-user-session span {
+    align-items: center;
+    display: flex;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.seg-user-session form { margin: 0; }
+
+.seg-user-session button {
+    align-items: center;
+    background: #fff;
+    border: 0;
+    border-radius: 4px;
+    color: #5d1624;
+    cursor: pointer;
+    display: flex;
+    font: inherit;
+    font-size: 10px;
+    font-weight: 800;
+    gap: 6px;
+    height: 28px;
+    justify-content: center;
+    padding: 0 10px;
+}
+
+.seg-user-session button:hover { background: #f1dfc4; }
+
+.user-admin-grid {
+    align-items: start;
+    display: grid;
+    gap: 20px;
+    grid-template-columns: minmax(320px, .9fr) minmax(0, 1.5fr);
+}
+
+.user-admin-view,
+.user-admin-view input,
+.user-admin-view select,
+.user-admin-view button { font-family: "Montserrat", "Segoe UI", Arial, sans-serif; }
+
+.user-form-card,
+.user-list-card { min-height: 100%; }
+
+.user-create-form {
+    display: grid;
+    gap: 13px;
+}
+
+.user-create-form label {
+    color: #4e5560;
+    display: grid;
+    font-size: 11px;
+    font-weight: 800;
+    gap: 6px;
+    text-transform: uppercase;
+}
+
+.user-create-form input,
+.user-create-form select {
+    background: #fff;
+    border: 1px solid #dfe2e6;
+    border-radius: 5px;
+    color: var(--seg-text);
+    font: inherit;
+    font-size: 13px;
+    height: 42px;
+    outline: 0;
+    padding: 0 11px;
+}
+
+.user-create-form input:focus,
+.user-create-form select:focus {
+    border-color: var(--seg-gold);
+    box-shadow: 0 0 0 3px rgba(191,162,118,.16);
+}
+
+.user-create-form .btn-seg { margin-top: 7px; }
+
+.user-create-status { color: var(--seg-muted); font-size: 12px; margin: 0; min-height: 18px; }
+.user-create-status.success { color: #187c53; font-weight: 700; }
+.user-create-status.error { color: #a22939; font-weight: 700; }
+
+.user-table-wrap { overflow-x: auto; }
+.user-table { border-collapse: collapse; min-width: 570px; width: 100%; }
+.user-table th { border-bottom: 1px solid #e7e2dc; color: #747681; font-size: 10px; letter-spacing: .5px; padding: 0 10px 11px; text-align: left; text-transform: uppercase; }
+.user-table td { border-bottom: 1px solid #f0ece7; color: #535d6d; font-size: 12px; padding: 14px 10px; }
+.user-table td strong { color: var(--seg-text); }
+.user-role,
+.user-state { border-radius: 999px; display: inline-block; font-size: 10px; font-weight: 800; padding: 5px 9px; text-transform: uppercase; }
+.user-role.admin { background: #f5e5e8; color: #831d2c; }
+.user-role.consultor { background: #f4eadc; color: #735628; }
+.user-state { background: #eceff2; color: #68707c; }
+.user-state.active { background: #e5f6ed; color: #187c53; }
+
+.user-actions { text-align: right; white-space: nowrap; }
+.user-icon-button,
+.user-modal-close { align-items: center; background: #fff; border: 1px solid #ded8d0; border-radius: 5px; color: #6a1b29; cursor: pointer; display: inline-flex; font-size: 14px; height: 31px; justify-content: center; margin-left: 4px; width: 31px; }
+.user-icon-button:hover { background: #f7eee4; border-color: #bfa276; }
+.delete-user { color: #a12435; }
+.user-modal { display: none; inset: 0; position: fixed; z-index: 200; }
+.user-modal.is-open { align-items: center; display: flex; justify-content: center; padding: 22px; }
+.user-modal-backdrop { background: rgba(34,29,32,.58); inset: 0; position: absolute; }
+.user-modal-dialog { background: #fff; border-radius: 8px; box-shadow: 0 24px 70px rgba(0,0,0,.28); max-width: 680px; padding: 24px; position: relative; width: min(100%, 680px); }
+.user-modal-head { align-items: start; border-bottom: 1px solid #ece5dd; display: flex; justify-content: space-between; margin-bottom: 19px; padding-bottom: 14px; }
+.user-modal-head h2 { color: var(--seg-text); font-size: 21px; margin: 5px 0 0; }
+.user-modal-close { margin: 0; }
+.user-form-columns { display: grid; gap: 13px; grid-template-columns: 1fr 1fr; }
+.user-create-form label small { color: var(--seg-muted); font-size: 10px; font-weight: 600; text-transform: none; }
+
+@media (max-width: 900px) { .user-admin-grid { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .user-form-columns { grid-template-columns: 1fr; } .user-modal.is-open { align-items: end; padding: 0; } .user-modal-dialog { border-radius: 8px 8px 0 0; max-height: 92vh; overflow-y: auto; } }
+
 /* ── Sidebar ──────────────────────────────────────────── */
 
 .seg-sidebar {
@@ -3212,24 +3333,33 @@ body {
 }
 
 .seg-topline i {
-    color: #61c58c;
-    font-size: 8px;
-    margin-right: 5px;
+    color: #f0d6a8;
+    font-size: 12px;
+    margin: 0;
+}
+
+.seg-topline-label {
+    color: #f4e5cc;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
 }
 
 .seg-institutional-header {
     align-items: center;
     background: #f7f6f1;
     display: flex;
+    gap: 34px;
     justify-content: center;
-    min-height: 166px;
-    padding: 22px 28px;
+    min-height: 154px;
+    padding: 20px 28px;
 }
 
 .seg-institutional-logo {
     display: block;
     line-height: 0;
-    max-width: min(720px, 82vw);
+    max-width: min(570px, 58vw);
 }
 
 .seg-institutional-logo img {
@@ -3239,6 +3369,16 @@ body {
     max-width: 100%;
     object-fit: contain;
 }
+
+.seg-system-lockup {
+    border-left: 1px solid #d7cbbd;
+    display: flex;
+    line-height: 0;
+    min-width: 254px;
+    padding-left: 28px;
+}
+
+.seg-system-lockup img { display: block; height: auto; max-height: 74px; max-width: 100%; object-fit: contain; }
 
 .seg-primary-nav {
     background: #332f33;
@@ -3434,13 +3574,20 @@ body {
     }
 
     .seg-institutional-header {
+        align-items: flex-start;
+        gap: 14px;
         min-height: 112px;
         padding: 16px;
     }
 
+    .seg-institutional-logo { max-width: 54vw; }
+
     .seg-institutional-logo img {
         max-height: 76px;
     }
+
+    .seg-system-lockup { min-width: 0; padding-left: 14px; }
+    .seg-system-lockup img { max-height: 44px; }
 
     .seg-primary-nav-inner {
         justify-content: flex-start;
