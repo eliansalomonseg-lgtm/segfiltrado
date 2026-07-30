@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/services/auth.php';
-segRequireLogin('../login.php');
+segRequireAdmin('dashboard.php');
 
 require_once dirname(__DIR__) . '/services/conexion.php';
 
@@ -391,6 +391,20 @@ function abrirCargaVinculo(rpu, cct) {
     return () => Swal.close();
 }
 
+async function mostrarVinculoConfirmado(rpu, cct) {
+    if (!window.Swal) {
+        return;
+    }
+    await Swal.fire({
+        icon: 'success',
+        title: 'Escuela vinculada',
+        html: `<strong>RPU ${matchEscape(rpu)}</strong><br><span>Quedó asociado al CCT ${matchEscape(cct)}.</span>`,
+        showConfirmButton: false,
+        timer: 1200,
+        timerProgressBar: true
+    });
+}
+
 function mostrarSeccionVinculos(seccion) {
     linkTabs.forEach((tab) => tab.classList.toggle('active', tab.dataset.linkTab === seccion));
     linkPanels.forEach((panel) => {
@@ -414,11 +428,18 @@ function controlCctManual(rpu) {
 async function vincularCct(rpu, cct) {
     const body = new URLSearchParams({accion: 'vincular_rpu', csrf, rpu, cct});
     const cerrarCarga = abrirCargaVinculo(rpu, cct);
+    let guardado = false;
     try {
         const response = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body});
-        return await leerRespuestaJson(response, 'No fue posible guardar el vínculo.');
-    } finally {
+        const data = await leerRespuestaJson(response, 'No fue posible guardar el vínculo.');
         cerrarCarga();
+        guardado = true;
+        await mostrarVinculoConfirmado(rpu, cct);
+        return data;
+    } finally {
+        if (!guardado) {
+            cerrarCarga();
+        }
     }
 }
 

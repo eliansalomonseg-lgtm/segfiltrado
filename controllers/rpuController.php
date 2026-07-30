@@ -1363,6 +1363,10 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $controlador = new RpuController();
 $accion = $_POST['accion'] ?? '';
 
+if (in_array($accion, ['sugerir_vinculos_paginados', 'vincular_rpu', 'vincular_rpus_masivo', 'auto_vincular_sugerencias', 'previsualizar_auto_vinculos', 'desvincular_rpu'], true)) {
+    segRequireAdmin();
+}
+
 if ($accion === 'buscar_rpu') {
     $controlador->buscar();
 }

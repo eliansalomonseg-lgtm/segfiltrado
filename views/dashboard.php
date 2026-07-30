@@ -296,15 +296,17 @@ function renderDashboardCharts(year) {
         }, {})).sort((a, b) => Number(a.label) - Number(b.label))
         : history.map((item) => ({label: item.etiqueta, facturado: Number(item.facturado || 0), pagado: Number(item.pagado || 0), tienePago: item.pagado !== null && item.pagado !== undefined, ajustes: Number(item.ajustes || 0)}));
     const labels = series.map(item => item.label);
+    const chartCompact = window.matchMedia('(max-width: 760px)').matches;
+    const xTicks = {color: '#5d5860', font: {size: chartCompact ? 10 : 11, weight: '600'}, maxRotation: 0, minRotation: 0, autoSkip: true, maxTicksLimit: chartCompact ? 5 : 12};
     paymentsChart = new Chart(document.getElementById('payments-chart'), {
         type: 'bar',
         data: {labels, datasets: [{label: 'Facturado CFE', data: series.map(item => item.facturado), backgroundColor: '#7d1b2b', borderRadius: 4, maxBarThickness: 48}, {label: 'Pago real confirmado', data: series.map(item => item.tienePago ? item.pagado : null), backgroundColor: '#bfa276', borderRadius: 4, maxBarThickness: 48}]},
-        options: {maintainAspectRatio: false, interaction: {mode: 'index', intersect: false}, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12, padding: 18, font: {size: 12, weight: '600'}}}, tooltip: {callbacks: {label: context => `${context.dataset.label}: ${moneyFormat.format(context.raw || 0)}`}}}, scales: {x: {grid: {display: false}, ticks: {color: '#5d5860', font: {size: 11, weight: '600'}, maxRotation: 0, autoSkip: false}}, y: {beginAtZero: true, grid: {color: '#eee9e4'}, ticks: {color: '#5d5860', font: {size: 11}, callback: value => '$' + compactMoneyFormat.format(value)}}}}
+        options: {responsive: true, maintainAspectRatio: false, interaction: {mode: 'index', intersect: false}, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12, padding: 18, font: {size: chartCompact ? 10 : 12, weight: '600'}}}, tooltip: {callbacks: {label: context => `${context.dataset.label}: ${moneyFormat.format(context.raw || 0)}`}}}, scales: {x: {grid: {display: false}, ticks: xTicks}, y: {beginAtZero: true, grid: {color: '#eee9e4'}, ticks: {color: '#5d5860', font: {size: chartCompact ? 10 : 11}, callback: value => '$' + compactMoneyFormat.format(value)}}}}
     });
     adjustmentsChart = new Chart(document.getElementById('adjustments-chart'), {
         type: 'line',
         data: {labels, datasets: [{label: 'Ajustes detectados', data: series.map(item => item.ajustes), borderColor: '#9a6314', backgroundColor: 'rgba(191, 162, 118, .2)', borderWidth: 3, fill: true, tension: .28, pointBackgroundColor: '#6a1b29', pointBorderColor: '#fff', pointBorderWidth: 2, pointRadius: 5, pointHoverRadius: 7}]},
-        options: {maintainAspectRatio: false, interaction: {mode: 'index', intersect: false}, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12, padding: 18, font: {size: 12, weight: '600'}}}, tooltip: {callbacks: {label: context => `${context.raw || 0} ajustes`}}}, scales: {x: {grid: {display: false}, ticks: {color: '#5d5860', font: {size: 11, weight: '600'}, maxRotation: 0, autoSkip: false}}, y: {beginAtZero: true, ticks: {precision: 0, color: '#5d5860', font: {size: 11}}, grid: {color: '#eee9e4'}}}}
+        options: {responsive: true, maintainAspectRatio: false, interaction: {mode: 'index', intersect: false}, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12, padding: 18, font: {size: chartCompact ? 10 : 12, weight: '600'}}}, tooltip: {callbacks: {label: context => `${context.raw || 0} ajustes`}}}, scales: {x: {grid: {display: false}, ticks: xTicks}, y: {beginAtZero: true, ticks: {precision: 0, color: '#5d5860', font: {size: chartCompact ? 10 : 11}}, grid: {color: '#eee9e4'}}}}
     });
 }
 
