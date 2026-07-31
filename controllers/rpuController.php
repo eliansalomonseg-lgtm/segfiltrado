@@ -1066,6 +1066,129 @@ class RpuController
             $filas . '<Row>' . $totales . '</Row></Table></Worksheet></Workbook>';
     }
 
+    public function exportarResumenAnualCfe(): void
+    {
+        $this->validarToken();
+        try {
+            $anio = (int) ($_POST['anio'] ?? 0);
+            if ($anio < 2021 || $anio > 2100) {
+                throw new RuntimeException('Selecciona un año válido para exportar.');
+            }
+            $datos = $this->datosResumenAnualCfe(Conexion::conectar(), $anio);
+            if (!$datos['filas']) {
+                throw new RuntimeException('No hay consumos CFE cargados para el año seleccionado.');
+            }
+            header('Content-Type: application/vnd.ms-excel; charset=utf-8');
+            header('Content-Disposition: attachment; filename="concentrado_cfe_' . $anio . '.xls"');
+            header('Cache-Control: max-age=0');
+            echo $this->excelResumenAnualCfe($datos);
+            exit;
+        } catch (Throwable $e) {
+            $this->responder(['ok' => false, 'error' => $e->getMessage()], 422);
+        }
+    }
+
+    private function datosResumenAnualCfe(PDO $conexion, int $anio): array
+    {
+        $consultaTotales = $conexion->prepare(
+            'SELECT cc.RPU, COUNT(DISTINCT cc.reporte_id) reportes, SUM(cc.consumo) consumo, SUM(cc.energia) energia, SUM(cc.total) total
+             FROM cfe_consumos cc
+             INNER JOIN cfe_reportes cr ON cr.id = cc.reporte_id
+             WHERE cr.anio = ?
+             GROUP BY cc.RPU
+             ORDER BY cc.RPU'
+        );
+        $consultaTotales->execute([$anio]);
+        $acumulados = $consultaTotales->fetchAll();
+        if (!$acumulados) {
+            return ['anio' => $anio, 'filas' => []];
+        }
+
+        $consultaServicios = $conexion->prepare(
+            'SELECT cc.RPU, cc.nombre_cfe, cc.poblacion_cfe, cc.direccion_cfe, cc.division_cfe, cc.tarifa_cfe, cr.mes, cc.id
+             FROM cfe_consumos cc
+             INNER JOIN cfe_reportes cr ON cr.id = cc.reporte_id
+             WHERE cr.anio = ?
+             ORDER BY cc.RPU, cr.mes DESC, cc.id DESC'
+        );
+        $consultaServicios->execute([$anio]);
+        $servicios = [];
+        foreach ($consultaServicios->fetchAll() as $servicio) {
+            $rpu = (string) $servicio['RPU'];
+            if (!isset($servicios[$rpu])) {
+                $servicios[$rpu] = $servicio;
+            }
+        }
+
+        $filas = [];
+        foreach ($acumulados as $indice => $acumulado) {
+            $rpu = (string) $acumulado['RPU'];
+            $servicio = $servicios[$rpu] ?? [];
+            $filas[] = [
+                'no' => $indice + 1,
+                'rpu' => $rpu,
+                'nombre' => trim((string) ($servicio['nombre_cfe'] ?? '')),
+                'poblacion' => trim((string) ($servicio['poblacion_cfe'] ?? '')),
+                'direccion' => trim((string) ($servicio['direccion_cfe'] ?? '')),
+                'division' => trim((string) ($servicio['division_cfe'] ?? '')),
+                'tarifa' => trim((string) ($servicio['tarifa_cfe'] ?? '')),
+                'reportes' => (int) $acumulado['reportes'],
+                'consumo' => (float) $acumulado['consumo'],
+                'energia' => (float) $acumulado['energia'],
+                'total' => (float) $acumulado['total']
+            ];
+        }
+        return ['anio' => $anio, 'filas' => $filas];
+    }
+
+    private function excelResumenAnualCfe(array $datos): string
+    {
+        $encabezados = ['No.', 'RPU', 'Nombre del servicio CFE', 'Población CFE', 'Domicilio CFE', 'División', 'Tarifa', 'Reportes', 'Consumo total kWh', 'Energía MXN', 'Costo total MXN'];
+        $columnas = '<Column ss:Width="42"/><Column ss:Width="115"/><Column ss:Width="250"/><Column ss:Width="160"/><Column ss:Width="250"/><Column ss:Width="125"/><Column ss:Width="65"/><Column ss:Width="70"/><Column ss:Width="115"/><Column ss:Width="115"/><Column ss:Width="125"/>';
+        $totales = ['reportes' => 0, 'consumo' => 0.0, 'energia' => 0.0, 'total' => 0.0];
+        $filas = '';
+        foreach ($datos['filas'] as $fila) {
+            $totales['reportes'] += $fila['reportes'];
+            $totales['consumo'] += $fila['consumo'];
+            $totales['energia'] += $fila['energia'];
+            $totales['total'] += $fila['total'];
+            $filas .= '<Row>' .
+                $this->celdaExcel($fila['no'], 'Number', 'Integer') .
+                $this->celdaExcel($fila['rpu']) .
+                $this->celdaExcel($fila['nombre']) .
+                $this->celdaExcel($fila['poblacion']) .
+                $this->celdaExcel($fila['direccion']) .
+                $this->celdaExcel($fila['division']) .
+                $this->celdaExcel($fila['tarifa']) .
+                $this->celdaExcel($fila['reportes'], 'Number', 'Integer') .
+                $this->celdaExcel($fila['consumo'], 'Number', 'Decimal') .
+                $this->celdaExcel($fila['energia'], 'Number', 'Currency') .
+                $this->celdaExcel($fila['total'], 'Number', 'Currency') .
+                '</Row>';
+        }
+        $filaTotal = $this->celdaExcel('') . $this->celdaExcel('') . '<Cell ss:MergeAcross="4" ss:StyleID="TotalLabel"><Data ss:Type="String">TOTAL GENERAL</Data></Cell>' .
+            $this->celdaExcel($totales['reportes'], 'Number', 'TotalInteger') .
+            $this->celdaExcel($totales['consumo'], 'Number', 'TotalDecimal') .
+            $this->celdaExcel($totales['energia'], 'Number', 'TotalCurrency') .
+            $this->celdaExcel($totales['total'], 'Number', 'TotalCurrency');
+        return '<?xml version="1.0" encoding="UTF-8"?>' .
+            '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Styles>' .
+            '<Style ss:ID="Title"><Font ss:Bold="1" ss:Color="#6A1B29" ss:Size="14"/></Style>' .
+            '<Style ss:ID="Header"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#6A1B29" ss:Pattern="Solid"/><Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/></Style>' .
+            '<Style ss:ID="Currency"><NumberFormat ss:Format="\$#,##0.00"/></Style>' .
+            '<Style ss:ID="Decimal"><NumberFormat ss:Format="#\,##0.00"/></Style>' .
+            '<Style ss:ID="Integer"><NumberFormat ss:Format="0"/></Style>' .
+            '<Style ss:ID="TotalLabel"><Font ss:Bold="1"/><Interior ss:Color="#F5E9D8" ss:Pattern="Solid"/></Style>' .
+            '<Style ss:ID="TotalCurrency"><Font ss:Bold="1"/><Interior ss:Color="#F5E9D8" ss:Pattern="Solid"/><NumberFormat ss:Format="\$#,##0.00"/></Style>' .
+            '<Style ss:ID="TotalDecimal"><Font ss:Bold="1"/><Interior ss:Color="#F5E9D8" ss:Pattern="Solid"/><NumberFormat ss:Format="#\,##0.00"/></Style>' .
+            '<Style ss:ID="TotalInteger"><Font ss:Bold="1"/><Interior ss:Color="#F5E9D8" ss:Pattern="Solid"/><NumberFormat ss:Format="0"/></Style>' .
+            '</Styles><Worksheet ss:Name="Resumen ' . $datos['anio'] . '"><Table>' . $columnas .
+            '<Row><Cell ss:MergeAcross="10" ss:StyleID="Title"><Data ss:Type="String">SECRETARÍA DE EDUCACIÓN GUERRERO</Data></Cell></Row>' .
+            '<Row><Cell ss:MergeAcross="10" ss:StyleID="Title"><Data ss:Type="String">CONCENTRADO ANUAL DE CONSUMOS CFE ' . $datos['anio'] . '</Data></Cell></Row><Row/>' .
+            '<Row>' . implode('', array_map(fn (string $encabezado): string => $this->celdaExcel($encabezado, 'String', 'Header'), $encabezados)) . '</Row>' .
+            $filas . '<Row>' . $filaTotal . '</Row></Table></Worksheet></Workbook>';
+    }
+
     private function celdaExcel(mixed $valor, string $tipo = 'String', string $estilo = ''): string
     {
         $atributo = $estilo !== '' ? ' ss:StyleID="' . $estilo . '"' : '';
@@ -1569,6 +1692,10 @@ if ($accion === 'previsualizar_exportacion_anual') {
 
 if ($accion === 'exportar_rpus_anual') {
     $controlador->exportarRpusAnual();
+}
+
+if ($accion === 'exportar_resumen_anual_cfe') {
+    $controlador->exportarResumenAnualCfe();
 }
 
 http_response_code(400);

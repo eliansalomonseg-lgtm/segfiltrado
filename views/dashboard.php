@@ -74,6 +74,7 @@ foreach ($historialMensual as $registroMensual) {
 }
 $aniosGraficas = array_keys($aniosGraficas);
 sort($aniosGraficas);
+$aniosExportacion = array_reverse($aniosGraficas);
 $anioGraficaInicial = $aniosGraficas ? max($aniosGraficas) : 0;
 $periodosConciliacion = $historialGraficas;
 usort($periodosConciliacion, static fn (array $a, array $b): int => ($b['anio'] <=> $a['anio']) ?: ($b['mes'] <=> $a['mes']));
@@ -132,6 +133,19 @@ $periodoConciliacionInicial = $periodosConciliacion[0] ?? null;
             <div><strong><?= number_format($casosCfe) ?></strong><span>Casos CFE por revisar</span></div>
             <small><?= number_format($totalLecturasCfe) ?> lecturas</small>
         </article>
+    </section>
+    <section class="dashboard-annual-export">
+        <div>
+            <span class="eyebrow">CONCENTRADO ANUAL</span>
+            <h2>Todos los servicios CFE por año</h2>
+            <p>Descarga un Excel con cada RPU, nombre, población, domicilio, consumo acumulado y costo total del año elegido.</p>
+        </div>
+        <form method="post" action="../controllers/rpuController.php" class="dashboard-annual-export-form">
+            <input type="hidden" name="accion" value="exportar_resumen_anual_cfe">
+            <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['seg_csrf'], ENT_QUOTES, 'UTF-8') ?>">
+            <label><span>Año a exportar</span><select name="anio" <?= $aniosExportacion ? '' : 'disabled' ?>><?php foreach ($aniosExportacion as $anioExportacion): ?><option value="<?= (int) $anioExportacion ?>"><?= (int) $anioExportacion ?></option><?php endforeach; ?></select></label>
+            <button class="btn-seg compact-action" type="submit" <?= $aniosExportacion ? '' : 'disabled' ?>><i class="bi bi-file-earmark-spreadsheet me-2"></i>Exportar Excel</button>
+        </form>
     </section>
     <section class="analytics-overview">
         <div class="analytics-section-head">

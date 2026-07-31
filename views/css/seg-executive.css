@@ -1557,6 +1557,67 @@ body {
     border-left-color: #b16c17;
 }
 
+.dashboard-annual-export {
+    align-items: center;
+    background: #fff;
+    border: 1px solid #e6e1dd;
+    border-left: 4px solid #bfa276;
+    border-radius: 6px;
+    box-shadow: 0 3px 12px rgba(48, 39, 43, .05);
+    display: flex;
+    gap: 20px;
+    justify-content: space-between;
+    margin: 18px 0;
+    padding: 20px 22px;
+}
+
+.dashboard-annual-export h2 {
+    color: #4e1621;
+    font-family: Montserrat, sans-serif;
+    font-size: 20px;
+    font-weight: 800;
+    margin: 4px 0 6px;
+}
+
+.dashboard-annual-export p {
+    color: #697386;
+    font-size: 13px;
+    line-height: 1.45;
+    margin: 0;
+    max-width: 720px;
+}
+
+.dashboard-annual-export-form {
+    align-items: end;
+    display: flex;
+    flex: 0 0 auto;
+    gap: 10px;
+}
+
+.dashboard-annual-export-form label {
+    display: grid;
+    gap: 5px;
+}
+
+.dashboard-annual-export-form label span {
+    color: #697386;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.dashboard-annual-export-form select {
+    background: #fff;
+    border: 1px solid #dcd4cb;
+    border-radius: 4px;
+    color: #4e1621;
+    font-size: 13px;
+    font-weight: 800;
+    min-height: 39px;
+    min-width: 112px;
+    padding: 7px 10px;
+}
+
 @media (max-width: 600px) {
     .annual-export-intro {
         gap: 10px;
@@ -1572,6 +1633,17 @@ body {
 
     .annual-export-list {
         grid-template-columns: 1fr;
+    }
+
+    .dashboard-annual-export,
+    .dashboard-annual-export-form {
+        align-items: stretch;
+        display: grid;
+    }
+
+    .dashboard-annual-export-form .btn-seg,
+    .dashboard-annual-export-form select {
+        width: 100%;
     }
 }
 
