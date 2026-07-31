@@ -1423,6 +1423,158 @@ body {
     }
 }
 
+.annual-export-view {
+    max-width: 1480px;
+}
+
+.annual-export-card,
+.annual-export-preview {
+    margin-bottom: 18px;
+}
+
+.annual-export-intro {
+    align-items: flex-start;
+    display: flex;
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.annual-export-intro h2 {
+    color: #4e1621;
+    font-family: Montserrat, sans-serif;
+    font-size: 21px;
+    font-weight: 800;
+    margin: 3px 0 5px;
+}
+
+.annual-export-intro p,
+.annual-export-status {
+    color: #697386;
+    font-size: 13px;
+    line-height: 1.5;
+    margin: 0;
+}
+
+.annual-export-form {
+    display: grid;
+    gap: 9px;
+}
+
+.annual-export-form label {
+    color: #586174;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.annual-export-form textarea {
+    background: #fffdfb;
+    border: 1px solid #ddd5cd;
+    border-radius: 6px;
+    color: #2d3037;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 14px;
+    line-height: 1.55;
+    padding: 12px;
+    resize: vertical;
+}
+
+.annual-export-form textarea:focus {
+    border-color: #6a1b29;
+    box-shadow: 0 0 0 3px rgba(106, 27, 41, .1);
+    outline: 0;
+}
+
+.annual-export-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.annual-export-actions .btn-seg.secondary {
+    background: #bfa276;
+    border-color: #a98d63;
+    color: #2d2218;
+}
+
+.annual-export-actions .btn-seg:disabled {
+    cursor: not-allowed;
+    opacity: .5;
+}
+
+.annual-export-status {
+    border-top: 1px solid #eee7e0;
+    margin-top: 15px;
+    padding-top: 12px;
+}
+
+.annual-export-list {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.annual-export-service {
+    align-items: center;
+    background: #fff;
+    border: 1px solid #e7dfd7;
+    border-left: 3px solid #14865d;
+    border-radius: 6px;
+    display: grid;
+    gap: 3px 10px;
+    grid-template-columns: 28px minmax(0, 1fr);
+    padding: 11px;
+}
+
+.annual-export-service > span {
+    align-items: center;
+    background: #f4eadc;
+    border-radius: 50%;
+    color: #6a1b29;
+    display: flex;
+    font-size: 11px;
+    font-weight: 800;
+    grid-row: span 2;
+    height: 28px;
+    justify-content: center;
+    width: 28px;
+}
+
+.annual-export-service strong {
+    color: #2d3037;
+    font-size: 12px;
+}
+
+.annual-export-service p {
+    color: #697386;
+    font-size: 12px;
+    line-height: 1.35;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.annual-export-service.not-found {
+    border-left-color: #b16c17;
+}
+
+@media (max-width: 600px) {
+    .annual-export-intro {
+        gap: 10px;
+    }
+
+    .annual-export-intro h2 {
+        font-size: 18px;
+    }
+
+    .annual-export-actions .btn-seg {
+        width: 100%;
+    }
+
+    .annual-export-list {
+        grid-template-columns: 1fr;
+    }
+}
+
 .map-rpu-overview {
     display: grid;
     gap: 12px;

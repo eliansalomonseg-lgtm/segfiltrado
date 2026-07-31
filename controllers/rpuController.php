@@ -922,6 +922,162 @@ class RpuController
         }
     }
 
+    public function previsualizarExportacionAnual(): void
+    {
+        $this->validarToken();
+        try {
+            $rpus = $this->rpusExportacion();
+            $datos = $this->datosExportacionAnual(Conexion::conectar(), $rpus);
+            $this->responder([
+                'ok' => true,
+                'rpus' => array_map(static fn (array $fila): array => [
+                    'rpu' => $fila['rpu'],
+                    'nombre' => $fila['nombre'],
+                    'encontrado' => $fila['encontrado']
+                ], $datos['filas'])
+            ]);
+        } catch (Throwable $e) {
+            $this->responder(['ok' => false, 'error' => $e->getMessage()], 422);
+        }
+    }
+
+    public function exportarRpusAnual(): void
+    {
+        $this->validarToken();
+        try {
+            $datos = $this->datosExportacionAnual(Conexion::conectar(), $this->rpusExportacion());
+            header('Content-Type: application/vnd.ms-excel; charset=utf-8');
+            header('Content-Disposition: attachment; filename="reporte_anual_rpus.xls"');
+            header('Cache-Control: max-age=0');
+            echo $this->excelExportacionAnual($datos);
+            exit;
+        } catch (Throwable $e) {
+            $this->responder(['ok' => false, 'error' => $e->getMessage()], 422);
+        }
+    }
+
+    private function rpusExportacion(): array
+    {
+        $texto = strtoupper(trim((string) ($_POST['rpus'] ?? '')));
+        $rpus = preg_split('/[\s,;]+/', $texto) ?: [];
+        $rpus = array_values(array_unique(array_filter($rpus, static fn (string $rpu): bool => preg_match('/^[A-Z0-9]{4,20}$/', $rpu) === 1)));
+        if (!$rpus) {
+            throw new RuntimeException('Ingresa al menos un RPU válido.');
+        }
+        if (count($rpus) > 1000) {
+            throw new RuntimeException('La exportación admite hasta 1,000 RPUs por archivo.');
+        }
+        return $rpus;
+    }
+
+    private function datosExportacionAnual(PDO $conexion, array $rpus): array
+    {
+        $marcadores = implode(', ', array_fill(0, count($rpus), '?'));
+        $consultaAnios = $conexion->query('SELECT DISTINCT anio FROM cfe_reportes WHERE anio >= 2021 ORDER BY anio');
+        $anios = array_map(static fn (mixed $anio): int => (int) $anio, $consultaAnios->fetchAll(PDO::FETCH_COLUMN));
+
+        $consultaDatos = $conexion->prepare(
+            'SELECT cc.RPU, cc.nombre_cfe, cc.direccion_cfe, cc.poblacion_cfe, cr.anio, cr.mes, cc.id
+             FROM cfe_consumos cc
+             INNER JOIN cfe_reportes cr ON cr.id = cc.reporte_id
+             WHERE cc.RPU IN (' . $marcadores . ')
+             ORDER BY cc.RPU, cr.anio DESC, cr.mes DESC, cc.id DESC'
+        );
+        $consultaDatos->execute($rpus);
+        $servicios = [];
+        foreach ($consultaDatos->fetchAll() as $fila) {
+            $rpu = (string) $fila['RPU'];
+            if (!isset($servicios[$rpu])) {
+                $servicios[$rpu] = [
+                    'nombre' => trim((string) ($fila['nombre_cfe'] ?? '')),
+                    'direccion' => trim((string) ($fila['direccion_cfe'] ?? '')),
+                    'poblacion' => trim((string) ($fila['poblacion_cfe'] ?? ''))
+                ];
+            }
+        }
+
+        $consultaTotales = $conexion->prepare(
+            'SELECT cc.RPU, cr.anio, SUM(cc.total) total
+             FROM cfe_consumos cc
+             INNER JOIN cfe_reportes cr ON cr.id = cc.reporte_id
+             WHERE cc.RPU IN (' . $marcadores . ') AND cr.anio >= 2021
+             GROUP BY cc.RPU, cr.anio'
+        );
+        $consultaTotales->execute($rpus);
+        $totales = [];
+        foreach ($consultaTotales->fetchAll() as $fila) {
+            $totales[(string) $fila['RPU']][(int) $fila['anio']] = (float) $fila['total'];
+        }
+
+        $filas = [];
+        foreach ($rpus as $indice => $rpu) {
+            $anuales = [];
+            foreach ($anios as $anio) {
+                $anuales[$anio] = (float) ($totales[$rpu][$anio] ?? 0);
+            }
+            $filas[] = [
+                'no' => $indice + 1,
+                'rpu' => $rpu,
+                'nombre' => $servicios[$rpu]['nombre'] ?? 'No localizado en reportes CFE',
+                'direccion' => $servicios[$rpu]['direccion'] ?? '',
+                'poblacion' => $servicios[$rpu]['poblacion'] ?? '',
+                'encontrado' => isset($servicios[$rpu]),
+                'anuales' => $anuales,
+                'total' => array_sum($anuales)
+            ];
+        }
+        return ['anios' => $anios, 'filas' => $filas];
+    }
+
+    private function excelExportacionAnual(array $datos): string
+    {
+        $anios = $datos['anios'];
+        $encabezados = array_merge(['No.', 'RPU', 'Nombre del servicio CFE', 'Dirección CFE', 'Población CFE'], array_map(static fn (int $anio): string => (string) $anio, $anios), ['Total']);
+        $columnas = '<Column ss:Width="42"/><Column ss:Width="115"/><Column ss:Width="250"/><Column ss:Width="250"/><Column ss:Width="160"/>' . str_repeat('<Column ss:Width="95"/>', count($anios) + 1);
+        $totalAnual = array_fill_keys($anios, 0.0);
+        $filas = '';
+        foreach ($datos['filas'] as $fila) {
+            $celdas = $this->celdaExcel($fila['no'], 'Number', 'Integer') . $this->celdaExcel($fila['rpu']) . $this->celdaExcel($fila['nombre']) . $this->celdaExcel($fila['direccion']) . $this->celdaExcel($fila['poblacion']);
+            foreach ($anios as $anio) {
+                $valor = (float) $fila['anuales'][$anio];
+                $totalAnual[$anio] += $valor;
+                $celdas .= $this->celdaExcel($valor, 'Number', 'Currency');
+            }
+            $filas .= '<Row>' . $celdas . $this->celdaExcel((float) $fila['total'], 'Number', 'Currency') . '</Row>';
+        }
+        $totales = $this->celdaExcel('') . $this->celdaExcel('') . '<Cell ss:MergeAcross="2" ss:StyleID="TotalLabel"><Data ss:Type="String">TOTAL GENERAL</Data></Cell>';
+        foreach ($anios as $anio) {
+            $totales .= $this->celdaExcel($totalAnual[$anio], 'Number', 'TotalCurrency');
+        }
+        $totales .= $this->celdaExcel(array_sum($totalAnual), 'Number', 'TotalCurrency');
+        $titulo = 'CONCENTRADO ANUAL DE RPUs CFE 2021-' . (date('Y'));
+        return '<?xml version="1.0" encoding="UTF-8"?>' .
+            '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Styles>' .
+            '<Style ss:ID="Title"><Font ss:Bold="1" ss:Color="#6A1B29" ss:Size="14"/></Style>' .
+            '<Style ss:ID="Header"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#6A1B29" ss:Pattern="Solid"/><Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/></Style>' .
+            '<Style ss:ID="Currency"><NumberFormat ss:Format="\$#,##0.00"/></Style>' .
+            '<Style ss:ID="Integer"><NumberFormat ss:Format="0"/></Style>' .
+            '<Style ss:ID="TotalLabel"><Font ss:Bold="1"/><Interior ss:Color="#F5E9D8" ss:Pattern="Solid"/></Style>' .
+            '<Style ss:ID="TotalCurrency"><Font ss:Bold="1"/><Interior ss:Color="#F5E9D8" ss:Pattern="Solid"/><NumberFormat ss:Format="\$#,##0.00"/></Style>' .
+            '</Styles><Worksheet ss:Name="Concentrado anual"><Table>' . $columnas .
+            '<Row><Cell ss:MergeAcross="' . (count($encabezados) - 1) . '" ss:StyleID="Title"><Data ss:Type="String">SECRETARÍA DE EDUCACIÓN GUERRERO</Data></Cell></Row>' .
+            '<Row><Cell ss:MergeAcross="' . (count($encabezados) - 1) . '" ss:StyleID="Title"><Data ss:Type="String">' . $this->xml((string) $titulo) . '</Data></Cell></Row><Row/>' .
+            '<Row>' . implode('', array_map(fn (string $encabezado): string => $this->celdaExcel($encabezado, 'String', 'Header'), $encabezados)) . '</Row>' .
+            $filas . '<Row>' . $totales . '</Row></Table></Worksheet></Workbook>';
+    }
+
+    private function celdaExcel(mixed $valor, string $tipo = 'String', string $estilo = ''): string
+    {
+        $atributo = $estilo !== '' ? ' ss:StyleID="' . $estilo . '"' : '';
+        $dato = $tipo === 'String' ? $this->xml((string) $valor) : (string) $valor;
+        return '<Cell' . $atributo . '><Data ss:Type="' . $tipo . '">' . $dato . '</Data></Cell>';
+    }
+
+    private function xml(string $texto): string
+    {
+        return htmlspecialchars($texto, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+    }
+
     private function historial(PDO $conexion, string $rpu): array
     {
         $consulta = $conexion->prepare(
@@ -1363,7 +1519,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $controlador = new RpuController();
 $accion = $_POST['accion'] ?? '';
 
-if (in_array($accion, ['sugerir_vinculos_paginados', 'vincular_rpu', 'vincular_rpus_masivo', 'auto_vincular_sugerencias', 'previsualizar_auto_vinculos', 'desvincular_rpu'], true)) {
+if (in_array($accion, ['sugerir_vinculos_paginados', 'vincular_rpu', 'vincular_rpus_masivo', 'auto_vincular_sugerencias', 'previsualizar_auto_vinculos', 'desvincular_rpu', 'previsualizar_exportacion_anual', 'exportar_rpus_anual'], true)) {
     segRequireAdmin();
 }
 
@@ -1405,6 +1561,14 @@ if ($accion === 'previsualizar_auto_vinculos') {
 
 if ($accion === 'desvincular_rpu') {
     $controlador->desvincular();
+}
+
+if ($accion === 'previsualizar_exportacion_anual') {
+    $controlador->previsualizarExportacionAnual();
+}
+
+if ($accion === 'exportar_rpus_anual') {
+    $controlador->exportarRpusAnual();
 }
 
 http_response_code(400);

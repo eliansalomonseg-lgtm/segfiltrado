@@ -19,6 +19,7 @@ $esAdmin = segIsAdmin();
         <?php if ($esAdmin): ?>
             <a class="<?= $paginaActual === 'consolidacion.php' ? 'active' : '' ?>" href="<?= htmlspecialchars($segBasePath . 'consolidacion/consolidacion.php', ENT_QUOTES, 'UTF-8') ?>"><i class="bi bi-lightning-charge"></i>Consolidacion</a>
             <a class="<?= $paginaActual === 'importaciones.php' ? 'active' : '' ?>" href="<?= htmlspecialchars($segBasePath . 'importaciones.php', ENT_QUOTES, 'UTF-8') ?>"><i class="bi bi-table"></i>Padron de vinculos</a>
+            <a class="<?= $paginaActual === 'exportacion_rpus.php' ? 'active' : '' ?>" href="<?= htmlspecialchars($segBasePath . 'exportacion_rpus.php', ENT_QUOTES, 'UTF-8') ?>"><i class="bi bi-file-earmark-spreadsheet"></i>Exportar RPUs</a>
             <a class="<?= $paginaActual === 'usuarios.php' ? 'active' : '' ?>" href="<?= htmlspecialchars($segBasePath . 'usuarios.php', ENT_QUOTES, 'UTF-8') ?>"><i class="bi bi-people"></i>Usuarios</a>
         <?php endif; ?>
         <a class="<?= $paginaActual === 'rpus.php' ? 'active' : '' ?>" href="<?= htmlspecialchars($segBasePath . 'rpus.php', ENT_QUOTES, 'UTF-8') ?>"><i class="bi bi-search"></i>Consulta RPU</a>
