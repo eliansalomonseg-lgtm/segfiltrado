@@ -1921,6 +1921,50 @@ body {
     align-items: stretch;
 }
 
+.map-view-tabs {
+    display: flex;
+    gap: 8px;
+    margin: 0 0 16px;
+}
+
+.map-view-tabs button {
+    align-items: center;
+    background: #fff;
+    border: 1px solid #e4d9d8;
+    border-radius: 6px;
+    color: #5e555a;
+    display: inline-flex;
+    font-size: 12px;
+    font-weight: 800;
+    gap: 7px;
+    min-height: 42px;
+    padding: 0 13px;
+}
+
+.map-view-tabs button span {
+    align-items: center;
+    background: #f3e6cf;
+    border-radius: 999px;
+    color: #765726;
+    display: inline-flex;
+    font-size: 10px;
+    height: 20px;
+    justify-content: center;
+    min-width: 20px;
+    padding: 0 6px;
+}
+
+.map-view-tabs button.active {
+    background: #6a1b29;
+    border-color: #6a1b29;
+    color: #fff;
+}
+
+.map-view-tabs button.active span {
+    background: #bfa276;
+    color: #3d2a17;
+}
+
 .map-rpu-controls,
 .map-rpu-canvas-card {
     min-height: 690px;
@@ -1978,6 +2022,42 @@ body {
     background: #6a1b29;
     border-color: #6a1b29;
     color: #fff;
+}
+
+.map-status-filter {
+    display: grid;
+    gap: 7px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 7px 0 12px;
+}
+
+.map-status-filter button {
+    align-items: center;
+    background: #fff;
+    border: 1px solid #e6ded7;
+    border-radius: 6px;
+    color: #62595e;
+    display: flex;
+    font-size: 11px;
+    font-weight: 800;
+    gap: 6px;
+    min-height: 36px;
+    padding: 0 9px;
+}
+
+.map-status-filter button i {
+    color: #8a7d82;
+    font-size: 12px;
+}
+
+.map-status-filter button[data-map-state="ALERTA"] i { color: #b44335; }
+.map-status-filter button[data-map-state="SIN_CONSUMO"] i { color: #747b84; }
+.map-status-filter button[data-map-state="NORMAL"] i { color: #16825c; }
+
+.map-status-filter button.active {
+    background: #f7ebed;
+    border-color: #6a1b29;
+    color: #6a1b29;
 }
 
 .icon-action {
@@ -2121,6 +2201,14 @@ body {
     background: #b85932;
 }
 
+.map-rpu-legend .zero i {
+    background: #737b84;
+}
+
+.map-rpu-legend .normal i {
+    background: #16825c;
+}
+
 #map-rpu-canvas {
     height: 630px;
     width: 100%;
@@ -2147,6 +2235,18 @@ body {
 
 .map-rpu-marker.is-alert {
     background: #b85932;
+}
+
+.map-rpu-marker-alerta {
+    box-shadow: 0 0 0 3px #b85932, 0 2px 8px rgb(65 20 30 / 30%);
+}
+
+.map-rpu-marker-sin-consumo {
+    box-shadow: 0 0 0 3px #737b84, 0 2px 8px rgb(65 20 30 / 30%);
+}
+
+.map-rpu-marker-normal {
+    box-shadow: 0 0 0 3px #16825c, 0 2px 8px rgb(65 20 30 / 30%);
 }
 
 .map-rpu-cluster-wrap {
@@ -2295,6 +2395,28 @@ body {
     width: 46px;
 }
 
+.map-rpu-marker-image.map-rpu-marker-alerta,
+.map-rpu-marker-image.map-rpu-marker-sin-consumo,
+.map-rpu-marker-image.map-rpu-marker-normal {
+    border-radius: 50%;
+}
+
+.map-rpu-marker-alerta { background: #b85932; }
+.map-rpu-marker-sin-consumo { background: #737b84; }
+.map-rpu-marker-normal { background: #16825c; }
+
+.map-rpu-marker-image.map-rpu-marker-alerta {
+    box-shadow: 0 0 0 3px #b85932, 0 2px 8px rgb(65 20 30 / 30%);
+}
+
+.map-rpu-marker-image.map-rpu-marker-sin-consumo {
+    box-shadow: 0 0 0 3px #737b84, 0 2px 8px rgb(65 20 30 / 30%);
+}
+
+.map-rpu-marker-image.map-rpu-marker-normal {
+    box-shadow: 0 0 0 3px #16825c, 0 2px 8px rgb(65 20 30 / 30%);
+}
+
 .map-rpu-marker-image img {
     filter: drop-shadow(0 2px 4px rgb(56 35 36 / 35%));
     height: 46px;
@@ -2389,6 +2511,97 @@ body {
 .map-google-link:hover {
     background: #4e1621;
     color: #fff;
+}
+
+.map-missing-card {
+    padding: 22px;
+}
+
+.map-missing-filters {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, .35fr);
+    margin: 16px 0;
+}
+
+.map-missing-filters .form-select {
+    border-color: #e4d8da;
+    font-size: 13px;
+    min-height: 42px;
+}
+
+.map-missing-list {
+    display: grid;
+    gap: 8px;
+}
+
+.map-missing-item {
+    align-items: center;
+    background: #fff;
+    border: 1px solid #e7dfd8;
+    border-left: 4px solid #16825c;
+    border-radius: 7px;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: 36px minmax(0, 1fr) auto;
+    padding: 11px 13px;
+}
+
+.map-missing-item.is-alerta { border-left-color: #b85932; }
+.map-missing-item.is-sin-consumo { border-left-color: #737b84; }
+
+.map-missing-icon {
+    align-items: center;
+    background: #f4eadc;
+    border-radius: 50%;
+    color: #8c6422;
+    display: flex;
+    height: 34px;
+    justify-content: center;
+    width: 34px;
+}
+
+.map-missing-item strong,
+.map-missing-item small {
+    display: block;
+}
+
+.map-missing-item > div:nth-child(2) strong {
+    color: #30333b;
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+.map-missing-item > div:nth-child(2) small {
+    color: #717983;
+    font-size: 11px;
+    line-height: 1.35;
+    margin-top: 2px;
+}
+
+.map-missing-metrics {
+    display: grid;
+    gap: 3px;
+    justify-items: end;
+}
+
+.map-missing-metrics span {
+    color: #80601d;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.map-missing-metrics strong {
+    color: #4e1621;
+    font-size: 13px;
+}
+
+.map-missing-metrics a {
+    color: #6a1b29;
+    font-size: 11px;
+    font-weight: 800;
+    text-decoration: none;
 }
 
 .map-popup-actions {
@@ -2579,6 +2792,19 @@ body {
 }
 
 @media (max-width: 640px) {
+    .map-view-tabs {
+        gap: 6px;
+        overflow-x: auto;
+        padding-bottom: 2px;
+    }
+
+    .map-view-tabs button {
+        flex: 0 0 auto;
+        font-size: 11px;
+        min-height: 39px;
+        padding: 0 10px;
+    }
+
     .map-directory-view .heading {
         padding: 20px 18px;
     }
@@ -2627,6 +2853,44 @@ body {
 
     .map-rpu-list {
         max-height: 270px;
+    }
+
+    .map-status-filter {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .map-status-filter button {
+        font-size: 10px;
+        min-height: 34px;
+        padding: 0 7px;
+    }
+
+    .map-missing-card {
+        padding: 16px;
+    }
+
+    .map-missing-filters {
+        grid-template-columns: 1fr;
+    }
+
+    .map-missing-item {
+        align-items: start;
+        grid-template-columns: 32px minmax(0, 1fr);
+        padding: 11px;
+    }
+
+    .map-missing-metrics {
+        align-items: center;
+        border-top: 1px solid #eee7e0;
+        display: flex;
+        gap: 9px;
+        grid-column: 1 / -1;
+        justify-content: flex-start;
+        padding-top: 8px;
+    }
+
+    .map-missing-metrics a {
+        margin-left: auto;
     }
 
     .map-popup-metrics {
