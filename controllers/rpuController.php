@@ -1204,8 +1204,9 @@ class RpuController
     private function historial(PDO $conexion, string $rpu): array
     {
         $consulta = $conexion->prepare(
-            'SELECT cc.*, cr.anio, cr.mes, cr.archivo
-             FROM cfe_consumos cc
+            'SELECT cc.id, cc.RPU, cc.division_cfe, cc.nombre_cfe, cc.direccion_cfe, cc.poblacion_cfe, cc.tarifa_cfe,
+                    cc.tipo_periodo, cc.desde, cc.hasta, cc.consumo, cc.total, cc.severidad, cc.alertas, cr.anio, cr.mes
+             FROM cfe_consumos cc FORCE INDEX (idx_cfe_consumos_rpu_id)
              INNER JOIN cfe_reportes cr ON cr.id = cc.reporte_id
              WHERE cc.RPU = ?
              ORDER BY cr.anio DESC, cr.mes DESC, cc.hasta DESC, cc.id DESC'

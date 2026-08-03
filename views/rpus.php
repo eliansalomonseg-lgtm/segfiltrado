@@ -228,7 +228,9 @@ function renderChart(historial) {
         const total = Number(row.total) || 0;
         const consumo = Number(row.consumo) || 0;
         const height = Math.max(8, Math.round(total / maxTotal * 120));
-        return `<div class="rpu-bar">
+        const proporcion = total / maxTotal;
+        const nivel = proporcion >= .999 ? 'is-peak' : (proporcion >= .75 ? 'is-high' : (proporcion >= .4 ? 'is-medium' : 'is-low'));
+        return `<div class="rpu-bar ${nivel}" title="${Math.round(proporcion * 100)}% del importe más alto de este RPU">
             <span style="height:${height}px"></span>
             <strong>${money.format(total)}</strong>
             <small>${escapeHtml(row.anio)}-${String(row.mes).padStart(2, '0')}<br>${number.format(consumo)} kWh</small>
@@ -507,15 +509,25 @@ function render(data) {
 
 async function searchRpu(rpu) {
     currentRpu = rpu;
-    statusBox.textContent = 'Consultando vinculos, historial y sugerencias...';
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Cargando expediente';
+    form.closest('.rpu-search-card').classList.add('is-loading');
+    statusBox.textContent = `Abriendo expediente del RPU ${rpu}...`;
     const body = new URLSearchParams({accion: 'buscar_rpu', csrf: token, rpu, incluir_sugerencias: '0'});
-    const response = await fetch('../controllers/rpuController.php', {method: 'POST', body});
-    const data = await response.json();
-    if (!data.ok) {
-        throw new Error(data.error || 'No fue posible consultar el RPU.');
+    try {
+        const response = await fetch('../controllers/rpuController.php', {method: 'POST', body});
+        const data = await response.json();
+        if (!data.ok) {
+            throw new Error(data.error || 'No fue posible consultar el RPU.');
+        }
+        statusBox.textContent = data.encontrado ? `Expediente cargado para RPU ${data.rpu}.` : `No hay historial guardado para RPU ${data.rpu}.`;
+        render(data);
+    } finally {
+        button.disabled = false;
+        button.innerHTML = '<i class="bi bi-search me-2"></i>Consultar RPU';
+        form.closest('.rpu-search-card').classList.remove('is-loading');
     }
-    statusBox.textContent = data.encontrado ? `Expediente cargado para RPU ${data.rpu}.` : `No hay historial guardado para RPU ${data.rpu}.`;
-    render(data);
 }
 
 form.addEventListener('submit', async (event) => {
@@ -526,6 +538,14 @@ form.addEventListener('submit', async (event) => {
         statusBox.textContent = error.message;
     }
 });
+
+const rpuInicial = new URLSearchParams(window.location.search).get('rpu')?.trim() || '';
+if (/^[A-Za-z0-9]{4,20}$/.test(rpuInicial)) {
+    form.rpu.value = rpuInicial;
+    searchRpu(rpuInicial).catch((error) => {
+        statusBox.textContent = error.message;
+    });
+}
 
 historyYearFilter.addEventListener('change', aplicarFiltroHistorial);
 printRpuHistory.addEventListener('click', abrirImpresionRpu);

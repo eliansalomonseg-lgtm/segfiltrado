@@ -86,8 +86,8 @@ $etiquetaReporte = $ultimoReporte ? ($meses[(int) $ultimoReporte['mes']] ?? 'Mes
     <section class="heading">
         <div>
             <span class="eyebrow">COBERTURA TERRITORIAL</span>
-            <h1>RPUs con escuelas</h1>
-            <p>Consulta los servicios CFE vinculados a escuelas con ubicación registrada dentro del estado de Guerrero.</p>
+            <h1>Mapa de servicios escolares</h1>
+            <p>Ubica escuelas con RPU confirmado, consulta su último consumo y detecta rápidamente los servicios con alerta.</p>
         </div>
         <span class="alert-gold"><i class="bi bi-calendar3 me-2"></i>Último reporte: <?= htmlspecialchars($etiquetaReporte, ENT_QUOTES, 'UTF-8') ?></span>
     </section>
@@ -134,7 +134,7 @@ $etiquetaReporte = $ultimoReporte ? ($meses[(int) $ultimoReporte['mes']] ?? 'Mes
         </aside>
         <section class="results-card map-rpu-canvas-card">
             <div class="map-rpu-map-head">
-                <div class="map-rpu-map-title"><i class="bi bi-buildings"></i><span>Escuelas con RPU confirmado</span></div>
+                <div class="map-rpu-map-title"><i class="bi bi-buildings"></i><span>Escuelas con RPU confirmado<small id="map-map-caption">Cargando cobertura territorial...</small></span></div>
                 <div class="map-rpu-map-tools">
                     <div class="map-view-mode" role="group" aria-label="Tipo de mapa">
                         <button class="active" type="button" data-map-base="plano"><i class="bi bi-map"></i><span>Plano</span></button>
@@ -147,6 +147,7 @@ $etiquetaReporte = $ultimoReporte ? ($meses[(int) $ultimoReporte['mes']] ?? 'Mes
                         <span class="alert"><i></i>Alerta</span>
                     </div>
                     <button id="map-recenter" class="map-canvas-action" type="button" title="Mostrar todo Guerrero" aria-label="Mostrar todo Guerrero"><i class="bi bi-arrows-angle-contract"></i></button>
+                    <button id="map-locate" class="map-canvas-action" type="button" title="Usar mi ubicación" aria-label="Usar mi ubicación"><i class="bi bi-crosshair"></i></button>
                     <button id="map-fullscreen" class="map-canvas-action" type="button" title="Pantalla completa" aria-label="Pantalla completa"><i class="bi bi-fullscreen"></i></button>
                 </div>
             </div>
@@ -188,6 +189,7 @@ const municipio = document.getElementById('map-municipio');
 const botonAlertas = document.getElementById('map-alert-filter');
 const lista = document.getElementById('map-rpu-list');
 const contador = document.getElementById('map-visible-count');
+const resumenMapa = document.getElementById('map-map-caption');
 let soloAlertas = false;
 let marcadores = new Map();
 let resultadoActivo = '';
@@ -243,16 +245,17 @@ function clavePunto(punto) {
 
 function popupPunto(punto) {
     const estado = punto.alerta ? '<span class="map-popup-alert">Revisar último reporte</span>' : '<span class="map-popup-ok">Sin alerta reciente</span>';
-    const alerta = punto.alertas ? `<p><strong>Alerta:</strong> ${textoSeguro(punto.alertas)}</p>` : '';
+    const alerta = punto.alertas ? `<p class="map-popup-warning"><strong>Alerta:</strong> ${textoSeguro(punto.alertas)}</p>` : '';
     const ubicacion = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${punto.latitud},${punto.longitud}`)}`;
-    return `<div class="map-popup"><span class="map-popup-rpu">RPU ${textoSeguro(punto.rpu)}</span><h3>${textoSeguro(punto.nombre)}</h3><p><strong>${textoSeguro(punto.cct)}</strong> · ${textoSeguro(punto.nivel || 'Nivel no registrado')}</p><p>${textoSeguro(punto.localidad)} · ${textoSeguro(punto.municipio)}</p><p>${textoSeguro(punto.domicilio || 'Domicilio no registrado')}</p><p>Tarifa: ${textoSeguro(punto.tarifa || 'Sin dato')} · Consumo: ${Number(punto.consumo || 0).toLocaleString('es-MX')}</p><p>Total: ${moneda(punto.total)}</p>${alerta}${estado}<a class="map-google-link" href="${ubicacion}" target="_blank" rel="noopener noreferrer"><i class="bi bi-box-arrow-up-right"></i>Abrir en Google Maps</a></div>`;
+    const expediente = `rpus.php?rpu=${encodeURIComponent(punto.rpu)}`;
+    return `<div class="map-popup"><div class="map-popup-top"><span class="map-popup-rpu">RPU ${textoSeguro(punto.rpu)}</span>${estado}</div><h3>${textoSeguro(punto.nombre)}</h3><p class="map-popup-school"><strong>${textoSeguro(punto.cct)}</strong><span>${textoSeguro(punto.nivel || 'Nivel no registrado')}</span></p><p class="map-popup-location"><i class="bi bi-geo-alt"></i><span>${textoSeguro(punto.localidad)} · ${textoSeguro(punto.municipio)}<br>${textoSeguro(punto.domicilio || 'Domicilio no registrado')}</span></p><div class="map-popup-metrics"><span><small>Tarifa</small><strong>${textoSeguro(punto.tarifa || 'Sin dato')}</strong></span><span><small>Consumo</small><strong>${Number(punto.consumo || 0).toLocaleString('es-MX')} kWh</strong></span><span><small>Último total</small><strong>${moneda(punto.total)}</strong></span></div>${alerta}<div class="map-popup-actions"><a class="map-rpu-link" href="${expediente}"><i class="bi bi-file-earmark-text"></i>Abrir expediente RPU</a><a class="map-google-link" href="${ubicacion}" target="_blank" rel="noopener noreferrer"><i class="bi bi-box-arrow-up-right"></i>Google Maps</a></div></div>`;
 }
 
 function obtenerVisibles() {
     const termino = normalizar(campoBusqueda.value);
     const municipioElegido = normalizar(municipio.value);
     return puntosRpu.filter((punto) => {
-        const contenido = normalizar([punto.rpu, punto.cct, punto.nombre, punto.municipio, punto.localidad, punto.nivel, punto.subnivel].join(' '));
+        const contenido = normalizar([punto.rpu, punto.cct, punto.nombre, punto.municipio, punto.localidad, punto.domicilio, punto.nivel, punto.subnivel].join(' '));
         return (!termino || contenido.includes(termino)) && (!municipioElegido || normalizar(punto.municipio) === municipioElegido) && (!nivelSeleccionado || categoriaNivel(punto) === nivelSeleccionado) && (!soloAlertas || punto.alerta);
     });
 }
@@ -262,6 +265,7 @@ function pintarMapa(ajustarVista = false) {
     agrupador.clearLayers();
     agrupador.addLayers(visibles.map((punto) => marcadores.get(clavePunto(punto))).filter(Boolean));
     contador.textContent = visibles.length.toLocaleString('es-MX');
+    resumenMapa.textContent = visibles.length ? `${visibles.length.toLocaleString('es-MX')} escuelas visibles` : 'Sin escuelas con estos filtros';
     const muestra = visibles.slice(0, 160);
     lista.innerHTML = muestra.length ? muestra.map((punto, indice) => {
         const identificador = clavePunto(punto);
@@ -336,6 +340,19 @@ document.getElementById('map-reset-filter').addEventListener('click', () => {
 document.getElementById('map-recenter').addEventListener('click', () => {
     resultadoActivo = '';
     pintarMapa(true);
+});
+document.getElementById('map-locate').addEventListener('click', () => {
+    if (!navigator.geolocation) {
+        resumenMapa.textContent = 'La ubicación no está disponible en este dispositivo';
+        return;
+    }
+    navigator.geolocation.getCurrentPosition((posicion) => {
+        const ubicacion = [posicion.coords.latitude, posicion.coords.longitude];
+        mapa.setView(ubicacion, 14);
+        L.circleMarker(ubicacion, { radius: 9, color: '#fff', weight: 3, fillColor: '#167c5b', fillOpacity: 1 }).addTo(mapa).bindPopup('Tu ubicación aproximada').openPopup();
+    }, () => {
+        resumenMapa.textContent = 'No se autorizó la ubicación del dispositivo';
+    }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
 });
 document.getElementById('map-fullscreen').addEventListener('click', () => {
     const contenedor = document.querySelector('.map-rpu-canvas-card');
