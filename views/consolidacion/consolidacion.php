@@ -469,6 +469,7 @@ try {
                     <div class="option-data"><strong>${escapeHtml(option.cct)} · ${escapeHtml(option.nombre_escuela)}</strong><small>${escapeHtml(option.municipio)} · ${escapeHtml(option.localidad)} · ${escapeHtml(option.subnivel)} · STATUS ${escapeHtml(option.status)}</small></div>
                     <span class="tag address">${escapeHtml(option.direccion_escuela || 'Sin direccion oficial')}</span>
                     <span class="tag">${escapeHtml(option.origen || 'Sin origen')}</span>
+                    ${option.ubicacion_confirmada === false ? `<span class="tag review-location">Ubicacion por revisar: ${escapeHtml(option.ubicacion_metodo || 'revision manual')}</span>` : ''}
                     <span class="score">${Number(option.similitud).toFixed(1)}%</span>
                     <button class="confirm" type="button" data-row="${row}" data-option="${index}">Confirmar Vínculo</button>
                 </div>
@@ -502,7 +503,7 @@ try {
         (window.currentResults || []).forEach(registro => {
             (registro.opciones || []).forEach(option => {
                 const score = Number(option.similitud ?? option.score ?? 0);
-                if (score >= 50 && !option.vinculado && registro.rpu && option.escuela_id) {
+                if (score >= 50 && option.ubicacion_confirmada !== false && !option.vinculado && registro.rpu && option.escuela_id) {
                     selected.set(`${option.escuela_id}|${registro.rpu}`, {
                         escuela_id: option.escuela_id,
                         RPU: registro.rpu,

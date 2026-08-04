@@ -2417,6 +2417,12 @@ body {
     box-shadow: 0 0 0 3px #16825c, 0 2px 8px rgb(65 20 30 / 30%);
 }
 
+.review-location {
+    color: #995b16;
+    background: #fff4df;
+    border-color: #e7c183;
+}
+
 .map-rpu-marker-image img {
     filter: drop-shadow(0 2px 4px rgb(56 35 36 / 35%));
     height: 46px;

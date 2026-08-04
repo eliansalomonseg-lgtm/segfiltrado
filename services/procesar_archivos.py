@@ -47,6 +47,11 @@ try:
     def normalizar_codigo(valor):
         return normalizar(valor).replace(" ", "")
 
+    def normalizar_ubicacion(valor):
+        texto = normalizar(valor)
+        texto = re.sub(r"\s+(GRO|GUERRERO)$", "", texto).strip()
+        return texto
+
     def preparar_columnas(datos):
         datos.columns = [normalizar_codigo(columna) for columna in datos.columns]
         return datos
@@ -191,15 +196,57 @@ try:
         cfe = cfe[cfe["RPU"].notna() & (cfe["RPU"] != "")]
         cfe = cfe.drop_duplicates(subset=["RPU"], keep="last").sort_values("RPU")
         indice_localidades = {}
+        indice_municipios = {}
+        indice_texto = {}
         for _, escuela in seg.iterrows():
-            localidad = normalizar(escuela["NOMBRELOC"])
+            localidad = normalizar_ubicacion(escuela["NOMBRELOC"])
+            municipio = normalizar_ubicacion(escuela["NOMBREMUN"])
             if localidad:
                 indice_localidades.setdefault(localidad, []).append(escuela)
+            if municipio:
+                indice_municipios.setdefault(municipio, []).append(escuela)
+            texto_busqueda = normalizar(f"{escuela['NOMBRECT']} {escuela['DOMICILIO']} {escuela['NOMBRELOC']}")
+            for palabra in set(texto_busqueda.split()):
+                if len(palabra) >= 5:
+                    indice_texto.setdefault(palabra, []).append(escuela)
         resultados = []
         for _, medidor in cfe.iterrows():
             opciones = []
             nivel_cfe = identificar_nivel(medidor["NOMBRE"])
-            for escuela in indice_localidades.get(normalizar(medidor["POBLACION"]), []):
+            poblacion = normalizar_ubicacion(medidor["POBLACION"])
+            direccion_cfe = normalizar(medidor["DIRECCION"])
+            candidatos = []
+            ubicacion_metodo = {}
+            for escuela in indice_localidades.get(poblacion, []):
+                candidatos.append(escuela)
+                ubicacion_metodo[id(escuela)] = "LOCALIDAD"
+            if not candidatos:
+                for escuela in indice_municipios.get(poblacion, []):
+                    candidatos.append(escuela)
+                    ubicacion_metodo[id(escuela)] = "MUNICIPIO"
+            if not candidatos:
+                texto_cfe = f"{poblacion} {direccion_cfe}"
+                palabras_cfe = {palabra for palabra in texto_cfe.split() if len(palabra) >= 5}
+                candidatos_unicos = {}
+                for palabra in palabras_cfe:
+                    for escuela in indice_texto.get(palabra, []):
+                        texto_escuela = normalizar(f"{escuela['NOMBRECT']} {escuela['DOMICILIO']} {escuela['NOMBRELOC']}")
+                        if palabra in texto_escuela:
+                            candidatos_unicos[limpiar(escuela["CCT"])] = escuela
+                candidatos = list(candidatos_unicos.values())
+                for escuela in candidatos:
+                    ubicacion_metodo[id(escuela)] = "DIRECCION O COMUNIDAD"
+            if not candidatos:
+                palabras_nombre = {palabra for palabra in normalizar(medidor["NOMBRE"]).split() if len(palabra) >= 5}
+                candidatos_unicos = {}
+                for palabra in palabras_nombre:
+                    for escuela in indice_texto.get(palabra, []):
+                        if nivel_cfe is None or coincide_nivel(nivel_cfe, escuela):
+                            candidatos_unicos[limpiar(escuela["CCT"])] = escuela
+                candidatos = list(candidatos_unicos.values())
+                for escuela in candidatos:
+                    ubicacion_metodo[id(escuela)] = "NOMBRE Y NIVEL"
+            for escuela in candidatos:
                 similitud, puntuacion, nivel_coincide = puntuar(medidor["NOMBRE"], escuela)
                 opciones.append({
                     "cct": limpiar(escuela["CCT"]),
@@ -215,7 +262,9 @@ try:
                     "administrativo": es_administrativa(escuela),
                     "similitud": round(similitud, 2),
                     "puntaje_predictivo": round(puntuacion, 2),
-                    "nivel_coincide": nivel_coincide
+                    "nivel_coincide": nivel_coincide,
+                    "ubicacion_confirmada": ubicacion_metodo.get(id(escuela)) == "LOCALIDAD",
+                    "ubicacion_metodo": ubicacion_metodo.get(id(escuela), "REVISION MANUAL")
                 })
             opciones_nivel = [opcion for opcion in opciones if opcion["nivel_coincide"] and not opcion["administrativo"]]
             if nivel_cfe is not None and opciones_nivel:
