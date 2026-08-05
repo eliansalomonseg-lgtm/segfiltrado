@@ -172,6 +172,7 @@ $queryBase = $_GET;
     <nav class="link-view-tabs" aria-label="Secciones del padrón de vínculos">
         <button class="active" type="button" data-link-tab="confirmed"><i class="bi bi-link-45deg"></i>Vínculos confirmados</button>
         <button type="button" data-link-tab="manual"><i class="bi bi-search"></i>Buscar y vincular</button>
+        <button type="button" data-link-tab="service-search"><i class="bi bi-search-heart"></i>Buscar servicio CFE</button>
         <button type="button" data-link-tab="suggestions"><i class="bi bi-stars"></i>Sugerencias pendientes</button>
     </nav>
     <section class="results-card link-workbench" data-link-panel="manual" hidden>
@@ -191,6 +192,23 @@ $queryBase = $_GET;
         </form>
         <div id="rpu-match-status" class="adjustment-status">Consulta un RPU que ya exista en los reportes CFE cargados.</div>
         <div id="rpu-match-result" class="link-match-result" hidden></div>
+    </section>
+    <section class="results-card link-workbench service-search-workbench" data-link-panel="service-search" hidden>
+        <div class="results-head">
+            <div>
+                <span class="eyebrow">CONSULTA DE REPORTES</span>
+                <h2>Buscar RPU por nombre del servicio</h2>
+                <p>Escribe el nombre que aparece en CFE para localizar el RPU y los reportes donde fue encontrado.</p>
+            </div>
+        </div>
+        <form id="service-name-search-form" class="import-filters link-match-form" autocomplete="off">
+            <label class="search-field">
+                <i class="bi bi-building"></i>
+                <input id="service-name-search" type="search" name="nombre" minlength="3" placeholder="Ejemplo: RAMON ALVAREZ o TELESECUNDARIA">
+            </label>
+        </form>
+        <div id="service-name-status" class="adjustment-status">Escribe al menos tres letras para buscar en todos los reportes CFE cargados.</div>
+        <div id="service-name-results" class="service-name-results" hidden></div>
     </section>
     <section class="results-card suggestion-inbox" data-link-panel="suggestions" hidden>
         <div class="results-head">
@@ -333,6 +351,10 @@ const csrf = <?= json_encode($_SESSION['seg_csrf'], JSON_UNESCAPED_UNICODE | JSO
 const rpuMatchForm = document.getElementById('rpu-match-form');
 const rpuMatchStatus = document.getElementById('rpu-match-status');
 const rpuMatchResult = document.getElementById('rpu-match-result');
+const serviceNameSearchForm = document.getElementById('service-name-search-form');
+const serviceNameSearch = document.getElementById('service-name-search');
+const serviceNameStatus = document.getElementById('service-name-status');
+const serviceNameResults = document.getElementById('service-name-results');
 const suggestionStatus = document.getElementById('suggestion-status');
 const suggestionList = document.getElementById('suggestion-list');
 const suggestionPager = document.getElementById('suggestion-pager');
@@ -344,6 +366,7 @@ const linkPanels = document.querySelectorAll('[data-link-panel]');
 let suggestionPage = 1;
 let currentSuggestionRows = [];
 let suggestionsLoaded = false;
+let serviceSearchTimer;
 const matchEscape = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character]));
 
 async function leerRespuestaJson(response, mensajeBase) {
@@ -362,6 +385,46 @@ async function leerRespuestaJson(response, mensajeBase) {
         throw error;
     }
 }
+
+function renderServiceNameResults(resultados) {
+    serviceNameResults.hidden = false;
+    serviceNameResults.innerHTML = resultados.length ? resultados.map((item) => {
+        const periodos = String(item.periodos || '').split(' | ').filter(Boolean);
+        return `<article class="service-name-card"><div class="service-name-main"><strong>${matchEscape(item.RPU)}</strong><span>${matchEscape(item.nombre_cfe || 'Sin nombre CFE')}</span><small>${matchEscape(item.direccion_cfe || 'Sin dirección')} · ${matchEscape(item.poblacion_cfe || 'Sin población')} · Tarifa ${matchEscape(item.tarifa_cfe || 'N/D')}</small></div><div class="service-name-reports"><b>${Number(item.total_reportes || 0).toLocaleString('es-MX')} reportes</b><span>Último: ${matchEscape(item.ultimo_periodo || 'Sin periodo')}</span><div>${periodos.map((periodo) => `<em>${matchEscape(periodo)}</em>`).join('')}</div></div><a class="btn-seg compact-action" href="rpus.php?rpu=${encodeURIComponent(item.RPU)}"><i class="bi bi-folder2-open me-1"></i>Abrir RPU</a></article>`;
+    }).join('') : '<div class="empty-state"><i class="bi bi-search"></i><strong>Sin resultados</strong><span>No se encontró ese nombre en los reportes CFE cargados.</span></div>';
+}
+
+async function buscarServicioPorNombre() {
+    const nombre = serviceNameSearch.value.trim();
+    if (nombre.length < 3) {
+        serviceNameResults.hidden = true;
+        serviceNameResults.innerHTML = '';
+        serviceNameStatus.textContent = 'Escribe al menos tres letras para buscar en todos los reportes CFE cargados.';
+        return;
+    }
+    serviceNameStatus.textContent = 'Buscando el servicio en los reportes CFE...';
+    const body = new URLSearchParams({accion: 'buscar_rpu_por_nombre', csrf, nombre});
+    try {
+        const response = await fetch('../controllers/rpuController.php', {method: 'POST', headers: {'X-CSRF-Token': csrf}, body});
+        const data = await leerRespuestaJson(response, 'No fue posible buscar el nombre del servicio.');
+        const resultados = data.resultados || [];
+        serviceNameStatus.textContent = `${resultados.length.toLocaleString('es-MX')} RPU${resultados.length === 1 ? '' : 's'} encontrado${resultados.length === 1 ? '' : 's'}.`;
+        renderServiceNameResults(resultados);
+    } catch (error) {
+        serviceNameStatus.textContent = error.message;
+        serviceNameResults.hidden = true;
+    }
+}
+
+serviceNameSearchForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    buscarServicioPorNombre();
+});
+
+serviceNameSearch.addEventListener('input', () => {
+    clearTimeout(serviceSearchTimer);
+    serviceSearchTimer = setTimeout(buscarServicioPorNombre, 350);
+});
 
 function abrirCargaSugerencias() {
     if (!window.Swal) {

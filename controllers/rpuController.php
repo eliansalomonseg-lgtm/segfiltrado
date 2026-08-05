@@ -405,6 +405,38 @@ class RpuController
         }
     }
 
+    public function buscarRpuPorNombre(): void
+    {
+        $this->validarToken();
+        try {
+            $nombre = trim((string) ($_POST['nombre'] ?? ''));
+            if (mb_strlen($nombre) < 3) {
+                $this->responder(['ok' => true, 'resultados' => []]);
+            }
+            $conexion = Conexion::conectar();
+            $consulta = $conexion->prepare(
+                'SELECT cc.RPU,
+                        MAX(cc.nombre_cfe) AS nombre_cfe,
+                        MAX(cc.direccion_cfe) AS direccion_cfe,
+                        MAX(cc.poblacion_cfe) AS poblacion_cfe,
+                        MAX(cc.tarifa_cfe) AS tarifa_cfe,
+                        COUNT(DISTINCT cc.reporte_id) AS total_reportes,
+                        MAX(CONCAT(cr.anio, "-", LPAD(cr.mes, 2, "0"))) AS ultimo_periodo,
+                        GROUP_CONCAT(DISTINCT CONCAT(cr.anio, "-", LPAD(cr.mes, 2, "0")) ORDER BY cr.anio DESC, cr.mes DESC SEPARATOR " | ") AS periodos
+                 FROM cfe_consumos cc
+                 INNER JOIN cfe_reportes cr ON cr.id = cc.reporte_id
+                 WHERE cc.nombre_cfe LIKE :nombre
+                 GROUP BY cc.RPU
+                 ORDER BY ultimo_periodo DESC, nombre_cfe, cc.RPU
+                 LIMIT 100'
+            );
+            $consulta->execute(['nombre' => '%' . $nombre . '%']);
+            $this->responder(['ok' => true, 'resultados' => $consulta->fetchAll()]);
+        } catch (Throwable $e) {
+            $this->responder(['ok' => false, 'error' => 'No fue posible buscar servicios por nombre: ' . $e->getMessage()], 500);
+        }
+    }
+
     public function opcionesCatalogoCfe(): void
     {
         $this->validarToken();
@@ -1696,7 +1728,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $controlador = new RpuController();
 $accion = $_POST['accion'] ?? '';
 
-if (in_array($accion, ['sugerir_vinculos_paginados', 'vincular_rpu', 'vincular_rpus_masivo', 'auto_vincular_sugerencias', 'previsualizar_auto_vinculos', 'desvincular_rpu', 'previsualizar_exportacion_anual', 'exportar_rpus_anual'], true)) {
+if (in_array($accion, ['sugerir_vinculos_paginados', 'buscar_rpu_por_nombre', 'vincular_rpu', 'vincular_rpus_masivo', 'auto_vincular_sugerencias', 'previsualizar_auto_vinculos', 'desvincular_rpu', 'previsualizar_exportacion_anual', 'exportar_rpus_anual'], true)) {
     segRequireAdmin();
 }
 
@@ -1714,6 +1746,10 @@ if ($accion === 'buscar_catalogo_cfe') {
 
 if ($accion === 'sugerir_vinculos_paginados') {
     $controlador->sugerirVinculosPaginados();
+}
+
+if ($accion === 'buscar_rpu_por_nombre') {
+    $controlador->buscarRpuPorNombre();
 }
 
 if ($accion === 'opciones_catalogo_cfe') {

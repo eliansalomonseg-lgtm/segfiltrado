@@ -1212,6 +1212,72 @@ body {
     margin-bottom: 16px;
 }
 
+.service-search-workbench .link-match-form {
+    grid-template-columns: minmax(320px, .8fr);
+}
+
+.service-name-results {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.service-name-card {
+    align-items: center;
+    background: #fbfcfd;
+    border: 1px solid var(--seg-border);
+    border-radius: 10px;
+    display: grid;
+    gap: 14px;
+    grid-template-columns: minmax(280px, 1.1fr) minmax(220px, .9fr) auto;
+    padding: 14px;
+}
+
+.service-name-main,
+.service-name-reports {
+    display: grid;
+    gap: 4px;
+}
+
+.service-name-main strong {
+    color: var(--seg-guinda);
+    font-size: 16px;
+}
+
+.service-name-main span {
+    color: var(--seg-text);
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.service-name-main small,
+.service-name-reports span {
+    color: var(--seg-muted);
+    font-size: 11px;
+}
+
+.service-name-reports b {
+    color: var(--seg-text);
+    font-size: 12px;
+}
+
+.service-name-reports > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.service-name-reports em {
+    background: #f7efe4;
+    border: 1px solid #e7d3ae;
+    border-radius: 999px;
+    color: #7d5d2d;
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 800;
+    padding: 3px 7px;
+}
+
 .link-match-form {
     grid-template-columns: minmax(300px, 1fr) auto;
     margin-bottom: 12px;
@@ -1401,7 +1467,8 @@ body {
 @media (max-width: 760px) {
     .link-match-form,
     .link-match-result,
-    .suggested-rpu-card {
+    .suggested-rpu-card,
+    .service-name-card {
         grid-template-columns: 1fr;
     }
 
