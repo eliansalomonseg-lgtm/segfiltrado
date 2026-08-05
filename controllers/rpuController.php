@@ -381,7 +381,12 @@ class RpuController
                         'consumo' => (float) $fila['consumo']
                     ],
                     'sugerencias' => $this->evaluarSugerencias(
-                        $this->candidatosRapidosPorUbicacion($indiceEscuelas, $referencia),
+                        $this->candidatosRapidosPorUbicacion(
+                            $indiceEscuelas,
+                            $referencia,
+                            (string) ($fila['nombre_cfe'] ?? ''),
+                            (string) ($fila['direccion_cfe'] ?? '')
+                        ),
                         (string) ($fila['nombre_cfe'] ?? ''),
                         $referencia,
                         (string) ($fila['direccion_cfe'] ?? '')
@@ -1288,6 +1293,7 @@ class RpuController
         $porLocalidad = [];
         $porMunicipio = [];
         $porUbicacion = [];
+        $porTexto = [];
         foreach ($filas as $fila) {
             $localidad = $this->normalizar((string) ($fila['NOMBRELOC'] ?? ''));
             $municipio = $this->normalizar((string) ($fila['NOMBREMUN'] ?? ''));
@@ -1300,21 +1306,67 @@ class RpuController
             if ($localidad !== '' && $municipio !== '') {
                 $porUbicacion[$localidad . '|' . $municipio][] = $fila;
             }
+            $texto = $this->normalizar(implode(' ', [
+                (string) ($fila['NOMBRECT'] ?? ''),
+                (string) ($fila['DOMICILIO'] ?? ''),
+                (string) ($fila['NOMBRELOC'] ?? '')
+            ]));
+            foreach (array_unique(explode(' ', $texto)) as $palabra) {
+                if (strlen($palabra) >= 5) {
+                    $porTexto[$palabra][] = $fila;
+                }
+            }
         }
-        return ['localidad' => $porLocalidad, 'municipio' => $porMunicipio, 'ubicacion' => $porUbicacion];
+        return ['localidad' => $porLocalidad, 'municipio' => $porMunicipio, 'ubicacion' => $porUbicacion, 'texto' => $porTexto];
     }
 
-    private function candidatosRapidosPorUbicacion(array $indice, array $referencia): array
+    private function candidatosRapidosPorUbicacion(array $indice, array $referencia, string $nombre = '', string $direccion = ''): array
     {
         $localidad = $this->normalizar((string) ($referencia['localidad'] ?? ''));
         $municipio = $this->normalizar((string) ($referencia['municipio'] ?? ''));
         if ($localidad !== '' && $municipio !== '') {
-            return $indice['ubicacion'][$localidad . '|' . $municipio] ?? [];
+            $exactos = $indice['ubicacion'][$localidad . '|' . $municipio] ?? [];
+            if ($exactos) {
+                return $exactos;
+            }
         }
         if ($localidad !== '') {
-            return $indice['localidad'][$localidad] ?? [];
+            $exactos = $indice['localidad'][$localidad] ?? [];
+            if ($exactos) {
+                return $exactos;
+            }
         }
-        return $municipio !== '' ? ($indice['municipio'][$municipio] ?? []) : [];
+        if ($municipio !== '' && !empty($indice['municipio'][$municipio])) {
+            return $indice['municipio'][$municipio];
+        }
+
+        $candidatos = [];
+        foreach (['localidad' => $localidad, 'municipio' => $municipio] as $tipo => $referenciaTexto) {
+            if ($referenciaTexto === '') {
+                continue;
+            }
+            foreach (($indice[$tipo] ?? []) as $ubicacion => $filas) {
+                if (str_contains($ubicacion, $referenciaTexto) || str_contains($referenciaTexto, $ubicacion)) {
+                    foreach ($filas as $fila) {
+                        $candidatos[(string) ($fila['id'] ?? $fila['CCT'])] = $fila;
+                    }
+                }
+            }
+        }
+        if ($candidatos) {
+            return array_values($candidatos);
+        }
+
+        $palabras = array_unique(array_filter(
+            explode(' ', $this->normalizar($localidad . ' ' . $direccion . ' ' . $nombre)),
+            static fn (string $palabra): bool => strlen($palabra) >= 5
+        ));
+        foreach ($palabras as $palabra) {
+            foreach (($indice['texto'][$palabra] ?? []) as $fila) {
+                $candidatos[(string) ($fila['id'] ?? $fila['CCT'])] = $fila;
+            }
+        }
+        return array_values($candidatos);
     }
 
     private function evaluarSugerencias(array $filas, string $nombre, array $referencia, string $direccion): array
@@ -1433,7 +1485,8 @@ class RpuController
 
     private function referenciaGeograficaCfe(string $poblacion): array
     {
-        $texto = trim($poblacion);
+        $texto = trim(preg_replace('/\s+/', ' ', $poblacion) ?? '');
+        $texto = trim((string) preg_replace('/,?\s*(GRO\.?|GUERRERO)(?:\s+[A-Z])?\.?$/iu', '', $texto));
         $localidad = $texto;
         $municipio = '';
         if (preg_match('/^(.*?)\s*\(([^)]+)\)\s*$/u', $texto, $coincidencia)) {
