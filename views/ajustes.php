@@ -13,11 +13,14 @@ $mesActual = (int) date('n');
 $anioExportacion = $anioActual;
 $mesExportacion = $mesActual;
 $reportesDisponibles = [];
+$aniosReportes = [];
 
 try {
     $conexionVista = Conexion::conectar();
     $ultimoReporte = $conexionVista->query('SELECT anio, mes FROM cfe_reportes ORDER BY anio DESC, mes DESC, id DESC LIMIT 1')->fetch();
     $reportesDisponibles = $conexionVista->query('SELECT id, archivo, anio, mes, total_registros FROM cfe_reportes ORDER BY anio DESC, mes DESC, id DESC')->fetchAll();
+    $aniosReportes = array_values(array_unique(array_map(static fn (array $reporte): int => (int) $reporte['anio'], $reportesDisponibles)));
+    rsort($aniosReportes, SORT_NUMERIC);
     if ($ultimoReporte) {
         $anioExportacion = (int) $ultimoReporte['anio'];
         $mesExportacion = (int) $ultimoReporte['mes'];
@@ -59,11 +62,28 @@ if (empty($_SESSION['seg_csrf'])) {
             <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['seg_csrf'], ENT_QUOTES, 'UTF-8') ?>">
             <div class="period-controls report-picker">
                 <label>
+                    <span>Periodo</span>
+                    <select id="report-year-filter" <?= $reportesDisponibles ? '' : 'disabled' ?>>
+                        <option value="all">Todos los años</option>
+                        <option value="before-2022">Hasta 2021</option>
+                        <?php foreach ($aniosReportes as $anio): ?>
+                            <option value="<?= $anio ?>"><?= $anio ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </label>
+                <label>
+                    <span>Orden de reportes</span>
+                    <select id="report-order-filter" <?= $reportesDisponibles ? '' : 'disabled' ?>>
+                        <option value="desc">Mas reciente primero</option>
+                        <option value="asc">Mas antiguo primero</option>
+                    </select>
+                </label>
+                <label>
                     <span>Reporte CFE guardado</span>
                     <select name="reporte_id" required <?= $reportesDisponibles ? '' : 'disabled' ?>>
                         <option value="">Selecciona un reporte cargado</option>
                         <?php foreach ($reportesDisponibles as $reporte): ?>
-                            <option value="<?= (int) $reporte['id'] ?>"><?= htmlspecialchars(sprintf('%04d-%02d | %s | %s registros', (int) $reporte['anio'], (int) $reporte['mes'], (string) $reporte['archivo'], number_format((int) $reporte['total_registros'])), ENT_QUOTES, 'UTF-8') ?></option>
+                            <option value="<?= (int) $reporte['id'] ?>" data-anio="<?= (int) $reporte['anio'] ?>" data-mes="<?= (int) $reporte['mes'] ?>"><?= htmlspecialchars(sprintf('%04d-%02d | %s | %s registros', (int) $reporte['anio'], (int) $reporte['mes'], (string) $reporte['archivo'], number_format((int) $reporte['total_registros'])), ENT_QUOTES, 'UTF-8') ?></option>
                         <?php endforeach; ?>
                     </select>
                 </label>
@@ -79,7 +99,7 @@ if (empty($_SESSION['seg_csrf'])) {
             <div>
                 <span class="eyebrow">EXPORTACIONES</span>
                 <h2>Reportes por mes</h2>
-                <p>Elige mes y anio para exportar desde la base local sin volver a importar archivos.</p>
+                <p>El reporte de ajustes incluye solo recibos cuyo periodo facturado no corresponde con la tarifa.</p>
             </div>
         </div>
         <form id="export-form" class="adjustment-form" method="POST" action="../controllers/ajustesController.php">
@@ -100,7 +120,7 @@ if (empty($_SESSION['seg_csrf'])) {
                 </label>
             </div>
             <div class="d-flex flex-wrap gap-2">
-                <button class="btn-seg compact-action btn-sync-catalogs" type="submit" name="exportar_tipo" value="ajustes_mes"><i class="bi bi-filetype-csv me-2"></i>Ajustes por fechas CSV</button>
+                <button class="btn-seg compact-action btn-sync-catalogs" type="submit" name="exportar_tipo" value="ajustes_mes"><i class="bi bi-filetype-csv me-2"></i>Ajustes reales CSV</button>
                 <button class="btn-seg compact-action btn-sync-catalogs" type="submit" name="exportar_tipo" value="bajo_consumo_mes"><i class="bi bi-filetype-csv me-2"></i>Consumo muy bajo CSV</button>
             </div>
         </form>
@@ -170,7 +190,11 @@ if (empty($_SESSION['seg_csrf'])) {
                 <span class="eyebrow">RESULTADOS</span>
                 <h2>Alertas detectadas</h2>
             </div>
-            <span class="alert-gold" id="adjustment-file">Sin archivo</span>
+            <div class="adjustment-result-controls">
+                <label><span>Ver</span><select id="adjustment-kind-filter"><option value="all">Todas las alertas</option><option value="real">Solo ajustes reales</option><option value="increase">Solo aumentos sin ajuste</option></select></label>
+                <label><span>Ordenar</span><select id="adjustment-sort-filter"><option value="total-desc">Mayor importe</option><option value="total-asc">Menor importe</option><option value="rpu">RPU</option></select></label>
+                <span class="alert-gold" id="adjustment-file">Sin archivo</span>
+            </div>
         </div>
         <div class="table-wrap">
             <table class="control-table">
@@ -200,8 +224,14 @@ const summary = document.getElementById('adjustment-summary');
 const results = document.getElementById('adjustment-results');
 const body = document.getElementById('adjustment-body');
 const fileLabel = document.getElementById('adjustment-file');
+const reportSelect = form.querySelector('[name="reporte_id"]');
+const reportYearFilter = document.getElementById('report-year-filter');
+const reportOrderFilter = document.getElementById('report-order-filter');
+const adjustmentKindFilter = document.getElementById('adjustment-kind-filter');
+const adjustmentSortFilter = document.getElementById('adjustment-sort-filter');
 let currentRows = [];
 let currentReport = {};
+const reportOptions = Array.from(reportSelect.options).filter((option) => option.value);
 
 const money = new Intl.NumberFormat('es-MX', {style: 'currency', currency: 'MXN'});
 const number = new Intl.NumberFormat('es-MX');
@@ -212,6 +242,45 @@ function escapeHtml(value) {
 
 function problemRows() {
     return currentRows.filter((row) => row.alertas.length > 0 || (row.tendencia && Number(row.tendencia.diferencia_total || 0) > 0));
+}
+
+function isRealAdjustment(row) {
+    const minDays = row.tipo_periodo === 'mensual' ? 25 : 50;
+    const maxDays = row.tipo_periodo === 'mensual' ? 35 : 75;
+    const days = Number(row.dias);
+    return !Number.isFinite(days) || days < minDays || days > maxDays;
+}
+
+function visibleRows() {
+    const kind = adjustmentKindFilter.value;
+    const sort = adjustmentSortFilter.value;
+    const rows = problemRows().filter((row) => {
+        if (kind === 'real') return isRealAdjustment(row);
+        if (kind === 'increase') return !isRealAdjustment(row) && row.tendencia && Number(row.tendencia.diferencia_total || 0) > 0;
+        return true;
+    });
+    return rows.sort((a, b) => {
+        if (sort === 'total-asc') return Number(a.total || 0) - Number(b.total || 0);
+        if (sort === 'rpu') return String(a.rpu || '').localeCompare(String(b.rpu || ''), 'es');
+        return Number(b.total || 0) - Number(a.total || 0);
+    });
+}
+
+function actualizarSelectorReportes() {
+    const filtroAnio = reportYearFilter.value;
+    const orden = reportOrderFilter.value;
+    const seleccionado = reportSelect.value;
+    const opciones = reportOptions.filter((option) => {
+        const anio = Number(option.dataset.anio || 0);
+        return filtroAnio === 'all' || (filtroAnio === 'before-2022' ? anio <= 2021 : anio === Number(filtroAnio));
+    }).sort((a, b) => {
+        const fechaA = Number(a.dataset.anio) * 100 + Number(a.dataset.mes);
+        const fechaB = Number(b.dataset.anio) * 100 + Number(b.dataset.mes);
+        return orden === 'asc' ? fechaA - fechaB : fechaB - fechaA;
+    });
+    reportSelect.innerHTML = '<option value="">Selecciona un reporte cargado</option>';
+    opciones.forEach((option) => reportSelect.append(option));
+    if (opciones.some((option) => option.value === seleccionado)) reportSelect.value = seleccionado;
 }
 
 function rowCase(row) {
@@ -236,7 +305,8 @@ function render(data) {
         }
     });
     fileLabel.textContent = `${data.archivo || 'Reporte'} ${data.mes_reporte ? ' - ' + data.mes_reporte : ''} - ${data.modo_periodo || 'automatico'}`;
-    body.innerHTML = problemRows().slice(0, 200).map((row) => {
+    const rows = visibleRows();
+    body.innerHTML = rows.slice(0, 200).map((row) => {
         const level = row.severidad >= 7 ? 'status-warn' : row.severidad >= 4 ? '' : 'status-ok';
         const linked = row.escuelas_vinculadas?.[0];
         const suggested = row.sugerencias_escuela?.[0];
@@ -263,6 +333,11 @@ function render(data) {
     summary.hidden = false;
     results.hidden = false;
 }
+
+reportYearFilter?.addEventListener('change', actualizarSelectorReportes);
+reportOrderFilter?.addEventListener('change', actualizarSelectorReportes);
+adjustmentKindFilter?.addEventListener('change', () => render(currentReport));
+adjustmentSortFilter?.addEventListener('change', () => render(currentReport));
 
 form.addEventListener('submit', async (event) => {
     event.preventDefault();

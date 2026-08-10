@@ -1205,7 +1205,7 @@ body {
 }
 
 .report-picker {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(3, minmax(160px, 1fr));
 }
 
 .link-workbench {
@@ -1338,6 +1338,16 @@ body {
     padding: 10px 0;
 }
 
+.school-match-card.is-confirmed-location {
+    border-left: 3px solid #1b9366;
+    padding-left: 10px;
+}
+
+.school-match-card.is-review-location {
+    border-left: 3px solid #d59b35;
+    padding-left: 10px;
+}
+
 .school-match-card > div {
     display: grid;
     gap: 3px;
@@ -1345,6 +1355,42 @@ body {
 
 .school-match-card .status-pill {
     justify-self: start;
+}
+
+.match-location-state {
+    align-items: center;
+    display: flex;
+    gap: 5px;
+    color: #8a5b17 !important;
+    font-weight: 800;
+}
+
+.school-match-actions {
+    align-items: stretch;
+    display: grid;
+    gap: 7px;
+    min-width: 108px;
+}
+
+.map-school-link {
+    align-items: center;
+    background: #fff;
+    border: 1px solid #c8d8d0;
+    border-radius: 6px;
+    color: #18704f;
+    display: inline-flex;
+    font-size: 11px;
+    font-weight: 800;
+    gap: 5px;
+    justify-content: center;
+    padding: 7px 9px;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.map-school-link:hover {
+    background: #e8f6ee;
+    color: #0f563a;
 }
 
 .manual-cct-link {
@@ -1481,6 +1527,11 @@ body {
         width: 100%;
     }
 
+    .school-match-actions {
+        grid-template-columns: 1fr 1fr;
+        width: 100%;
+    }
+
     .manual-cct-link > div {
         flex-direction: column;
     }
@@ -1552,10 +1603,77 @@ body {
     outline: 0;
 }
 
+.annual-period-controls {
+    background: #fbfcfd;
+    border: 1px solid #e3ddd7;
+    border-radius: 7px;
+    display: grid;
+    gap: 10px;
+    grid-template-columns: 1.25fr .8fr 1.25fr .8fr;
+    padding: 10px;
+}
+
+.annual-period-controls label {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+}
+
+.annual-period-controls label span {
+    color: #697386;
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.annual-period-controls select,
+.annual-period-controls input {
+    background: #fff;
+    border: 1px solid #dcd4cb;
+    border-radius: 6px;
+    color: #4e1621;
+    font-family: Montserrat, sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    min-height: 40px;
+    padding: 7px 9px;
+    width: 100%;
+}
+
 .annual-export-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
+}
+
+.annual-export-filter {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+}
+
+.annual-export-filter span {
+    color: #697386;
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.annual-export-filter select {
+    background: #fff;
+    border: 1px solid #dcd4cb;
+    border-radius: 6px;
+    color: #4e1621;
+    font-family: Montserrat, sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    min-height: 42px;
+    padding: 7px 28px 7px 10px;
+}
+
+.annual-export-filter select:disabled {
+    background: #f6f4f2;
+    color: #9b9590;
 }
 
 .annual-export-actions .btn-seg.secondary {
@@ -1618,6 +1736,17 @@ body {
     line-height: 1.35;
     margin: 0;
     overflow-wrap: anywhere;
+}
+
+.annual-export-service small {
+    color: #5c796d;
+    font-size: 10px;
+    font-weight: 800;
+    grid-column: 2;
+}
+
+.annual-export-service.not-found small {
+    color: #9a6a20;
 }
 
 .annual-export-service.not-found {
@@ -1695,6 +1824,15 @@ body {
     }
 
     .annual-export-actions .btn-seg {
+        width: 100%;
+    }
+
+    .annual-period-controls {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .annual-export-filter,
+    .annual-export-filter select {
         width: 100%;
     }
 
@@ -3081,6 +3219,38 @@ body {
     box-shadow: 0 0 0 3px rgba(106, 27, 41, .08);
 }
 
+.adjustment-result-controls {
+    align-items: end;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.adjustment-result-controls label {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+}
+
+.adjustment-result-controls label span {
+    color: var(--seg-muted);
+    font-size: 9px;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.adjustment-result-controls select {
+    background: #fff;
+    border: 1px solid var(--seg-border);
+    border-radius: 7px;
+    color: var(--seg-text);
+    font-size: 12px;
+    font-weight: 700;
+    min-height: 34px;
+    padding: 5px 28px 5px 9px;
+}
+
 /* ── RPU section ──────────────────────────────────────── */
 
 .rpu-search-card {
@@ -3137,6 +3307,29 @@ body {
     margin-top: 6px;
     padding: 7px 9px;
     width: fit-content;
+}
+
+.school-map-link {
+    align-items: center;
+    align-self: start;
+    background: #ecfdf5;
+    border: 1px solid #a7e8d0;
+    border-radius: 4px;
+    color: #087a57;
+    display: inline-flex;
+    font-size: 11px;
+    font-weight: 800;
+    gap: 5px;
+    margin-top: 4px;
+    padding: 7px 9px;
+    text-decoration: none;
+    width: fit-content;
+}
+
+.school-map-link:hover {
+    background: #087a57;
+    border-color: #087a57;
+    color: #ffffff;
 }
 
 .unlink-rpu-button:hover {

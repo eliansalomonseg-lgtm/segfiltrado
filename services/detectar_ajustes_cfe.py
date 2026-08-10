@@ -5,6 +5,7 @@ import math
 import re
 import sys
 import unicodedata
+from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -62,6 +63,12 @@ def numero(valor):
 def fecha(valor):
     if valor is None or pd.isna(valor):
         return None
+    if isinstance(valor, (pd.Timestamp, datetime, date)):
+        convertido = pd.to_datetime(valor, errors="coerce")
+        return None if pd.isna(convertido) else convertido.to_pydatetime()
+    if isinstance(valor, (int, float)) and math.isfinite(valor):
+        convertido = pd.to_datetime(valor, unit="D", origin="1899-12-30", errors="coerce")
+        return None if pd.isna(convertido) else convertido.to_pydatetime()
     texto = str(valor).strip()
     meses = {
         "ene": "jan",
@@ -71,7 +78,10 @@ def fecha(valor):
     }
     for espanol, ingles in meses.items():
         texto = re.sub(rf"(?i)(?<=-){espanol}(?=-)", ingles, texto)
-    convertido = pd.to_datetime(texto, errors="coerce", dayfirst=True)
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", texto):
+        convertido = pd.to_datetime(texto, format="%Y-%m-%d", errors="coerce")
+    else:
+        convertido = pd.to_datetime(texto, errors="coerce", dayfirst=True)
     if pd.isna(convertido):
         return None
     return convertido.to_pydatetime()
@@ -186,9 +196,6 @@ def clasificar_alertas(fila, mes_reporte, modo_periodo):
         if dias < minimo_dias or dias > maximo_dias:
             alertas.append(f"Periodo no coincide con {descripcion_periodo} ({dias} dias)")
             severidad += 3
-        if mes_reporte and (hasta.year, hasta.month) != mes_reporte:
-            alertas.append("Fecha HASTA fuera del mes del reporte")
-            severidad += 2
     else:
         alertas.append("Fechas DESDE/HASTA incompletas")
         severidad += 2

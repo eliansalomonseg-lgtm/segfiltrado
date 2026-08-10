@@ -26,8 +26,9 @@ class AjustesController
         $errores = [];
         $totalRegistros = 0;
         $periodosManuales = is_array($_POST['periodos_reportes'] ?? null) ? $_POST['periodos_reportes'] : [];
+        $reemplazarReportes = (string) ($_POST['reemplazar_reportes'] ?? '') === '1';
         $periodosSolicitados = [];
-        $consultaExistente = $conexion->prepare('SELECT 1 FROM cfe_reportes WHERE anio = ? AND mes = ? LIMIT 1');
+        $consultaExistente = $conexion->prepare('SELECT id FROM cfe_reportes WHERE anio = ? AND mes = ? LIMIT 1');
 
         foreach ($archivos['name'] as $indice => $nombreOriginal) {
             if (($archivos['error'][$indice] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
@@ -57,7 +58,8 @@ class AjustesController
             }
             $periodosSolicitados[$llavePeriodo] = true;
             $consultaExistente->execute([$anio, $mes]);
-            if ($consultaExistente->fetchColumn()) {
+            $reporteExistente = $consultaExistente->fetch();
+            if ($reporteExistente && !$reemplazarReportes) {
                 $errores[] = ['archivo' => $nombreOriginal, 'error' => 'El periodo ' . $llavePeriodo . ' ya existe y no fue modificado.'];
                 continue;
             }
@@ -79,10 +81,10 @@ class AjustesController
                     throw new RuntimeException((string) ($resultado['error'] ?? 'El analizador no devolvio una respuesta valida.'));
                 }
                 $resultado['archivo'] = (string) $nombreOriginal;
-                $guardado = $this->guardarHistorial($conexion, $resultado, $anio, $mes, 'automatico');
+                $guardado = $this->guardarHistorial($conexion, $resultado, $anio, $mes, 'automatico', $reporteExistente !== false);
                 $registros = (int) ($guardado['historial_guardado'] ?? 0);
                 $totalRegistros += $registros;
-                $procesados[] = ['archivo' => $nombreOriginal, 'periodo' => sprintf('%04d-%02d', $anio, $mes), 'registros' => $registros];
+                $procesados[] = ['archivo' => $nombreOriginal, 'periodo' => sprintf('%04d-%02d', $anio, $mes), 'registros' => $registros, 'reemplazado' => $reporteExistente !== false];
             } catch (Throwable $e) {
                 $errores[] = ['archivo' => $nombreOriginal, 'error' => $e->getMessage()];
             } finally {
@@ -457,6 +459,7 @@ class AjustesController
     public function exportarExcelDirectores(): void
     {
         $this->validarToken();
+        set_time_limit(0);
         try {
             $conexion = Conexion::conectar();
             $this->prepararHistorialCfe($conexion);
@@ -645,12 +648,16 @@ class AjustesController
         }
     }
 
-    private function guardarHistorial(PDO $conexion, array $resultado, int $anio, int $mes, string $modoPeriodo): array
+    private function guardarHistorial(PDO $conexion, array $resultado, int $anio, int $mes, string $modoPeriodo, bool $reemplazarExistente = false): array
     {
         $resumen = $resultado['resumen'] ?? [];
         $registros = is_array($resultado['registros'] ?? null) ? $resultado['registros'] : [];
         $conexion->beginTransaction();
         try {
+            if ($reemplazarExistente) {
+                $eliminarReporte = $conexion->prepare('DELETE FROM cfe_reportes WHERE anio = ? AND mes = ?');
+                $eliminarReporte->execute([$anio, $mes]);
+            }
             $consultaReporte = $conexion->prepare(
                 'INSERT INTO cfe_reportes (archivo, anio, mes, modo_periodo, total_registros, con_alerta, severos, periodo_correcto, importe_total)
                  VALUES (:archivo, :anio, :mes, :modo, :total_registros, :con_alerta, :severos, :periodo_correcto, :importe_total)'
@@ -919,23 +926,9 @@ class AjustesController
             "SELECT cc.id, cc.reporte_id, cc.RPU, cc.CCT, cc.nombre_cfe, cc.poblacion_cfe, cc.tarifa_cfe, cc.tipo_periodo,
                     cc.desde, cc.hasta, cc.dias, cc.consumo, cc.total, cc.diferencia, cc.severidad, cc.alertas,
                     cr.anio, cr.mes,
-                    (
-                        SELECT GROUP_CONCAT(DISTINCT er2.CCT ORDER BY er2.CCT SEPARATOR ' / ')
-                        FROM escuelas_rpu er2
-                        WHERE er2.RPU = cc.RPU
-                    ) ccts_vinculados,
-                    (
-                        SELECT GROUP_CONCAT(DISTINCT e2.NOMBRECT ORDER BY e2.NOMBRECT SEPARATOR ' / ')
-                        FROM escuelas_rpu er2
-                        LEFT JOIN escuelas e2 ON e2.CCT = er2.CCT
-                        WHERE er2.RPU = cc.RPU
-                    ) escuelas_vinculadas,
-                    (
-                        SELECT GROUP_CONCAT(DISTINCT e2.SUBNIVEL ORDER BY e2.SUBNIVEL SEPARATOR ' / ')
-                        FROM escuelas_rpu er2
-                        LEFT JOIN escuelas e2 ON e2.CCT = er2.CCT
-                        WHERE er2.RPU = cc.RPU
-                    ) niveles_vinculados,
+                    vinculos.ccts_vinculados,
+                    vinculos.escuelas_vinculadas,
+                    vinculos.niveles_vinculados,
                     (
                         SELECT prev.total
                         FROM cfe_consumos prev
@@ -947,6 +940,15 @@ class AjustesController
                     ) total_anterior
              FROM cfe_consumos cc
              INNER JOIN cfe_reportes cr ON cr.id = cc.reporte_id
+             LEFT JOIN (
+                 SELECT er2.RPU,
+                        GROUP_CONCAT(DISTINCT er2.CCT ORDER BY er2.CCT SEPARATOR ' / ') ccts_vinculados,
+                        GROUP_CONCAT(DISTINCT e2.NOMBRECT ORDER BY e2.NOMBRECT SEPARATOR ' / ') escuelas_vinculadas,
+                        GROUP_CONCAT(DISTINCT e2.SUBNIVEL ORDER BY e2.SUBNIVEL SEPARATOR ' / ') niveles_vinculados
+                 FROM escuelas_rpu er2
+                 LEFT JOIN escuelas e2 ON e2.CCT = er2.CCT
+                 GROUP BY er2.RPU
+             ) vinculos ON vinculos.RPU = cc.RPU
              WHERE cc.reporte_id IN ($marcadores)
              ORDER BY cr.anio DESC, cr.mes DESC, cr.id DESC, cc.total DESC"
         );
@@ -980,12 +982,7 @@ class AjustesController
         $totalActual = (float) ($fila['total'] ?? 0);
         $totalAnterior = $fila['total_anterior'] !== null ? (float) $fila['total_anterior'] : null;
         $aumento = $totalAnterior !== null ? $totalActual - $totalAnterior : 0.0;
-        $hasta = trim((string) ($fila['hasta'] ?? ''));
-        $fechaHastaFuera = false;
-        if (preg_match('/^(\d{4})-(\d{2})-\d{2}$/', $hasta, $coincidencia)) {
-            $fechaHastaFuera = (int) $coincidencia[1] !== (int) ($fila['anio'] ?? 0) || (int) $coincidencia[2] !== (int) ($fila['mes'] ?? 0);
-        }
-        $periodoFueraRegla = $dias === null || !$periodoCorrecto || $fechaHastaFuera;
+        $periodoFueraRegla = $dias === null || !$periodoCorrecto;
         $subioSinAjuste = $periodoCorrecto && $aumento > 0;
         $sinVinculo = trim((string) ($fila['ccts_vinculados'] ?? '')) === '';
         if ($modo === 'bajo_consumo') {
@@ -1028,9 +1025,6 @@ class AjustesController
             $seccion = 'ajustes';
             $situacion = 'AJUSTE POR FECHAS';
             $mensaje = 'La tarifa ' . (string) ($fila['tarifa_cfe'] ?? '') . ' debe ser ' . strtolower($periodoEsperado) . ', pero el recibo trae ' . (string) ($fila['desde'] ?? '') . ' al ' . (string) ($fila['hasta'] ?? '') . ' (' . (string) ($dias ?? 'sin dias') . ' dias).';
-            if ($fechaHastaFuera) {
-                $mensaje .= ' La fecha HASTA no corresponde al mes del reporte ' . sprintf('%04d-%02d', (int) ($fila['anio'] ?? 0), (int) ($fila['mes'] ?? 0)) . '.';
-            }
         } elseif ($subioSinAjuste) {
             $seccion = 'aumentos';
             $situacion = 'SUBIO SIN AJUSTE';
@@ -1126,43 +1120,65 @@ class AjustesController
     private function construirCsvDirectores(array $reportes, array $casos, string $modo): string
     {
         $archivo = fopen('php://temp', 'r+');
-        fputcsv($archivo, [
-            'PERIODO_REPORTE', 'ARCHIVO_REPORTE', 'SECCION', 'SITUACION', 'ESCUELA_O_RPU', 'CCT', 'NIVEL', 'RPU',
-            'RECIBO_CFE', 'POBLACION_CFE', 'TARIFA', 'PERIODO_ESPERADO', 'PERIODO_CFE', 'DIAS', 'CONSUMO_KWH',
-            'TOTAL_ACTUAL', 'AUMENTO_VS_ANTERIOR', 'EXPLICACION'
-        ], ',', '"');
+        $filas = [];
         foreach ($reportes as $reporte) {
             $reporteId = (int) $reporte['id'];
-            $periodo = sprintf('%04d-%02d', (int) $reporte['anio'], (int) $reporte['mes']);
             foreach ($casos[$reporteId] ?? [] as $caso) {
                 if ($modo === 'bajo_consumo' && $caso['seccion'] !== 'bajo_consumo') {
                     continue;
                 }
-                if ($modo !== 'bajo_consumo' && !in_array($caso['seccion'], ['ajustes', 'aumentos'], true)) {
+                if ($modo !== 'bajo_consumo' && $caso['seccion'] !== 'ajustes') {
                     continue;
                 }
-                fputcsv($archivo, [
-                    $periodo,
-                    (string) $reporte['archivo'],
-                    (string) $caso['seccion'],
-                    (string) $caso['situacion'],
-                    (string) $caso['escuela'],
-                    (string) $caso['cct'],
-                    (string) $caso['nivel'],
-                    (string) $caso['rpu'],
-                    (string) $caso['recibo'],
-                    (string) $caso['poblacion'],
-                    (string) $caso['tarifa'],
-                    (string) ($caso['periodo_esperado'] ?? ''),
-                    (string) $caso['periodo'],
-                    $caso['dias'] ?? '',
-                    number_format((float) $caso['consumo'], 2, '.', ''),
-                    number_format((float) $caso['total'], 2, '.', ''),
-                    number_format((float) $caso['aumento'], 2, '.', ''),
-                    (string) $caso['mensaje']
-                ], ',', '"');
+                $filas[] = ['reporte' => $reporte, 'caso' => $caso];
             }
         }
+        usort($filas, static fn (array $a, array $b): int => [
+            (float) $b['caso']['total'],
+            (float) $b['caso']['aumento'],
+            (string) $a['caso']['rpu']
+        ] <=> [
+            (float) $a['caso']['total'],
+            (float) $a['caso']['aumento'],
+            (string) $b['caso']['rpu']
+        ]);
+        fputcsv($archivo, [
+            'NO.', 'IMPORTE_TOTAL_MXN', 'SITUACION', 'RPU', 'NOMBRE_DEL_SERVICIO_CFE', 'ESCUELA_VINCULADA', 'CCT', 'NIVEL',
+            'POBLACION_CFE', 'TARIFA', 'PERIODO_CFE', 'DIAS_FACTURADOS', 'PERIODO_ESPERADO', 'CONSUMO_KWH',
+            'AUMENTO_VS_ANTERIOR_MXN', 'EXPLICACION', 'PERIODO_REPORTE', 'ARCHIVO_REPORTE'
+        ], ',', '"');
+        $totalImporte = 0.0;
+        $totalConsumo = 0.0;
+        foreach ($filas as $indice => $fila) {
+            $reporte = $fila['reporte'];
+            $caso = $fila['caso'];
+            $periodo = sprintf('%04d-%02d', (int) $reporte['anio'], (int) $reporte['mes']);
+            $totalImporte += (float) $caso['total'];
+            $totalConsumo += (float) $caso['consumo'];
+            fputcsv($archivo, [
+                $indice + 1,
+                'MXN $' . number_format((float) $caso['total'], 2, '.', ','),
+                (string) $caso['situacion'],
+                (string) $caso['rpu'],
+                (string) $caso['recibo'],
+                (string) $caso['escuela'],
+                (string) $caso['cct'],
+                (string) $caso['nivel'],
+                (string) $caso['poblacion'],
+                (string) $caso['tarifa'],
+                (string) $caso['periodo'],
+                $caso['dias'] ?? '',
+                (string) ($caso['periodo_esperado'] ?? ''),
+                number_format((float) $caso['consumo'], 2, '.', ''),
+                'MXN $' . number_format((float) $caso['aumento'], 2, '.', ','),
+                (string) $caso['mensaje'],
+                $periodo,
+                (string) $reporte['archivo']
+            ], ',', '"');
+        }
+        fputcsv($archivo, [
+            '', 'MXN $' . number_format($totalImporte, 2, '.', ','), 'TOTAL GENERAL DE AJUSTES', '', '', '', '', '', '', '', '', '', '', number_format($totalConsumo, 2, '.', ''), '', 'Casos incluidos: ' . count($filas), '', ''
+        ], ',', '"');
         rewind($archivo);
         $csv = stream_get_contents($archivo) ?: '';
         fclose($archivo);

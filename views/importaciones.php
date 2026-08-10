@@ -217,7 +217,7 @@ $queryBase = $_GET;
                 <h2>RPUs sin vínculo con escuelas sugeridas</h2>
                 <p>Revisa únicamente los medidores que todavía no tienen escuela confirmada.</p>
             </div>
-            <div class="d-flex flex-wrap gap-2"><button id="auto-link-suggestions" class="btn btn-success btn-sm" type="button"><i class="bi bi-lightning-charge me-2"></i>Auto-vincular todas ≥50%</button><button id="refresh-suggestions" class="btn-seg compact-action" type="button"><i class="bi bi-arrow-clockwise me-2"></i>Actualizar</button></div>
+            <div class="d-flex flex-wrap gap-2"><button id="auto-link-suggestions" class="btn btn-success btn-sm" type="button"><i class="bi bi-lightning-charge me-2"></i>Auto-vincular ubicación confirmada ≥70%</button><button id="refresh-suggestions" class="btn-seg compact-action" type="button"><i class="bi bi-arrow-clockwise me-2"></i>Actualizar</button></div>
         </div>
         <div id="suggestion-status" class="adjustment-status">Abre esta sección para cargar las coincidencias pendientes.</div>
         <div id="suggestion-list" class="suggestion-list"></div>
@@ -506,12 +506,29 @@ async function vincularCct(rpu, cct) {
     }
 }
 
+function certezaEscuela(escuela) {
+    return Number(escuela.confianza ?? escuela.score ?? 0);
+}
+
+function enlaceMapaEscuela(escuela) {
+    const consulta = [escuela.nombre, escuela.domicilio, escuela.localidad, escuela.municipio, 'Guerrero'].filter(Boolean).join(', ');
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(consulta)}`;
+}
+
+function tarjetaEscuelaSugerida(escuela, rpu, atributo) {
+    const certeza = certezaEscuela(escuela);
+    const clase = certeza >= 70 && escuela.ubicacion_confirmada ? 'status-ok' : 'status-warn';
+    const etiquetaUbicacion = escuela.ubicacion_confirmada ? 'Ubicación confirmada' : 'Ubicación por revisar';
+    const rpuAtributo = atributo === 'data-suggested-cct' ? `data-suggested-rpu="${matchEscape(rpu)}"` : '';
+    return `<article class="school-match-card ${escuela.ubicacion_confirmada ? 'is-confirmed-location' : 'is-review-location'}"><div><span class="status-pill ${clase}">${certeza.toFixed(0)}% certeza</span><strong>${matchEscape(escuela.cct)} · ${matchEscape(escuela.nombre)}</strong><small>${matchEscape(escuela.domicilio || 'Sin domicilio')}</small><small>${matchEscape(escuela.localidad || 'Sin localidad')} · ${matchEscape(escuela.municipio || 'Sin municipio')}</small><small>${matchEscape(escuela.nivel || 'Sin nivel')} · ${matchEscape(escuela.subnivel || 'Sin subnivel')} · ${matchEscape(escuela.status || 'Sin estatus')}</small><small class="match-location-state"><i class="bi bi-geo-alt"></i>${matchEscape(escuela.ubicacion || etiquetaUbicacion)} · ${etiquetaUbicacion}</small><small>${matchEscape(escuela.clasificacion || escuela.fuente || 'Padrón maestro')}</small></div><div class="school-match-actions"><a class="map-school-link" href="${enlaceMapaEscuela(escuela)}" target="_blank" rel="noopener"><i class="bi bi-map"></i>Ver mapa</a><button class="btn-seg compact-action" type="button" ${rpuAtributo} ${atributo}="${matchEscape(escuela.cct)}">Vincular</button></div></article>`;
+}
+
 function renderRpuMatch(data) {
     const cfe = data.cfe || {};
     const cfeCard = `<article class="match-cfe-card"><span>RECIBO CFE</span><strong>${matchEscape(cfe.rpu || data.rpu)} - ${matchEscape(cfe.nombre || 'Sin nombre')}</strong><small>${matchEscape(cfe.direccion || 'Sin dirección')} · ${matchEscape(cfe.poblacion || 'Sin población')}</small><small>División ${matchEscape(cfe.division || 'Sin división')} · Tarifa ${matchEscape(cfe.tarifa || 'N/D')} · Periodo ${matchEscape(cfe.periodo || 'Sin periodo')}</small></article>`;
     const vinculados = data.vinculos || [];
     const sugerencias = data.sugerencias || [];
-    const cards = sugerencias.length ? sugerencias.map((escuela) => `<article class="school-match-card"><div><span class="status-pill ${Number(escuela.similitud) >= 69 ? 'status-ok' : 'status-warn'}">${Number(escuela.similitud || 0).toFixed(1)}% coincidencia</span><strong>${matchEscape(escuela.cct)} · ${matchEscape(escuela.nombre)}</strong><small>${matchEscape(escuela.domicilio || 'Sin domicilio')}</small><small>${matchEscape(escuela.localidad || 'Sin localidad')} · ${matchEscape(escuela.municipio || 'Sin municipio')}</small><small>${matchEscape(escuela.nivel || 'Sin nivel')} · ${matchEscape(escuela.subnivel || 'Sin subnivel')} · ${matchEscape(escuela.status || 'Sin estatus')}</small><small>${matchEscape(escuela.ubicacion || 'Coincidencia por padrón')} · ${escuela.nivel_coincide ? 'Nivel coincide' : 'Nivel por revisar'}</small><small>${matchEscape(escuela.clasificacion || escuela.fuente || 'Padrón maestro')}</small></div><button class="btn-seg compact-action" type="button" data-link-cct="${matchEscape(escuela.cct)}">Vincular</button></article>`).join('') : '<div class="empty-state"><i class="bi bi-search"></i><strong>Sin coincidencias automáticas</strong><span>Busca la escuela por CCT en el padrón o revisa localidad y domicilio del recibo.</span></div>';
+    const cards = sugerencias.length ? sugerencias.map((escuela) => tarjetaEscuelaSugerida(escuela, data.rpu, 'data-link-cct')).join('') : '<div class="empty-state"><i class="bi bi-search"></i><strong>Sin coincidencias automáticas</strong><span>Busca la escuela por CCT en el padrón o revisa localidad y domicilio del recibo.</span></div>';
     const links = vinculados.length ? `<div class="match-linked"><strong>Vínculos confirmados: ${vinculados.length}</strong>${vinculados.map((escuela) => `<span>${matchEscape(escuela.cct)} · ${matchEscape(escuela.nombre)} · ${matchEscape(escuela.nivel || escuela.subnivel || 'Sin nivel')}</span>`).join('')}</div>` : '';
     const title = vinculados.length ? 'Agregar otra escuela al RPU' : 'Escuelas sugeridas';
     rpuMatchResult.innerHTML = `${cfeCard}<div class="match-suggestions">${links}<div class="match-title"><strong>${title}</strong><span>${sugerencias.length} opciones</span></div>${cards}${controlCctManual(data.rpu)}</div>`;
@@ -545,7 +562,6 @@ rpuMatchResult.addEventListener('click', async (event) => {
     if (!button) return;
     const rpu = rpuMatchForm.rpu.value.trim();
     const cct = button.dataset.linkCct;
-    if (!window.confirm(`¿Confirmas vincular el RPU ${rpu} con la escuela ${cct}?`)) return;
     button.disabled = true;
     try {
         const data = await vincularCct(rpu, cct);
@@ -569,7 +585,6 @@ rpuMatchResult.addEventListener('submit', async (event) => {
         input.focus();
         return;
     }
-    if (!window.confirm(`¿Confirmas vincular el RPU ${rpu} con el CCT ${cct}?`)) return;
     const button = form.querySelector('button');
     button.disabled = true;
     try {
@@ -583,7 +598,7 @@ rpuMatchResult.addEventListener('submit', async (event) => {
 });
 
 function cardEscuelaSugerida(escuela, rpu) {
-    return `<article class="school-match-card"><div><span class="status-pill ${Number(escuela.similitud) >= 69 ? 'status-ok' : 'status-warn'}">${Number(escuela.similitud || 0).toFixed(1)}% coincidencia</span><strong>${matchEscape(escuela.cct)} · ${matchEscape(escuela.nombre)}</strong><small>${matchEscape(escuela.domicilio || 'Sin domicilio')}</small><small>${matchEscape(escuela.localidad || 'Sin localidad')} · ${matchEscape(escuela.municipio || 'Sin municipio')}</small><small>${matchEscape(escuela.nivel || 'Sin nivel')} · ${matchEscape(escuela.subnivel || 'Sin subnivel')} · ${matchEscape(escuela.status || 'Sin estatus')}</small><small>${matchEscape(escuela.ubicacion || 'Coincidencia por padrón')} · ${escuela.nivel_coincide ? 'Nivel coincide' : 'Nivel por revisar'}</small><small>${matchEscape(escuela.clasificacion || escuela.fuente || 'Padrón maestro')}</small></div><button class="btn-seg compact-action" type="button" data-suggested-rpu="${matchEscape(rpu)}" data-suggested-cct="${matchEscape(escuela.cct)}">Vincular</button></article>`;
+    return tarjetaEscuelaSugerida(escuela, rpu, 'data-suggested-cct');
 }
 
 function renderSugerencias(data) {
@@ -625,7 +640,6 @@ suggestionList.addEventListener('click', async (event) => {
     if (!button) return;
     const rpu = button.dataset.suggestedRpu;
     const cct = button.dataset.suggestedCct;
-    if (!window.confirm(`¿Confirmas vincular el RPU ${rpu} con la escuela ${cct}?`)) return;
     button.disabled = true;
     try {
         const data = await vincularCct(rpu, cct);
@@ -649,7 +663,6 @@ suggestionList.addEventListener('submit', async (event) => {
         input.focus();
         return;
     }
-    if (!window.confirm(`¿Confirmas vincular el RPU ${rpu} con el CCT ${cct}?`)) return;
     const button = form.querySelector('button');
     button.disabled = true;
     try {
@@ -703,7 +716,7 @@ autoLinkSuggestions.addEventListener('click', async () => {
         const preview = await previewResponse.json();
         if (!previewResponse.ok || !preview.ok) throw new Error(preview.error || 'No fue posible calcular la auto-vinculación.');
         if (!preview.total) {
-            suggestionStatus.textContent = `No hay coincidencias de 50% o más entre ${preview.pendientes} RPUs pendientes.`;
+            suggestionStatus.textContent = `No hay coincidencias con ubicación confirmada y certeza de 70% o más entre ${preview.pendientes} RPUs pendientes.`;
             return;
         }
         if (!window.confirm(`Se vincularán automáticamente ${preview.total} de ${preview.pendientes} RPUs pendientes. ¿Deseas continuar?`)) {

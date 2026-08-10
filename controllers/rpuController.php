@@ -759,7 +759,7 @@ class RpuController
                 $referencia,
                 (string) ($rpuCfe['direccion_cfe'] ?? '')
             )[0] ?? null;
-            if (!$sugerida || (float) $sugerida['similitud'] < 50 || (int) $sugerida['escuela_id'] <= 0) {
+            if (!$sugerida || (float) ($sugerida['confianza'] ?? 0) < 70 || empty($sugerida['ubicacion_confirmada']) || (int) $sugerida['escuela_id'] <= 0) {
                 continue;
             }
             $vinculos[] = [
@@ -964,13 +964,14 @@ class RpuController
         $this->validarToken();
         try {
             $rpus = $this->rpusExportacion();
-            $datos = $this->datosExportacionAnual(Conexion::conectar(), $rpus);
+            $datos = $this->datosExportacionAnual(Conexion::conectar(), $rpus, $this->rangoExportacionAnual());
             $this->responder([
                 'ok' => true,
                 'rpus' => array_map(static fn (array $fila): array => [
                     'rpu' => $fila['rpu'],
                     'nombre' => $fila['nombre'],
-                    'encontrado' => $fila['encontrado']
+                    'encontrado' => $fila['encontrado'],
+                    'ultimo_reporte' => $fila['ultimo_reporte']
                 ], $datos['filas'])
             ]);
         } catch (Throwable $e) {
@@ -982,7 +983,11 @@ class RpuController
     {
         $this->validarToken();
         try {
-            $datos = $this->datosExportacionAnual(Conexion::conectar(), $this->rpusExportacion());
+            $datos = $this->datosExportacionAnual(Conexion::conectar(), $this->rpusExportacion(), $this->rangoExportacionAnual());
+            $datos = $this->filtrarExportacionAnual($datos, (string) ($_POST['filtro_encontrados'] ?? 'all'));
+            if (!$datos['filas']) {
+                throw new RuntimeException('No hay RPUs para el filtro seleccionado.');
+            }
             header('Content-Type: application/vnd.ms-excel; charset=utf-8');
             header('Content-Disposition: attachment; filename="reporte_anual_rpus.xls"');
             header('Cache-Control: max-age=0');
@@ -991,6 +996,35 @@ class RpuController
         } catch (Throwable $e) {
             $this->responder(['ok' => false, 'error' => $e->getMessage()], 422);
         }
+    }
+
+    private function filtrarExportacionAnual(array $datos, string $filtro): array
+    {
+        if (!in_array($filtro, ['all', 'found', 'missing'], true)) {
+            $filtro = 'all';
+        }
+        $filas = array_values(array_filter($datos['filas'], static fn (array $fila): bool => $filtro === 'all' || ($filtro === 'found' ? !empty($fila['encontrado']) : empty($fila['encontrado']))));
+        foreach ($filas as $indice => &$fila) {
+            $fila['no'] = $indice + 1;
+        }
+        unset($fila);
+        $datos['filas'] = $filas;
+        return $datos;
+    }
+
+    private function rangoExportacionAnual(): array
+    {
+        $inicio = [(int) ($_POST['anio_inicio'] ?? 2021), (int) ($_POST['mes_inicio'] ?? 1)];
+        $fin = [(int) ($_POST['anio_fin'] ?? date('Y')), (int) ($_POST['mes_fin'] ?? date('n'))];
+        foreach ([$inicio, $fin] as [$anio, $mes]) {
+            if ($anio < 2021 || $anio > 2100 || $mes < 1 || $mes > 12) {
+                throw new RuntimeException('Selecciona un rango de meses valido.');
+            }
+        }
+        if (($inicio[0] * 100 + $inicio[1]) > ($fin[0] * 100 + $fin[1])) {
+            throw new RuntimeException('El periodo inicial debe ser anterior al periodo final.');
+        }
+        return ['inicio_anio' => $inicio[0], 'inicio_mes' => $inicio[1], 'fin_anio' => $fin[0], 'fin_mes' => $fin[1]];
     }
 
     private function rpusExportacion(): array
@@ -1007,20 +1041,23 @@ class RpuController
         return $rpus;
     }
 
-    private function datosExportacionAnual(PDO $conexion, array $rpus): array
+    private function datosExportacionAnual(PDO $conexion, array $rpus, array $rango): array
     {
         $marcadores = implode(', ', array_fill(0, count($rpus), '?'));
-        $consultaAnios = $conexion->query('SELECT DISTINCT anio FROM cfe_reportes WHERE anio >= 2021 ORDER BY anio');
+        $parametrosRango = [$rango['inicio_anio'], $rango['inicio_anio'], $rango['inicio_mes'], $rango['fin_anio'], $rango['fin_anio'], $rango['fin_mes']];
+        $condicionPeriodo = '((cr.anio > ?) OR (cr.anio = ? AND cr.mes >= ?)) AND ((cr.anio < ?) OR (cr.anio = ? AND cr.mes <= ?))';
+        $consultaAnios = $conexion->prepare('SELECT DISTINCT anio FROM cfe_reportes cr WHERE ' . $condicionPeriodo . ' ORDER BY anio');
+        $consultaAnios->execute($parametrosRango);
         $anios = array_map(static fn (mixed $anio): int => (int) $anio, $consultaAnios->fetchAll(PDO::FETCH_COLUMN));
 
         $consultaDatos = $conexion->prepare(
             'SELECT cc.RPU, cc.nombre_cfe, cc.direccion_cfe, cc.poblacion_cfe, cr.anio, cr.mes, cc.id
              FROM cfe_consumos cc
              INNER JOIN cfe_reportes cr ON cr.id = cc.reporte_id
-             WHERE cc.RPU IN (' . $marcadores . ')
-             ORDER BY cc.RPU, cr.anio DESC, cr.mes DESC, cc.id DESC'
+              WHERE cc.RPU IN (' . $marcadores . ') AND ' . $condicionPeriodo . '
+              ORDER BY cc.RPU, cr.anio DESC, cr.mes DESC, cc.id DESC'
         );
-        $consultaDatos->execute($rpus);
+        $consultaDatos->execute(array_merge($rpus, $parametrosRango));
         $servicios = [];
         foreach ($consultaDatos->fetchAll() as $fila) {
             $rpu = (string) $fila['RPU'];
@@ -1028,7 +1065,8 @@ class RpuController
                 $servicios[$rpu] = [
                     'nombre' => trim((string) ($fila['nombre_cfe'] ?? '')),
                     'direccion' => trim((string) ($fila['direccion_cfe'] ?? '')),
-                    'poblacion' => trim((string) ($fila['poblacion_cfe'] ?? ''))
+                    'poblacion' => trim((string) ($fila['poblacion_cfe'] ?? '')),
+                    'ultimo_reporte' => sprintf('%04d-%02d', (int) $fila['anio'], (int) $fila['mes'])
                 ];
             }
         }
@@ -1037,10 +1075,10 @@ class RpuController
             'SELECT cc.RPU, cr.anio, SUM(cc.total) total
              FROM cfe_consumos cc
              INNER JOIN cfe_reportes cr ON cr.id = cc.reporte_id
-             WHERE cc.RPU IN (' . $marcadores . ') AND cr.anio >= 2021
-             GROUP BY cc.RPU, cr.anio'
+              WHERE cc.RPU IN (' . $marcadores . ') AND ' . $condicionPeriodo . '
+              GROUP BY cc.RPU, cr.anio'
         );
-        $consultaTotales->execute($rpus);
+        $consultaTotales->execute(array_merge($rpus, $parametrosRango));
         $totales = [];
         foreach ($consultaTotales->fetchAll() as $fila) {
             $totales[(string) $fila['RPU']][(int) $fila['anio']] = (float) $fila['total'];
@@ -1059,11 +1097,12 @@ class RpuController
                 'direccion' => $servicios[$rpu]['direccion'] ?? '',
                 'poblacion' => $servicios[$rpu]['poblacion'] ?? '',
                 'encontrado' => isset($servicios[$rpu]),
+                'ultimo_reporte' => $servicios[$rpu]['ultimo_reporte'] ?? '',
                 'anuales' => $anuales,
                 'total' => array_sum($anuales)
             ];
         }
-        return ['anios' => $anios, 'filas' => $filas];
+        return ['anios' => $anios, 'filas' => $filas, 'rango' => $rango];
     }
 
     private function excelExportacionAnual(array $datos): string
@@ -1087,7 +1126,7 @@ class RpuController
             $totales .= $this->celdaExcel($totalAnual[$anio], 'Number', 'TotalCurrency');
         }
         $totales .= $this->celdaExcel(array_sum($totalAnual), 'Number', 'TotalCurrency');
-        $titulo = 'CONCENTRADO ANUAL DE RPUs CFE 2021-' . (date('Y'));
+        $titulo = 'CONCENTRADO DE RPUs CFE ' . sprintf('%02d/%d a %02d/%d', (int) $datos['rango']['inicio_mes'], (int) $datos['rango']['inicio_anio'], (int) $datos['rango']['fin_mes'], (int) $datos['rango']['fin_anio']);
         return '<?xml version="1.0" encoding="UTF-8"?>' .
             '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Styles>' .
             '<Style ss:ID="Title"><Font ss:Bold="1" ss:Color="#6A1B29" ss:Size="14"/></Style>' .
@@ -1255,7 +1294,7 @@ class RpuController
     private function vinculos(PDO $conexion, string $rpu): array
     {
         $consulta = $conexion->prepare(
-            'SELECT er.RPU, er.CCT, er.nombre_recibo_cfe, er.poblacion_cfe, er.tarifa_cfe, e.NOMBRECT, e.DOMICILIO, e.NOMBREMUN, e.NOMBRELOC, e.STATUS, e.SUBNIVEL, e.NIVEL, e.HOMO, e.TURNO, e.ZONA, e.SECTOR, e.ORIGEN
+            'SELECT er.RPU, er.CCT, er.nombre_recibo_cfe, er.poblacion_cfe, er.tarifa_cfe, e.NOMBRECT, e.DOMICILIO, e.NOMBREMUN, e.NOMBRELOC, e.STATUS, e.SUBNIVEL, e.NIVEL, e.HOMO, e.TURNO, e.ZONA, e.SECTOR, e.ORIGEN, e.LATITUD, e.LONGITUD
              FROM escuelas_rpu er
              LEFT JOIN escuelas e ON e.CCT = er.CCT
              WHERE er.RPU = ?
@@ -1378,7 +1417,8 @@ class RpuController
                 continue;
             }
             foreach (($indice[$tipo] ?? []) as $ubicacion => $filas) {
-                if (str_contains($ubicacion, $referenciaTexto) || str_contains($referenciaTexto, $ubicacion)) {
+                similar_text($referenciaTexto, $ubicacion, $similitudUbicacion);
+                if (str_contains($ubicacion, $referenciaTexto) || str_contains($referenciaTexto, $ubicacion) || (strlen($referenciaTexto) >= 5 && $similitudUbicacion >= 72)) {
                     foreach ($filas as $fila) {
                         $candidatos[(string) ($fila['id'] ?? $fila['CCT'])] = $fila;
                     }
@@ -1389,16 +1429,16 @@ class RpuController
             return array_values($candidatos);
         }
 
-        $palabras = array_unique(array_filter(
-            explode(' ', $this->normalizar($localidad . ' ' . $direccion . ' ' . $nombre)),
-            static fn (string $palabra): bool => strlen($palabra) >= 5
-        ));
+        $palabras = $this->palabrasClave($localidad . ' ' . $direccion . ' ' . $nombre);
+        $coincidencias = [];
         foreach ($palabras as $palabra) {
             foreach (($indice['texto'][$palabra] ?? []) as $fila) {
-                $candidatos[(string) ($fila['id'] ?? $fila['CCT'])] = $fila;
+                $clave = (string) ($fila['id'] ?? $fila['CCT']);
+                $candidatos[$clave] = $fila;
+                $coincidencias[$clave] = ($coincidencias[$clave] ?? 0) + 1;
             }
         }
-        return array_values($candidatos);
+        return array_values(array_filter($candidatos, static fn (array $fila): bool => ($coincidencias[(string) ($fila['id'] ?? $fila['CCT'])] ?? 0) >= 2));
     }
 
     private function evaluarSugerencias(array $filas, string $nombre, array $referencia, string $direccion): array
@@ -1408,7 +1448,7 @@ class RpuController
         $sugerencias = [];
         foreach ($filas as $fila) {
             $evaluacion = $this->puntaje($nombre, $referencia['localidad'], $referencia['municipio'], $direccion, $nivelCfe, $fila);
-            if ($evaluacion['score'] >= 25) {
+            if ($evaluacion['score'] >= 35) {
                 $sugerencias[] = $this->escuelaDesdeFila($fila, $evaluacion['score'], 'Sugerencia por padrón maestro', $evaluacion);
             }
         }
@@ -1420,12 +1460,12 @@ class RpuController
             return [];
         }
         $porNivel = array_values(array_filter($fisicas, fn (array $escuela): bool => $escuela['nivel_coincide'] ?? false));
-        if ($nivelCfe !== null && $porNivel) {
+        if ($nivelCfe !== null) {
             $sugerencias = $porNivel;
         } else {
             $sugerencias = $fisicas;
         }
-        usort($sugerencias, fn (array $a, array $b): int => [$b['score'], $b['similitud'], $b['activa']] <=> [$a['score'], $a['similitud'], $a['activa']]);
+        usort($sugerencias, fn (array $a, array $b): int => [$b['score'], $b['confianza'], $b['activa']] <=> [$a['score'], $a['confianza'], $a['activa']]);
         return array_slice($sugerencias, 0, 3);
     }
 
@@ -1456,6 +1496,8 @@ class RpuController
             'domicilio' => (string) ($fila['DOMICILIO'] ?? ''),
             'municipio' => (string) ($fila['NOMBREMUN'] ?? ''),
             'localidad' => (string) ($fila['NOMBRELOC'] ?? ''),
+            'latitud' => (string) ($fila['LATITUD'] ?? ''),
+            'longitud' => (string) ($fila['LONGITUD'] ?? ''),
             'status' => (string) ($fila['STATUS'] ?? ''),
             'nivel' => (string) ($fila['NIVEL'] ?? '') !== '' ? (string) $fila['NIVEL'] : $this->nivelEducativo((string) ($fila['SUBNIVEL'] ?? '')),
             'subnivel' => (string) ($fila['SUBNIVEL'] ?? ''),
@@ -1467,8 +1509,10 @@ class RpuController
             'fuente' => (string) ($fila['ORIGEN'] ?? 'Catalogo local SEG/Oficializacion'),
             'score' => $score,
             'similitud' => (float) ($evaluacion['similitud'] ?? $score),
+            'confianza' => (int) ($evaluacion['confianza'] ?? $score),
             'nivel_coincide' => (bool) ($evaluacion['nivel_coincide'] ?? false),
             'ubicacion' => (string) ($evaluacion['ubicacion'] ?? ''),
+            'ubicacion_confirmada' => (bool) ($evaluacion['ubicacion_confirmada'] ?? false),
             'administrativa' => (bool) ($evaluacion['administrativa'] ?? false),
             'activa' => (bool) ($evaluacion['activa'] ?? false),
             'origen' => $origen
@@ -1477,8 +1521,8 @@ class RpuController
 
     private function puntaje(string $nombreCfe, string $localidadCfe, string $municipioCfe, string $direccionCfe, ?string $nivelCfe, array $escuela): array
     {
-        $nombreBase = $this->normalizar($nombreCfe);
-        $nombreEscuela = $this->normalizar((string) ($escuela['NOMBRECT'] ?? ''));
+        $nombreBase = $this->nombreComparable($nombreCfe);
+        $nombreEscuela = $this->nombreComparable((string) ($escuela['NOMBRECT'] ?? ''));
         similar_text($nombreBase, $nombreEscuela, $similitud);
         $localidad = $this->normalizar((string) ($escuela['NOMBRELOC'] ?? ''));
         $municipio = $this->normalizar((string) ($escuela['NOMBREMUN'] ?? ''));
@@ -1490,29 +1534,51 @@ class RpuController
         $nivelCoincide = $this->coincideNivelCfe($nivelCfe, $escuela);
         $activa = $this->estaActiva((string) ($escuela['STATUS'] ?? ''));
         $administrativa = $this->esAdministrativa($escuela);
-        $score = $similitud + ($nivelCoincide ? 60 : 0) + ($activa ? 10 : 0) + ($coincideLocalidad ? 35 : ($coincideMunicipio ? 18 : 0));
-        if ($administrativa) {
-            $score -= 1000;
-        }
         $direccion = $this->normalizar($direccionCfe);
         $domicilio = $this->normalizar((string) ($escuela['DOMICILIO'] ?? ''));
+        $coincidenciasDireccion = 0;
         if ($direccion !== '' && $domicilio !== '') {
             $palabrasCfe = array_unique(array_filter(explode(' ', $direccion), fn (string $palabra): bool => strlen($palabra) >= 4));
             $palabrasEscuela = array_unique(array_filter(explode(' ', $domicilio), fn (string $palabra): bool => strlen($palabra) >= 4));
-            $coincidencias = count(array_intersect($palabrasCfe, $palabrasEscuela));
-            $score += min(15, $coincidencias * 5);
+            $coincidenciasDireccion = count(array_intersect($palabrasCfe, $palabrasEscuela));
         }
-        if ($this->normalizar((string) ($escuela['CLASIFICACION'] ?? '')) === 'ESCUELA BASICA OFICIALIZADA ACTIVA') {
-            $score += 8;
+        $ubicacionConfirmada = $coincideLocalidad || ($coincideMunicipio && $coincidenciasDireccion >= 1);
+        $ubicacion = $coincideLocalidad ? 'Localidad confirmada' : ($ubicacionConfirmada ? 'Municipio y dirección confirmados' : ($coincideMunicipio ? 'Municipio coincidente' : ($coincidenciasDireccion >= 2 ? 'Dirección cercana' : 'Ubicación por revisar')));
+        $confianza = ($similitud * 0.45)
+            + ($coincideLocalidad ? 35 : ($coincideMunicipio ? 18 : 0))
+            + min(12, $coincidenciasDireccion * 4)
+            + ($nivelCoincide ? 8 : 0)
+            + ($activa ? 4 : 0);
+        if (!$ubicacionConfirmada) {
+            $confianza = min($confianza, 49);
+        }
+        if ($administrativa) {
+            $confianza = 0;
         }
         return [
-            'score' => max(0, min(100, (int) round($score))),
+            'score' => max(0, min(100, (int) round($confianza))),
             'similitud' => round($similitud, 2),
+            'confianza' => max(0, min(100, (int) round($confianza))),
             'nivel_coincide' => $nivelCoincide,
             'ubicacion' => $ubicacion,
+            'ubicacion_confirmada' => $ubicacionConfirmada,
             'administrativa' => $administrativa,
             'activa' => $activa
         ];
+    }
+
+    private function palabrasClave(string $texto): array
+    {
+        $ignorar = ['ESCUELA', 'JARDIN', 'NINOS', 'PRIMARIA', 'SECUNDARIA', 'PREESCOLAR', 'TELESECUNDARIA', 'GENERAL', 'SERVICIO', 'CALLE', 'CARRETERA', 'DOMICILIO', 'CENTRO', 'FEDERAL'];
+        return array_values(array_unique(array_filter(
+            explode(' ', $this->normalizar($texto)),
+            static fn (string $palabra): bool => strlen($palabra) >= 5 && !in_array($palabra, $ignorar, true)
+        )));
+    }
+
+    private function nombreComparable(string $texto): string
+    {
+        return implode(' ', $this->palabrasClave($texto));
     }
 
     private function referenciaGeograficaCfe(string $poblacion): array

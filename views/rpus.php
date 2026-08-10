@@ -183,9 +183,19 @@ function cfePanel(cfe) {
     </div>`;
 }
 
+function enlaceMapaEscuela(escuela) {
+    const latitud = Number(String(escuela.latitud ?? '').replace(',', '.'));
+    const longitud = Number(String(escuela.longitud ?? '').replace(',', '.'));
+    if (!Number.isFinite(latitud) || !Number.isFinite(longitud) || latitud < 14 || latitud > 20 || longitud < -106 || longitud > -94) {
+        return '';
+    }
+    return `https://www.google.com/maps?q=${encodeURIComponent(`${latitud},${longitud}`)}`;
+}
+
 function schoolPanel(escuela, vinculado, rpu) {
     const turnoZona = [escuela.turno ? `<b>Turno:</b> ${escapeHtml(escuela.turno)}` : '', escuela.zona ? `<b>Zona:</b> ${escapeHtml(escuela.zona)}` : '', escuela.sector ? `<b>Sector:</b> ${escapeHtml(escuela.sector)}` : ''].filter(Boolean).join(' - ');
     const homoFuente = [escuela.homo ? `<b>HOMO:</b> ${escapeHtml(escuela.homo)}` : '', escuela.fuente ? `<b>Fuente:</b> ${escapeHtml(escuela.fuente)}` : ''].filter(Boolean).join(' - ');
+    const mapaUrl = vinculado ? enlaceMapaEscuela(escuela) : '';
     return `<div class="compare-panel school-panel">
         <span class="compare-label">ESCUELA OFICIAL</span>
         <strong>${escapeHtml(escuela.cct || 'Sin CCT')} - ${escapeHtml(escuela.nombre || 'Escuela sin nombre')}</strong>
@@ -196,6 +206,7 @@ function schoolPanel(escuela, vinculado, rpu) {
         ${turnoZona ? `<small>${turnoZona}</small>` : ''}
         ${homoFuente ? `<small>${homoFuente}</small>` : ''}
         <span class="status-pill ${vinculado ? 'status-ok' : 'status-warn'}">${escapeHtml(escuela.origen || (vinculado ? 'Vinculo confirmado' : 'Sugerencia'))} - ${escapeHtml(escuela.score || 0)}%</span>
+        ${mapaUrl ? `<a class="school-map-link" href="${mapaUrl}" target="_blank" rel="noopener"><i class="bi bi-geo-alt-fill"></i>Abrir ubicacion en Maps</a>` : ''}
         ${vinculado && escuela.cct ? `<button class="unlink-rpu-button" type="button" data-unlink-rpu="${escapeHtml(rpu)}" data-unlink-cct="${escapeHtml(escuela.cct)}"><i class="bi bi-link-45deg me-1"></i>Desvincular este CCT</button>` : ''}
     </div>`;
 }
