@@ -23,6 +23,240 @@
     --seg-transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.consultant-briefing {
+    background: #fff;
+    border: 1px solid #e7dfd7;
+    border-left: 4px solid var(--seg-gold);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(66, 16, 26, .05);
+    margin: 20px 0;
+    padding: 22px;
+}
+
+.consultant-briefing-head {
+    align-items: end;
+    border-bottom: 1px solid #ece5de;
+    display: flex;
+    gap: 18px;
+    justify-content: space-between;
+    padding-bottom: 16px;
+}
+
+.consultant-briefing-head h2 {
+    color: var(--seg-text);
+    font-size: 23px;
+    font-weight: 800;
+    margin: 4px 0;
+}
+
+.consultant-briefing-head p {
+    color: var(--seg-muted);
+    font-size: 12px;
+    margin: 0;
+}
+
+.consultant-briefing-grid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-top: 18px;
+}
+
+.consultant-briefing-grid article {
+    align-items: center;
+    background: #fcfbfa;
+    border: 1px solid #eee6de;
+    border-radius: 7px;
+    display: flex;
+    gap: 13px;
+    min-height: 108px;
+    padding: 15px;
+}
+
+.consultant-briefing-icon {
+    align-items: center;
+    background: #f5eada;
+    border-radius: 10px;
+    color: #7d1b2b;
+    display: flex;
+    flex: 0 0 auto;
+    font-size: 20px;
+    height: 43px;
+    justify-content: center;
+    width: 43px;
+}
+
+.consultant-briefing-icon.is-alert {
+    background: #fff1dc;
+    color: #a56212;
+}
+
+.consultant-briefing-icon.is-top {
+    background: #f8e9eb;
+    color: #8c1c2e;
+}
+
+.consultant-briefing-grid small,
+.consultant-briefing-grid strong,
+.consultant-briefing-grid em,
+.consultant-briefing-grid b {
+    display: block;
+}
+
+.consultant-briefing-grid small {
+    color: #7b6f69;
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.consultant-briefing-grid strong {
+    color: var(--seg-text);
+    font-size: 20px;
+    font-weight: 800;
+    line-height: 1.25;
+    margin-top: 3px;
+}
+
+.consultant-top-service strong {
+    font-size: 14px;
+}
+
+.consultant-briefing-grid em {
+    color: var(--seg-muted);
+    font-size: 11px;
+    font-style: normal;
+    margin-top: 5px;
+}
+
+.consultant-top-service b {
+    color: #7d1b2b;
+    font-size: 17px;
+    margin-top: 5px;
+}
+
+.consultant-top-payments {
+    border-top: 1px solid #ece5de;
+    margin-top: 19px;
+    padding-top: 18px;
+}
+
+.consultant-top-payments-head {
+    align-items: end;
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.consultant-top-payments-head h3 {
+    color: var(--seg-text);
+    font-size: 16px;
+    font-weight: 800;
+    margin: 3px 0 0;
+}
+
+.consultant-top-payments-head > span {
+    color: var(--seg-muted);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.consultant-top-payments-list {
+    display: grid;
+    gap: 8px;
+}
+
+.consultant-top-payments-list article {
+    align-items: center;
+    background: #fcfbfa;
+    border: 1px solid #eee6de;
+    border-radius: 6px;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    min-height: 54px;
+    padding: 9px 12px;
+}
+
+.consultant-ranking {
+    align-items: center;
+    background: #f5eada;
+    border-radius: 50%;
+    color: #7d1b2b;
+    display: flex;
+    font-size: 12px;
+    font-weight: 800;
+    height: 28px;
+    justify-content: center;
+    width: 28px;
+}
+
+.consultant-top-payments-list strong,
+.consultant-top-payments-list small {
+    display: block;
+}
+
+.consultant-top-payments-list strong {
+    color: var(--seg-text);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.consultant-top-payments-list small {
+    color: var(--seg-muted);
+    font-size: 10px;
+    margin-top: 3px;
+}
+
+.consultant-top-payments-list b {
+    color: #6a1b29;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.consultant-top-payments-list p {
+    color: var(--seg-muted);
+    font-size: 12px;
+    margin: 8px 0;
+}
+
+@media (max-width: 900px) {
+    .consultant-briefing-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 560px) {
+    .consultant-briefing {
+        padding: 16px;
+    }
+
+    .consultant-briefing-head {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .consultant-briefing-head h2 {
+        font-size: 20px;
+    }
+
+    .consultant-top-payments-head {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    .consultant-top-payments-list article {
+        grid-template-columns: 28px minmax(0, 1fr);
+    }
+
+    .consultant-top-payments-list b {
+        grid-column: 2;
+    }
+}
+
 .document-library-view {
     font-family: "Montserrat", "Segoe UI", Arial, sans-serif;
 }

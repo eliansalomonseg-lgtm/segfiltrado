@@ -9,6 +9,7 @@ require_once dirname(__DIR__) . '/services/conexion.php';
 
 $conexion = Conexion::conectar();
 $segBasePath = '';
+$esAdmin = segIsAdmin();
 
 if (empty($_SESSION['seg_csrf'])) {
     $_SESSION['seg_csrf'] = bin2hex(random_bytes(24));
@@ -27,9 +28,27 @@ $totalLecturasCfe = dashboardCount($conexion, 'SELECT COALESCE(SUM(total_registr
 $casosCfe = dashboardCount($conexion, 'SELECT COALESCE(SUM(con_alerta), 0) FROM cfe_reportes');
 $reportesCeroRecientes = $conexion->query('SELECT id FROM cfe_reportes ORDER BY anio DESC, mes DESC, id DESC LIMIT 6')->fetchAll();
 $totalReportesCeroRecientes = count($reportesCeroRecientes);
-$ultimoReporte = $conexion->query('SELECT anio, mes FROM cfe_reportes ORDER BY anio DESC, mes DESC, id DESC LIMIT 1')->fetch();
+$ultimoReporte = $conexion->query('SELECT id, anio, mes, total_registros, con_alerta, importe_total FROM cfe_reportes ORDER BY anio DESC, mes DESC, id DESC LIMIT 1')->fetch();
 $avance = $totalEscuelas > 0 ? min(100, round($totalVinculos / $totalEscuelas * 100, 1)) : 0;
 $meses = [1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril', 5 => 'Mayo', 6 => 'Junio', 7 => 'Julio', 8 => 'Agosto', 9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre'];
+$escuelaMayorPagoUltimo = null;
+$topPagosUltimo = [];
+if ($ultimoReporte) {
+    $consultaTopPagos = $conexion->prepare(
+        'SELECT cc.RPU, cc.total, cc.consumo, cc.nombre_cfe, cc.poblacion_cfe, cc.tarifa_cfe,
+                COALESCE(e.NOMBRECT, cc.nombre_cfe, "Servicio sin nombre") AS nombre_escuela,
+                e.NIVEL, e.SUBNIVEL, e.NOMBRELOC, e.NOMBREMUN
+         FROM cfe_consumos cc
+         LEFT JOIN (SELECT RPU, MIN(CCT) AS CCT FROM escuelas_rpu GROUP BY RPU) er ON er.RPU = cc.RPU
+         LEFT JOIN escuelas e ON e.CCT = COALESCE(cc.CCT, er.CCT)
+         WHERE cc.reporte_id = ?
+         ORDER BY cc.total DESC, cc.id ASC
+         LIMIT 5'
+    );
+    $consultaTopPagos->execute([(int) $ultimoReporte['id']]);
+    $topPagosUltimo = $consultaTopPagos->fetchAll() ?: [];
+    $escuelaMayorPagoUltimo = $topPagosUltimo[0] ?? null;
+}
 $historialMensual = $conexion->query(
     'SELECT anio, mes, SUM(importe_total) AS total_pagado, SUM(ajuste_muchos_dias) AS ajustes
      FROM cfe_reportes
@@ -103,7 +122,7 @@ $periodoConciliacionInicial = $periodosConciliacion[0] ?? null;
             <h1>Inteligencia energetica educativa</h1>
             <p>Consulta escuelas, medidores vinculados y el historial de cobros CFE desde una sola plataforma institucional.</p>
         </div>
-        <?php if (segIsAdmin()): ?>
+        <?php if ($esAdmin): ?>
             <a class="btn-seg compact-action" href="consolidacion/consolidacion.php"><i class="bi bi-lightning-charge me-2"></i>Consolidar archivos</a>
         <?php endif; ?>
     </section>
@@ -134,6 +153,32 @@ $periodoConciliacionInicial = $periodosConciliacion[0] ?? null;
             <small><?= number_format($totalLecturasCfe) ?> lecturas</small>
         </article>
     </section>
+    <?php if (!$esAdmin): ?>
+        <section class="consultant-briefing" aria-label="Resumen ejecutivo del ultimo reporte">
+            <div class="consultant-briefing-head">
+                <div><span class="eyebrow">ULTIMO REPORTE CFE</span><h2><?= $ultimoReporte ? htmlspecialchars(($meses[(int) $ultimoReporte['mes']] ?? 'Mes') . ' ' . $ultimoReporte['anio'], ENT_QUOTES, 'UTF-8') : 'Sin reporte disponible' ?></h2><p>Información inmediata para seguimiento directivo.</p></div>
+                <a href="ajustes.php" class="director-link">Ver reportes CFE <i class="bi bi-arrow-right"></i></a>
+            </div>
+            <div class="consultant-briefing-grid">
+                <article><span class="consultant-briefing-icon"><i class="bi bi-cash-stack"></i></span><div><small>Total facturado</small><strong>$<?= number_format((float) ($ultimoReporte['importe_total'] ?? 0), 2) ?></strong><em><?= number_format((int) ($ultimoReporte['total_registros'] ?? 0)) ?> servicios reportados</em></div></article>
+                <article><span class="consultant-briefing-icon is-alert"><i class="bi bi-exclamation-triangle"></i></span><div><small>Casos para revisar</small><strong><?= number_format((int) ($ultimoReporte['con_alerta'] ?? 0)) ?></strong><em>Alertas detectadas en el periodo</em></div></article>
+                <article class="consultant-top-service"><span class="consultant-briefing-icon is-top"><i class="bi bi-trophy"></i></span><div><small>Mayor pago del periodo</small><strong><?= htmlspecialchars((string) ($escuelaMayorPagoUltimo['nombre_escuela'] ?? 'Sin información'), ENT_QUOTES, 'UTF-8') ?></strong><em><?= $escuelaMayorPagoUltimo ? htmlspecialchars((string) ($escuelaMayorPagoUltimo['RPU'] . ' · ' . ($escuelaMayorPagoUltimo['NOMBRELOC'] ?: $escuelaMayorPagoUltimo['poblacion_cfe'] ?: 'Sin localidad')), ENT_QUOTES, 'UTF-8') : 'Aún no hay servicios cargados' ?></em><b><?= $escuelaMayorPagoUltimo ? '$' . number_format((float) $escuelaMayorPagoUltimo['total'], 2) : '$0.00' ?></b></div></article>
+            </div>
+            <div class="consultant-top-payments">
+                <div class="consultant-top-payments-head"><div><span class="eyebrow">PRIORIDAD FINANCIERA</span><h3>5 servicios con mayor pago</h3></div><span>Último periodo cargado</span></div>
+                <div class="consultant-top-payments-list">
+                    <?php foreach ($topPagosUltimo as $indice => $servicio): ?>
+                        <article>
+                            <span class="consultant-ranking"><?= $indice + 1 ?></span>
+                            <div><strong><?= htmlspecialchars((string) $servicio['nombre_escuela'], ENT_QUOTES, 'UTF-8') ?></strong><small>RPU <?= htmlspecialchars((string) $servicio['RPU'], ENT_QUOTES, 'UTF-8') ?> · <?= htmlspecialchars((string) ($servicio['NOMBRELOC'] ?: $servicio['poblacion_cfe'] ?: 'Sin localidad'), ENT_QUOTES, 'UTF-8') ?></small></div>
+                            <b>$<?= number_format((float) $servicio['total'], 2) ?></b>
+                        </article>
+                    <?php endforeach; ?>
+                    <?php if (!$topPagosUltimo): ?><p>Cuando se cargue un reporte CFE aparecerán aquí los servicios con mayor pago.</p><?php endif; ?>
+                </div>
+            </div>
+        </section>
+    <?php endif; ?>
     <section class="dashboard-annual-export">
         <div>
             <span class="eyebrow">CONCENTRADO ANUAL</span>
@@ -182,7 +227,7 @@ $periodoConciliacionInicial = $periodosConciliacion[0] ?? null;
             <a href="ajustes.php" class="director-link">Ver reportes CFE <i class="bi bi-arrow-right"></i></a>
         </div>
     </section>
-    <section class="payment-reconciliation-card">
+    <?php if ($esAdmin): ?><section class="payment-reconciliation-card">
         <div class="payment-reconciliation-head">
             <div>
                 <span class="eyebrow">CONCILIACION DE PAGO</span>
@@ -204,7 +249,7 @@ $periodoConciliacionInicial = $periodosConciliacion[0] ?? null;
             <button class="btn-seg compact-action" type="submit" <?= $periodoConciliacionInicial ? '' : 'disabled' ?>><i class="bi bi-check2-circle me-2"></i>Guardar pago real</button>
         </form>
         <div id="payment-reconciliation-status" class="payment-reconciliation-status"></div>
-    </section>
+    </section><?php endif; ?>
     <section class="zero-consumption-card">
         <div class="zero-consumption-head">
             <div>
@@ -357,7 +402,7 @@ function actualizarConciliacionPeriodo() {
 }
 
 paymentPeriodSelect?.addEventListener('change', actualizarConciliacionPeriodo);
-paymentForm.addEventListener('submit', async (event) => {
+paymentForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const button = paymentForm.querySelector('button');
     button.disabled = true;
