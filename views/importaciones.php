@@ -3,11 +3,12 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/services/auth.php';
-segRequireAdmin('dashboard.php');
+segRequireLogin('../login.php');
 
 require_once dirname(__DIR__) . '/services/conexion.php';
 
 $segBasePath = '';
+$esAdmin = segIsAdmin();
 $conexion = Conexion::conectar();
 
 if (empty($_SESSION['seg_csrf'])) {
@@ -143,7 +144,7 @@ $queryBase = $_GET;
         <div>
             <span class="eyebrow">PADRÓN DE VÍNCULOS</span>
             <h1>Vínculos RPU-CCT</h1>
-            <p>Consulta vínculos confirmados, busca un RPU o revisa sugerencias pendientes.</p>
+            <p><?= $esAdmin ? 'Consulta vínculos confirmados, busca un RPU o revisa sugerencias pendientes.' : 'Consulta los vínculos confirmados entre servicios CFE y escuelas.' ?></p>
         </div>
         <span class="alert-gold"><i class="bi bi-eye me-1"></i><?= number_format($totalFiltrado) ?> visibles</span>
     </section>
@@ -169,13 +170,13 @@ $queryBase = $_GET;
             <small>Compartidos</small>
         </article>
     </section>
-    <nav class="link-view-tabs" aria-label="Secciones del padrón de vínculos">
+    <?php if ($esAdmin): ?><nav class="link-view-tabs" aria-label="Secciones del padrón de vínculos">
         <button class="active" type="button" data-link-tab="confirmed"><i class="bi bi-link-45deg"></i>Vínculos confirmados</button>
         <button type="button" data-link-tab="manual"><i class="bi bi-search"></i>Buscar y vincular</button>
         <button type="button" data-link-tab="service-search"><i class="bi bi-search-heart"></i>Buscar servicio CFE</button>
         <button type="button" data-link-tab="suggestions"><i class="bi bi-stars"></i>Sugerencias pendientes</button>
-    </nav>
-    <section class="results-card link-workbench" data-link-panel="manual" hidden>
+    </nav><?php endif; ?>
+    <?php if ($esAdmin): ?><section class="results-card link-workbench" data-link-panel="manual" hidden>
         <div class="results-head">
             <div>
                 <span class="eyebrow">BÚSQUEDA INDIVIDUAL</span>
@@ -223,13 +224,13 @@ $queryBase = $_GET;
         <div id="suggestion-list" class="suggestion-list"></div>
         <div id="suggestion-pager" class="pager" hidden></div>
     </section>
-    <section class="results-card import-control" data-link-panel="confirmed">
+    <?php endif; ?><section class="results-card import-control" data-link-panel="confirmed">
         <div class="results-head">
             <div>
                 <span class="eyebrow">CONTROL</span>
                 <h2>Padrón de vínculos confirmados</h2>
             </div>
-            <form class="export-form" method="post" action="../controllers/escuelaController.php">
+            <?php if ($esAdmin): ?><form class="export-form" method="post" action="../controllers/escuelaController.php">
                 <input type="hidden" name="accion" value="exportar_vinculos">
                 <input type="hidden" name="csrf" value="<?= htmlspecialchars($_SESSION['seg_csrf'], ENT_QUOTES, 'UTF-8') ?>">
                 <input type="hidden" name="q" value="<?= htmlspecialchars($busqueda, ENT_QUOTES, 'UTF-8') ?>">
@@ -237,7 +238,7 @@ $queryBase = $_GET;
                 <input type="hidden" name="subnivel" value="<?= htmlspecialchars($subnivel, ENT_QUOTES, 'UTF-8') ?>">
                 <input type="hidden" name="status" value="<?= htmlspecialchars($status, ENT_QUOTES, 'UTF-8') ?>">
                 <button class="btn-seg compact-action" type="submit"><i class="bi bi-download me-2"></i>Exportar <?= number_format($totalFiltrado) ?></button>
-            </form>
+            </form><?php endif; ?>
         </div>
         <form class="import-filters" method="get" data-auto-filter>
             <label class="search-field">
@@ -276,13 +277,13 @@ $queryBase = $_GET;
                         <th>Tarifa</th>
                         <th>Conteo</th>
                         <th>Estado</th>
-                        <th>Acción</th>
+                        <?php if ($esAdmin): ?><th>Acción</th><?php endif; ?>
                     </tr>
                 </thead>
                 <tbody id="links-body">
                 <?php if (!$vinculos): ?>
                     <tr>
-                        <td colspan="8" class="empty-state">
+                        <td colspan="<?= $esAdmin ? 8 : 7 ?>" class="empty-state">
                             <i class="bi bi-search"></i>
                             <strong>No se encontraron vinculos</strong>
                             <span>Ajusta los filtros para ampliar la busqueda.</span>
@@ -310,7 +311,7 @@ $queryBase = $_GET;
                         <td><span class="status-pill"><?= htmlspecialchars((string) ($vinculo['tarifa_cfe'] ?: 'N/D'), ENT_QUOTES, 'UTF-8') ?></span></td>
                         <td><span class="status-pill <?= (int) ($vinculo['total_rpu'] ?? 0) > 1 ? 'status-warn' : 'status-ok' ?>"><?= number_format((int) ($vinculo['total_rpu'] ?? 0)) ?> CCT</span></td>
                         <td><span class="status-pill status-ok">STATUS <?= htmlspecialchars((string) ($vinculo['STATUS'] ?: 'N/D'), ENT_QUOTES, 'UTF-8') ?></span></td>
-                        <td><button class="unlink-link" type="button" data-unlink-rpu="<?= htmlspecialchars((string) $vinculo['RPU'], ENT_QUOTES, 'UTF-8') ?>" data-unlink-cct="<?= htmlspecialchars((string) $vinculo['CCT'], ENT_QUOTES, 'UTF-8') ?>"><i class="bi <?= (int) ($vinculo['total_rpu'] ?? 0) > 1 ? 'bi-diagram-3' : 'bi-link-45deg' ?>"></i> <?= (int) ($vinculo['total_rpu'] ?? 0) > 1 ? 'Elegir CCT' : 'Desvincular' ?></button></td>
+                        <?php if ($esAdmin): ?><td><button class="unlink-link" type="button" data-unlink-rpu="<?= htmlspecialchars((string) $vinculo['RPU'], ENT_QUOTES, 'UTF-8') ?>" data-unlink-cct="<?= htmlspecialchars((string) $vinculo['CCT'], ENT_QUOTES, 'UTF-8') ?>"><i class="bi <?= (int) ($vinculo['total_rpu'] ?? 0) > 1 ? 'bi-diagram-3' : 'bi-link-45deg' ?>"></i> <?= (int) ($vinculo['total_rpu'] ?? 0) > 1 ? 'Elegir CCT' : 'Desvincular' ?></button></td><?php endif; ?>
                     </tr>
                 <?php endforeach; ?>
                 </tbody>
@@ -347,6 +348,7 @@ if (autoFilter) {
     });
 }
 
+<?php if ($esAdmin): ?>
 const csrf = <?= json_encode($_SESSION['seg_csrf'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
 const rpuMatchForm = document.getElementById('rpu-match-form');
 const rpuMatchStatus = document.getElementById('rpu-match-status');
@@ -789,6 +791,7 @@ linksBody.addEventListener('click', async (event) => {
     }
 });
 
+<?php endif; ?>
 </script>
 </body>
 </html>

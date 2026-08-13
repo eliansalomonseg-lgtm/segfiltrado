@@ -23,6 +23,440 @@
     --seg-transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.document-library-view {
+    font-family: "Montserrat", "Segoe UI", Arial, sans-serif;
+}
+
+.document-heading {
+    margin-bottom: 20px;
+}
+
+.document-upload-card,
+.document-library-card {
+    padding: 24px;
+}
+
+.document-upload-form {
+    align-items: end;
+    display: grid;
+    gap: 14px;
+    grid-template-columns: minmax(245px, 1.35fr) minmax(125px, .6fr) minmax(110px, .5fr) minmax(190px, 1fr) auto;
+}
+
+.document-upload-form label:not(.pdf-drop-zone) {
+    display: grid;
+    gap: 7px;
+}
+
+.document-upload-form label > span,
+.document-filters select,
+.document-filters input {
+    color: var(--seg-muted);
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.document-upload-form input:not([type="file"]),
+.document-upload-form select,
+.document-filters select,
+.document-filters input {
+    background: #fff;
+    border: 1px solid #ded8d1;
+    border-radius: 7px;
+    color: var(--seg-text);
+    font-size: 13px;
+    font-weight: 600;
+    min-height: 44px;
+    outline: none;
+    padding: 9px 11px;
+    text-transform: none;
+}
+
+.document-upload-form input:focus,
+.document-upload-form select:focus,
+.document-filters select:focus,
+.document-filters input:focus {
+    border-color: var(--seg-gold);
+    box-shadow: 0 0 0 3px rgba(191, 162, 118, .16);
+}
+
+.pdf-drop-zone {
+    align-items: center;
+    background: #fbfaf8;
+    border: 1px dashed #cbb891;
+    border-radius: 8px;
+    cursor: pointer;
+    display: grid;
+    gap: 3px;
+    grid-template-columns: 36px 1fr;
+    min-height: 72px;
+    padding: 12px 15px;
+}
+
+.pdf-drop-zone:hover {
+    background: #fffaf1;
+    border-color: var(--seg-guinda);
+}
+
+.pdf-drop-zone input {
+    height: 1px;
+    opacity: 0;
+    overflow: hidden;
+    position: absolute;
+    width: 1px;
+}
+
+.pdf-drop-zone i {
+    color: #9a1e31;
+    font-size: 30px;
+    grid-row: span 2;
+}
+
+.pdf-drop-zone strong {
+    color: var(--seg-text);
+    font-size: 13px;
+}
+
+.pdf-drop-zone small {
+    color: var(--seg-muted);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.document-library-head {
+    align-items: end;
+    border-bottom: 1px solid #e6ded6;
+    gap: 20px;
+    margin-bottom: 18px;
+    padding-bottom: 18px;
+}
+
+.document-filters {
+    display: flex;
+    gap: 9px;
+}
+
+.document-filters select {
+    min-width: 150px;
+}
+
+.document-filters input {
+    min-width: 255px;
+}
+
+.document-filter-reset {
+    align-items: center;
+    background: #fff;
+    border: 1px solid #ded8d1;
+    border-radius: 7px;
+    color: var(--seg-guinda);
+    cursor: pointer;
+    display: inline-flex;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 800;
+    gap: 6px;
+    justify-content: center;
+    min-height: 44px;
+    padding: 8px 11px;
+}
+
+.document-filter-reset:hover {
+    background: #fff5f5;
+    border-color: #a92b3a;
+}
+
+.document-grid {
+    display: grid;
+    gap: 18px;
+    grid-template-columns: 1fr;
+}
+
+.document-card {
+    align-items: center;
+    background: #fff;
+    border: 1px solid #e7e0d9;
+    border-top: 4px solid var(--seg-gold);
+    border-radius: 8px;
+    display: grid;
+    gap: 15px;
+    grid-template-columns: 145px minmax(0, 1fr) auto;
+    min-height: 202px;
+    padding: 18px;
+}
+
+.document-card:hover {
+    border-color: #bda786;
+    box-shadow: 0 8px 22px rgba(69, 39, 41, .07);
+}
+
+.document-preview {
+    align-items: center;
+    background: #f7f3ee;
+    border: 1px solid #ded5ca;
+    border-radius: 5px;
+    color: #8e1c2d;
+    display: flex;
+    grid-row: span 2;
+    justify-content: center;
+    min-height: 145px;
+    overflow: hidden;
+    position: relative;
+    text-decoration: none;
+    width: 145px;
+}
+
+.document-preview canvas {
+    display: none;
+    max-height: 160px;
+    max-width: 100%;
+}
+
+.document-preview.loaded canvas {
+    display: block;
+}
+
+.document-preview span {
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    font-size: 10px;
+    font-weight: 800;
+    gap: 5px;
+}
+
+.document-preview.loaded span {
+    background: rgba(66, 16, 26, .88);
+    bottom: 0;
+    color: #fff;
+    font-size: 9px;
+    left: 0;
+    padding: 5px;
+    position: absolute;
+    right: 0;
+}
+
+.document-preview span i {
+    font-size: 24px;
+}
+
+.document-preview.loaded span i {
+    display: none;
+}
+
+.document-card-body {
+    border-left: 1px solid #e8e1d9;
+    min-width: 0;
+    padding-left: 15px;
+}
+
+.document-card-body strong,
+.document-card-body small,
+.document-card-body em {
+    display: block;
+}
+
+.document-periodo {
+    color: #8d1d2f;
+    display: block;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    margin-bottom: 5px;
+    text-transform: uppercase;
+}
+
+.document-card-body strong {
+    color: var(--seg-text);
+    font-size: 15px;
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.document-card-body small {
+    color: var(--seg-muted);
+    font-size: 11px;
+    line-height: 1.4;
+    margin-top: 5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.document-card-body .document-file-name {
+    color: #72535a;
+    font-weight: 700;
+}
+
+.document-card-body em {
+    color: #95877b;
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 700;
+    margin-top: 6px;
+}
+
+.document-card-actions {
+    align-items: center;
+    border-left: 1px solid #e8e1d9;
+    display: flex;
+    gap: 6px;
+    grid-column: 3;
+    height: 100%;
+    padding-left: 15px;
+}
+
+.document-card-actions .btn-seg {
+    font-size: 11px;
+    min-height: 36px;
+    padding: 8px 10px;
+}
+
+.document-download,
+.document-delete {
+    align-items: center;
+    background: #fff;
+    border: 1px solid #ded8d1;
+    border-radius: 6px;
+    color: #6a1b29;
+    display: inline-flex;
+    font-size: 14px;
+    height: 36px;
+    justify-content: center;
+    text-decoration: none;
+    width: 36px;
+}
+
+.document-delete {
+    color: #9b2532;
+    cursor: pointer;
+}
+
+.document-download:hover,
+.document-delete:hover {
+    background: #fff4f4;
+    border-color: #a92b3a;
+    color: #7b1725;
+}
+
+.document-empty {
+    color: var(--seg-muted);
+    font-size: 13px;
+    grid-column: 1 / -1;
+    margin: 20px 0;
+    text-align: center;
+}
+
+.document-pagination {
+    align-items: center;
+    display: flex;
+    gap: 7px;
+    justify-content: center;
+    margin-top: 26px;
+}
+
+.document-pagination a {
+    align-items: center;
+    border: 1px solid #ded8d1;
+    border-radius: 6px;
+    color: var(--seg-guinda);
+    display: inline-flex;
+    font-size: 12px;
+    font-weight: 800;
+    gap: 5px;
+    justify-content: center;
+    min-height: 38px;
+    min-width: 38px;
+    padding: 7px 10px;
+    text-decoration: none;
+}
+
+.document-pagination a:hover,
+.document-pagination a.active {
+    background: var(--seg-guinda);
+    border-color: var(--seg-guinda);
+    color: #fff;
+}
+
+@media (max-width: 1100px) {
+    .document-upload-form {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .pdf-drop-zone,
+    .document-description {
+        grid-column: span 2;
+    }
+}
+
+@media (max-width: 650px) {
+    .document-upload-card,
+    .document-library-card {
+        padding: 16px;
+    }
+
+    .document-upload-form {
+        grid-template-columns: 1fr;
+    }
+
+    .pdf-drop-zone,
+    .document-description {
+        grid-column: auto;
+    }
+
+    .document-upload-form .btn-seg {
+        width: 100%;
+    }
+
+    .document-library-head,
+    .document-filters {
+        align-items: stretch;
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .document-filters input,
+    .document-filters select,
+    .document-filter-reset {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .document-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .document-card {
+        grid-template-columns: 106px minmax(0, 1fr);
+        min-height: 160px;
+    }
+
+    .document-preview {
+        min-height: 128px;
+        width: 106px;
+    }
+
+    .document-card-actions {
+        border-left: 0;
+        border-top: 1px solid #e8e1d9;
+        grid-column: 1 / -1;
+        height: auto;
+        margin-top: 2px;
+        padding-left: 0;
+        padding-top: 12px;
+    }
+
+    .document-card-actions .btn-seg {
+        flex: 1;
+        justify-content: center;
+    }
+}
+
 /* ── Base ─────────────────────────────────────────────── */
 
 body {
