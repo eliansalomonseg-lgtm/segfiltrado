@@ -6,6 +6,7 @@ require_once dirname(__DIR__) . '/services/auth.php';
 segRequireLogin();
 
 require_once dirname(__DIR__) . '/services/conexion.php';
+require_once dirname(__DIR__) . '/services/lectorPlanoCfe.php';
 
 class AjustesController
 {
@@ -105,6 +106,223 @@ class AjustesController
             $respuesta['error'] = implode(' | ', array_map(static fn (array $error): string => (string) $error['archivo'] . ': ' . (string) $error['error'], $errores));
         }
         $this->responder($respuesta, $procesados !== [] ? 200 : 422);
+    }
+
+    public function importarArchivosPlanos(): void
+    {
+        set_time_limit(0);
+        segRequireAdmin();
+        $this->validarToken();
+        $archivos = $_FILES['archivos_planos'] ?? null;
+        if (!is_array($archivos) || !is_array($archivos['name'] ?? null) || !$archivos['name']) {
+            $this->responder(['ok' => false, 'error' => 'Selecciona uno o más archivos planos CFE.'], 422);
+        }
+
+        $conexion = Conexion::conectar();
+        $this->prepararHistorialCfe($conexion);
+        $lector = new LectorPlanoCfe();
+        $procesados = [];
+        $errores = [];
+
+        foreach ($archivos['name'] as $indice => $nombreOriginal) {
+            if (($archivos['error'][$indice] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                $errores[] = ['archivo' => $nombreOriginal, 'error' => 'No fue posible recibir el archivo.'];
+                continue;
+            }
+            $extension = strtolower(pathinfo((string) $nombreOriginal, PATHINFO_EXTENSION));
+            if (!in_array($extension, ['xlsx', 'csv'], true)) {
+                $errores[] = ['archivo' => $nombreOriginal, 'error' => 'El archivo plano debe estar en formato XLSX o CSV.'];
+                continue;
+            }
+            $ruta = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'cfe_plano_' . bin2hex(random_bytes(12)) . '.' . $extension;
+            try {
+                if (!move_uploaded_file((string) $archivos['tmp_name'][$indice], $ruta)) {
+                    throw new RuntimeException('No fue posible preparar el archivo plano.');
+                }
+                $hash = hash_file('sha256', $ruta);
+                if (!is_string($hash) || $hash === '') {
+                    throw new RuntimeException('No fue posible identificar el archivo plano.');
+                }
+                $consultaExistente = $conexion->prepare(
+                    'SELECT id, anio, mes, total_registros, conciliados, no_conciliados, con_diferencia_consumo, con_diferencia_total, errores_formato, movimientos_01, movimientos_04, movimientos_06, movimientos_09
+                     FROM cfe_archivos_planos WHERE hash_archivo = ? LIMIT 1'
+                );
+                $consultaExistente->execute([$hash]);
+                $existente = $consultaExistente->fetch();
+                if ($existente) {
+                    $procesados[] = $this->resumenArchivoPlano((string) $nombreOriginal, $existente, true);
+                    continue;
+                }
+
+                $conexion->beginTransaction();
+                $insertarArchivo = $conexion->prepare(
+                    'INSERT INTO cfe_archivos_planos (nombre_archivo, hash_archivo, usuario_id) VALUES (?, ?, ?)'
+                );
+                $usuario = segCurrentUser();
+                $insertarArchivo->execute([(string) $nombreOriginal, $hash, $usuario['id'] ?? null]);
+                $archivoPlanoId = (int) $conexion->lastInsertId();
+                $resultado = $this->conciliarArchivoPlano($conexion, $lector, $ruta, $archivoPlanoId);
+                $actualizarArchivo = $conexion->prepare(
+                    'UPDATE cfe_archivos_planos
+                     SET anio = ?, mes = ?, total_registros = ?, conciliados = ?, no_conciliados = ?, con_diferencia_consumo = ?, con_diferencia_total = ?, errores_formato = ?, movimientos_01 = ?, movimientos_04 = ?, movimientos_06 = ?, movimientos_09 = ?
+                     WHERE id = ?'
+                );
+                $actualizarArchivo->execute([
+                    $resultado['anio'], $resultado['mes'], $resultado['total_registros'], $resultado['conciliados'], $resultado['no_conciliados'],
+                    $resultado['con_diferencia_consumo'], $resultado['con_diferencia_total'], $resultado['errores_formato'],
+                    $resultado['movimientos_01'], $resultado['movimientos_04'], $resultado['movimientos_06'], $resultado['movimientos_09'], $archivoPlanoId
+                ]);
+                $conexion->commit();
+                $procesados[] = $this->resumenArchivoPlano((string) $nombreOriginal, $resultado + ['id' => $archivoPlanoId], false);
+            } catch (Throwable $e) {
+                if ($conexion->inTransaction()) {
+                    $conexion->rollBack();
+                }
+                $errores[] = ['archivo' => $nombreOriginal, 'error' => $e->getMessage()];
+            } finally {
+                if (is_file($ruta)) {
+                    unlink($ruta);
+                }
+            }
+        }
+
+        $respuesta = ['ok' => $procesados !== [], 'archivos' => $procesados, 'errores' => $errores];
+        if ($procesados === [] && $errores) {
+            $respuesta['error'] = implode(' | ', array_map(static fn (array $error): string => $error['archivo'] . ': ' . $error['error'], $errores));
+        }
+        $this->responder($respuesta, $procesados !== [] ? 200 : 422);
+    }
+
+    private function conciliarArchivoPlano(PDO $conexion, LectorPlanoCfe $lector, string $ruta, int $archivoPlanoId): array
+    {
+        $buscarConsumo = $conexion->prepare(
+            'SELECT id, consumo, total FROM cfe_consumos WHERE RPU = ? AND desde = ? AND hasta = ? ORDER BY id'
+        );
+        $actualizarConsumo = $conexion->prepare(
+            'UPDATE cfe_consumos
+             SET tipo_movimiento = COALESCE(?, tipo_movimiento), tipo_facturacion = COALESCE(?, tipo_facturacion), medidor = COALESCE(?, medidor),
+                 lectura_anterior = COALESCE(?, lectura_anterior), lectura_actual = COALESCE(?, lectura_actual), multiplicador = COALESCE(?, multiplicador),
+                 adeudo_anterior = COALESCE(?, adeudo_anterior), numero_adeudo = COALESCE(?, numero_adeudo), fecha_facturacion = COALESCE(?, fecha_facturacion),
+                 fecha_limite_pago = COALESCE(?, fecha_limite_pago), enriquecido_plano = 1, archivo_plano_id = ?, enriquecido_plano_en = NOW()
+             WHERE id = ?'
+        );
+        $guardarConciliacion = $conexion->prepare(
+            'INSERT INTO cfe_plano_conciliaciones
+             (archivo_plano_id, fila_origen, consumo_id, estado, RPU, desde, hasta, consumo_plano, total_plano, tipo_movimiento, diferencia_consumo, diferencia_total, detalle, datos_json)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE consumo_id = VALUES(consumo_id), estado = VALUES(estado), diferencia_consumo = VALUES(diferencia_consumo), diferencia_total = VALUES(diferencia_total), detalle = VALUES(detalle), datos_json = VALUES(datos_json), actualizado_en = CURRENT_TIMESTAMP'
+        );
+        $resumen = [
+            'anio' => null, 'mes' => null, 'total_registros' => 0, 'conciliados' => 0, 'no_conciliados' => 0,
+            'con_diferencia_consumo' => 0, 'con_diferencia_total' => 0, 'errores_formato' => 0,
+            'movimientos_01' => 0, 'movimientos_04' => 0, 'movimientos_06' => 0, 'movimientos_09' => 0
+        ];
+        foreach ($lector->registros($ruta) as [$filaOrigen, $fila]) {
+            $resumen['total_registros']++;
+            $rpu = preg_replace('/\D+/', '', $lector->valor($fila, ['rpu'])) ?? '';
+            $desde = $lector->fecha($lector->valor($fila, ['fechadesde', 'desde']));
+            $hasta = $lector->fecha($lector->valor($fila, ['fechahasta', 'hasta']));
+            $tipoMovimiento = $this->normalizarTipoMovimiento($lector->valor($fila, ['tipomov', 'tipomovimiento']));
+            $this->sumarMovimientoPlano($resumen, $tipoMovimiento);
+            $periodo = preg_replace('/\D+/', '', $lector->valor($fila, ['periodo'])) ?? '';
+            if ($resumen['anio'] === null && preg_match('/^(20\d{2})(0[1-9]|1[0-2])$/', $periodo, $coincidencia)) {
+                $resumen['anio'] = (int) $coincidencia[1];
+                $resumen['mes'] = (int) $coincidencia[2];
+            }
+            $consumoPlano = $lector->numero($lector->valor($fila, ['consumo']));
+            $totalPlano = $lector->numero($lector->valor($fila, ['importetotal', 'total']));
+            if ($rpu === '' || strlen($rpu) < 8 || $desde === null || $hasta === null) {
+                $resumen['errores_formato']++;
+                $guardarConciliacion->execute([$archivoPlanoId, $filaOrigen, null, 'ERROR_FORMATO', $rpu ?: null, $desde, $hasta, $consumoPlano, $totalPlano, $tipoMovimiento, null, null, 'Falta RPU o fechas válidas para conciliar.', json_encode($fila, JSON_UNESCAPED_UNICODE)]);
+                continue;
+            }
+            $buscarConsumo->execute([$rpu, $desde, $hasta]);
+            $coincidencias = $buscarConsumo->fetchAll();
+            if (count($coincidencias) !== 1) {
+                $resumen['no_conciliados']++;
+                $motivo = $coincidencias === [] ? 'No existe un consumo con el mismo RPU y periodo.' : 'Hay más de un consumo con el mismo RPU y periodo.';
+                $guardarConciliacion->execute([$archivoPlanoId, $filaOrigen, null, 'SIN_COINCIDENCIA', $rpu, $desde, $hasta, $consumoPlano, $totalPlano, $tipoMovimiento, null, null, $motivo, json_encode($fila, JSON_UNESCAPED_UNICODE)]);
+                continue;
+            }
+            $consumo = $coincidencias[0];
+            $diferenciaConsumo = $consumoPlano === null ? null : round($consumoPlano - (float) $consumo['consumo'], 2);
+            $diferenciaTotal = $totalPlano === null ? null : round($totalPlano - (float) $consumo['total'], 2);
+            $hayDiferenciaConsumo = $diferenciaConsumo !== null && abs($diferenciaConsumo) > 0.01;
+            $hayDiferenciaTotal = $diferenciaTotal !== null && abs($diferenciaTotal) > 0.01;
+            if ($hayDiferenciaConsumo) {
+                $resumen['con_diferencia_consumo']++;
+            }
+            if ($hayDiferenciaTotal) {
+                $resumen['con_diferencia_total']++;
+            }
+            $estado = ($hayDiferenciaConsumo || $hayDiferenciaTotal) ? 'CON_DIFERENCIA' : 'CONCILIADO';
+            $actualizarConsumo->execute([
+                $tipoMovimiento,
+                $this->nuloTexto($lector->valor($fila, ['tipofac', 'tipofacturacion'])),
+                $this->nuloTexto($lector->valor($fila, ['numero', 'numeromedidor'])),
+                $lector->numero($lector->valor($fila, ['lecturaanterior'])),
+                $lector->numero($lector->valor($fila, ['lecturaactual'])),
+                $lector->numero($lector->valor($fila, ['multiplicador'])),
+                $lector->numero($lector->valor($fila, ['importeadeudoanterior', 'adeudoanterior'])),
+                $this->nuloTexto($lector->valor($fila, ['numerodeadeudo', 'numeroadeudo'])),
+                $lector->fecha($lector->valor($fila, ['fechafacturacion'])),
+                $lector->fecha($lector->valor($fila, ['fechalimitepago'])),
+                $archivoPlanoId,
+                (int) $consumo['id']
+            ]);
+            $detalle = $estado === 'CONCILIADO' ? 'Conciliado por RPU, fecha desde y fecha hasta.' : 'Conciliado por RPU y periodo; existen diferencias de consumo o total.';
+            $guardarConciliacion->execute([$archivoPlanoId, $filaOrigen, (int) $consumo['id'], $estado, $rpu, $desde, $hasta, $consumoPlano, $totalPlano, $tipoMovimiento, $diferenciaConsumo, $diferenciaTotal, $detalle, null]);
+            $resumen['conciliados']++;
+        }
+        return $resumen;
+    }
+
+    private function normalizarTipoMovimiento(string $valor): ?string
+    {
+        $valor = preg_replace('/\D+/', '', trim($valor)) ?? '';
+        if ($valor === '') {
+            return null;
+        }
+        return str_pad(substr($valor, 0, 2), 2, '0', STR_PAD_LEFT);
+    }
+
+    private function sumarMovimientoPlano(array &$resumen, ?string $tipoMovimiento): void
+    {
+        if (in_array($tipoMovimiento, ['01', '04', '06', '09'], true)) {
+            $resumen['movimientos_' . $tipoMovimiento]++;
+        }
+    }
+
+    private function nuloTexto(string $valor): ?string
+    {
+        $valor = trim($valor);
+        return $valor === '' ? null : $valor;
+    }
+
+    private function etiquetaMovimiento(?string $tipoMovimiento): string
+    {
+        return match ($tipoMovimiento) {
+            '01' => 'NORMAL (01)',
+            '04' => 'FINIQUITO (04)',
+            '06', '09' => 'AJUSTE (' . $tipoMovimiento . ')',
+            default => 'Movimiento no determinado'
+        };
+    }
+
+    private function resumenArchivoPlano(string $nombreArchivo, array $datos, bool $repetido): array
+    {
+        return [
+            'archivo' => $nombreArchivo,
+            'periodo' => $datos['anio'] && $datos['mes'] ? sprintf('%04d-%02d', (int) $datos['anio'], (int) $datos['mes']) : null,
+            'total_registros' => (int) $datos['total_registros'],
+            'conciliados' => (int) $datos['conciliados'],
+            'no_conciliados' => (int) $datos['no_conciliados'],
+            'con_diferencia_consumo' => (int) $datos['con_diferencia_consumo'],
+            'con_diferencia_total' => (int) $datos['con_diferencia_total'],
+            'errores_formato' => (int) $datos['errores_formato'],
+            'movimientos' => ['01' => (int) $datos['movimientos_01'], '04' => (int) $datos['movimientos_04'], '06' => (int) $datos['movimientos_06'], '09' => (int) $datos['movimientos_09']],
+            'repetido' => $repetido
+        ];
     }
 
     public function analizar(): void
@@ -220,7 +438,7 @@ class AjustesController
                 'SELECT RPU, division_cfe, nombre_cfe, direccion_cfe, poblacion_cfe, tarifa_cfe, tipo_periodo,
                         desde, hasta, dias, consumo, demanda, reactivos, factor_potencia, factor_carga,
                         energia, iva, dap, cargos_depositos, creditos_redondeos, total, formula_validacion,
-                        diferencia, severidad, alertas
+                        diferencia, severidad, alertas, tipo_movimiento, tipo_facturacion, medidor, fecha_facturacion, fecha_limite_pago, enriquecido_plano
                  FROM cfe_consumos
                  WHERE reporte_id = ?
                  ORDER BY severidad DESC, total DESC, RPU'
@@ -254,7 +472,14 @@ class AjustesController
                     'formula_validacion' => (float) $fila['formula_validacion'],
                     'diferencia' => (float) $fila['diferencia'],
                     'severidad' => (int) $fila['severidad'],
-                    'alertas' => $alertas
+                    'alertas' => $alertas,
+                    'tipo_movimiento' => $fila['tipo_movimiento'] !== null ? (string) $fila['tipo_movimiento'] : null,
+                    'movimiento' => $this->etiquetaMovimiento($fila['tipo_movimiento'] ?? null),
+                    'tipo_facturacion' => (string) ($fila['tipo_facturacion'] ?? ''),
+                    'medidor' => (string) ($fila['medidor'] ?? ''),
+                    'fecha_facturacion' => (string) ($fila['fecha_facturacion'] ?? ''),
+                    'fecha_limite_pago' => (string) ($fila['fecha_limite_pago'] ?? ''),
+                    'enriquecido_plano' => (bool) ($fila['enriquecido_plano'] ?? false)
                 ];
             }
 
@@ -390,6 +615,19 @@ class AjustesController
                 diferencia DECIMAL(14,2) NOT NULL DEFAULT 0,
                 severidad INT NOT NULL DEFAULT 0,
                 alertas TEXT NULL,
+                tipo_movimiento VARCHAR(2) NULL,
+                tipo_facturacion VARCHAR(30) NULL,
+                medidor VARCHAR(100) NULL,
+                lectura_anterior DECIMAL(18,4) NULL,
+                lectura_actual DECIMAL(18,4) NULL,
+                multiplicador DECIMAL(18,4) NULL,
+                adeudo_anterior DECIMAL(14,2) NULL,
+                numero_adeudo VARCHAR(100) NULL,
+                fecha_facturacion DATE NULL,
+                fecha_limite_pago DATE NULL,
+                enriquecido_plano TINYINT(1) NOT NULL DEFAULT 0,
+                archivo_plano_id INT NULL,
+                enriquecido_plano_en DATETIME NULL,
                 INDEX idx_cfe_consumos_rpu (RPU),
                 INDEX idx_cfe_consumos_cct (CCT),
                 INDEX idx_cfe_consumos_reporte (reporte_id),
@@ -409,6 +647,19 @@ class AjustesController
         $this->asegurarColumna($conexion, 'cfe_consumos', 'factor_carga', 'DECIMAL(14,4) NOT NULL DEFAULT 0');
         $this->asegurarColumna($conexion, 'cfe_consumos', 'iva', 'DECIMAL(14,2) NOT NULL DEFAULT 0');
         $this->asegurarColumna($conexion, 'cfe_consumos', 'formula_validacion', 'DECIMAL(14,2) NOT NULL DEFAULT 0');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'tipo_movimiento', 'VARCHAR(2) NULL');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'tipo_facturacion', 'VARCHAR(30) NULL');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'medidor', 'VARCHAR(100) NULL');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'lectura_anterior', 'DECIMAL(18,4) NULL');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'lectura_actual', 'DECIMAL(18,4) NULL');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'multiplicador', 'DECIMAL(18,4) NULL');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'adeudo_anterior', 'DECIMAL(14,2) NULL');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'numero_adeudo', 'VARCHAR(100) NULL');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'fecha_facturacion', 'DATE NULL');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'fecha_limite_pago', 'DATE NULL');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'enriquecido_plano', 'TINYINT(1) NOT NULL DEFAULT 0');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'archivo_plano_id', 'INT NULL');
+        $this->asegurarColumna($conexion, 'cfe_consumos', 'enriquecido_plano_en', 'DATETIME NULL');
         $this->asegurarColumna($conexion, 'cfe_reportes', 'ajuste_muchos_dias', 'INT NOT NULL DEFAULT 0');
         $this->asegurarColumna($conexion, 'cfe_reportes', 'periodo_correcto_con_aumento', 'INT NOT NULL DEFAULT 0');
         $this->asegurarColumna($conexion, 'cfe_reportes', 'sin_alerta_con_aumento', 'INT NOT NULL DEFAULT 0');
@@ -416,6 +667,57 @@ class AjustesController
         $this->asegurarIndice($conexion, 'cfe_consumos', 'idx_cfe_consumos_reporte_consumo_rpu', 'reporte_id, consumo, RPU');
         $this->asegurarIndice($conexion, 'cfe_consumos', 'idx_cfe_consumos_rpu_cct_hasta', 'RPU, CCT, hasta');
         $this->asegurarIndice($conexion, 'cfe_consumos', 'idx_cfe_consumos_rpu_reporte_id', 'RPU, reporte_id, id');
+        $this->asegurarIndice($conexion, 'cfe_consumos', 'idx_cfe_consumos_rpu_periodo', 'RPU, desde, hasta');
+        $this->asegurarIndice($conexion, 'cfe_consumos', 'idx_cfe_consumos_archivo_plano', 'archivo_plano_id');
+        $conexion->exec(
+            "CREATE TABLE IF NOT EXISTS cfe_archivos_planos (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                nombre_archivo VARCHAR(255) NOT NULL,
+                hash_archivo CHAR(64) NOT NULL,
+                anio SMALLINT NULL,
+                mes TINYINT NULL,
+                usuario_id INT NULL,
+                total_registros INT NOT NULL DEFAULT 0,
+                conciliados INT NOT NULL DEFAULT 0,
+                no_conciliados INT NOT NULL DEFAULT 0,
+                con_diferencia_consumo INT NOT NULL DEFAULT 0,
+                con_diferencia_total INT NOT NULL DEFAULT 0,
+                errores_formato INT NOT NULL DEFAULT 0,
+                movimientos_01 INT NOT NULL DEFAULT 0,
+                movimientos_04 INT NOT NULL DEFAULT 0,
+                movimientos_06 INT NOT NULL DEFAULT 0,
+                movimientos_09 INT NOT NULL DEFAULT 0,
+                creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                actualizado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_cfe_archivos_planos_hash (hash_archivo),
+                INDEX idx_cfe_archivos_planos_periodo (anio, mes)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
+        $conexion->exec(
+            "CREATE TABLE IF NOT EXISTS cfe_plano_conciliaciones (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                archivo_plano_id INT NOT NULL,
+                fila_origen INT NOT NULL,
+                consumo_id INT NULL,
+                estado VARCHAR(30) NOT NULL,
+                RPU VARCHAR(20) NULL,
+                desde DATE NULL,
+                hasta DATE NULL,
+                consumo_plano DECIMAL(14,2) NULL,
+                total_plano DECIMAL(14,2) NULL,
+                tipo_movimiento VARCHAR(2) NULL,
+                diferencia_consumo DECIMAL(14,2) NULL,
+                diferencia_total DECIMAL(14,2) NULL,
+                detalle VARCHAR(255) NULL,
+                datos_json LONGTEXT NULL,
+                creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                actualizado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_cfe_plano_archivo_fila (archivo_plano_id, fila_origen),
+                INDEX idx_cfe_plano_conciliaciones_consumo (consumo_id),
+                INDEX idx_cfe_plano_conciliaciones_estado (estado),
+                INDEX idx_cfe_plano_conciliaciones_rpu (RPU)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
     }
 
     private function prepararPagosReales(PDO $conexion): void
@@ -1296,6 +1598,10 @@ if ($accion === 'recalcular_resumenes_reportes') {
 
 if ($accion === 'importar_reportes_masivos') {
     $controlador->importarReportesMasivos();
+}
+
+if ($accion === 'importar_archivos_planos') {
+    $controlador->importarArchivosPlanos();
 }
 
 if ($accion === 'exportar_excel_directores') {

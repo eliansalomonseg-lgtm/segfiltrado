@@ -245,6 +245,7 @@ function problemRows() {
 }
 
 function isRealAdjustment(row) {
+    if (['06', '09'].includes(String(row.tipo_movimiento || ''))) return false;
     const minDays = row.tipo_periodo === 'mensual' ? 25 : 50;
     const maxDays = row.tipo_periodo === 'mensual' ? 35 : 75;
     const days = Number(row.dias);
@@ -284,6 +285,8 @@ function actualizarSelectorReportes() {
 }
 
 function rowCase(row) {
+    if (['06', '09'].includes(String(row.tipo_movimiento || ''))) return `MOVIMIENTO AJUSTE (${row.tipo_movimiento})`;
+    if (String(row.tipo_movimiento || '') === '04') return 'FINIQUITO (04)';
     const maxDays = row.tipo_periodo === 'mensual' ? 35 : 75;
     const minDays = row.tipo_periodo === 'mensual' ? 25 : 50;
     const days = Number(row.dias || 0);
@@ -322,7 +325,7 @@ function render(data) {
         return `<tr>
             <td><strong>${escapeHtml(row.rpu)}</strong><small>${escapeHtml(row.tarifa || 'Sin tarifa')}</small></td>
             <td><strong>${escapeHtml(row.nombre)}</strong><small>${escapeHtml(row.poblacion)}</small></td>
-            <td><strong>${escapeHtml(simpleCase)}</strong><small>${escapeHtml(row.desde)} / ${escapeHtml(row.hasta)}<br>${escapeHtml(row.tipo_periodo || '')} - ${escapeHtml(row.dias)} dias</small></td>
+            <td><strong>${escapeHtml(simpleCase)}</strong><small>${escapeHtml(row.desde)} / ${escapeHtml(row.hasta)}<br>${escapeHtml(row.tipo_periodo || '')} - ${escapeHtml(row.dias)} dias<br>${escapeHtml(row.movimiento || 'Movimiento no determinado')}</small></td>
             <td>${school}</td>
             <td><strong>${number.format(row.consumo || 0)}</strong><small>kWh</small></td>
             <td><strong>${money.format(row.total || 0)}</strong><small>${escapeHtml(trend)}<br>Diferencia ${money.format(row.diferencia || 0)}</small></td>
