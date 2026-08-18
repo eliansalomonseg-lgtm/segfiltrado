@@ -250,7 +250,7 @@ $periodoConciliacionInicial = $periodosConciliacion[0] ?? null;
         </form>
         <div id="payment-reconciliation-status" class="payment-reconciliation-status"></div>
     </section><?php endif; ?>
-    <section class="zero-consumption-card">
+    <?php if ($esAdmin): ?><section class="zero-consumption-card">
         <div class="zero-consumption-head">
             <div>
                 <span class="eyebrow">SERVICIOS SIN CONSUMO</span>
@@ -285,7 +285,7 @@ $periodoConciliacionInicial = $periodosConciliacion[0] ?? null;
                 </form>
             </article>
         </div>
-    </section>
+    </section><?php endif; ?>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script>

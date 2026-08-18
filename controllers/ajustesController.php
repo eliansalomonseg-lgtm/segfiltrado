@@ -822,6 +822,7 @@ class AjustesController
 
     public function exportarConsumoCeroRecurrente(): void
     {
+        segRequireAdmin();
         $this->validarToken();
         set_time_limit(0);
         try {
