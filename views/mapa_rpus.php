@@ -20,11 +20,11 @@ $ultimoReporte = $conexion->query('SELECT id, anio, mes FROM cfe_reportes ORDER 
 $puntos = [];
 $consulta = $conexion->prepare(
     'SELECT er.RPU, er.CCT, e.NOMBRECT, e.DOMICILIO, e.NOMBREMUN, e.NOMBRELOC, e.NIVEL, e.SUBNIVEL, e.LATITUD, e.LONGITUD,
-            consumo.severidad, consumo.alertas, consumo.total, consumo.consumo, consumo.tarifa_cfe
+            consumo.tiene_lectura, consumo.severidad, consumo.alertas, consumo.total, consumo.consumo, consumo.tarifa_cfe
      FROM escuelas_rpu er
      INNER JOIN escuelas e ON e.CCT = er.CCT
      LEFT JOIN (
-        SELECT RPU, MAX(severidad) AS severidad, GROUP_CONCAT(DISTINCT NULLIF(alertas, \'\') SEPARATOR \' | \') AS alertas,
+        SELECT RPU, COUNT(*) AS tiene_lectura, MAX(severidad) AS severidad, GROUP_CONCAT(DISTINCT NULLIF(alertas, \'\') SEPARATOR \' | \') AS alertas,
                MAX(total) AS total, MAX(consumo) AS consumo, MAX(tarifa_cfe) AS tarifa_cfe
         FROM cfe_consumos
         WHERE reporte_id = ?
@@ -54,6 +54,7 @@ foreach ($consulta->fetchAll(PDO::FETCH_ASSOC) as $registro) {
         'longitud' => $longitud,
         'alerta' => (int) ($registro['severidad'] ?? 0) >= 3 || trim((string) ($registro['alertas'] ?? '')) !== '',
         'alertas' => (string) ($registro['alertas'] ?? ''),
+        'tiene_lectura' => (int) ($registro['tiene_lectura'] ?? 0) > 0,
         'total' => (float) ($registro['total'] ?? 0),
         'consumo' => (float) ($registro['consumo'] ?? 0),
         'tarifa' => (string) ($registro['tarifa_cfe'] ?? '')
@@ -63,11 +64,11 @@ foreach ($consulta->fetchAll(PDO::FETCH_ASSOC) as $registro) {
 $sinCoordenadas = [];
 $consultaSinCoordenadas = $conexion->prepare(
     'SELECT er.RPU, er.CCT, e.NOMBRECT, e.NOMBREMUN, e.NOMBRELOC, e.NIVEL, e.SUBNIVEL, e.LATITUD, e.LONGITUD,
-            consumo.severidad, consumo.alertas, consumo.total, consumo.consumo, consumo.tarifa_cfe
+            consumo.tiene_lectura, consumo.severidad, consumo.alertas, consumo.total, consumo.consumo, consumo.tarifa_cfe
      FROM escuelas_rpu er
      INNER JOIN escuelas e ON e.CCT = er.CCT
      LEFT JOIN (
-        SELECT RPU, MAX(severidad) AS severidad, GROUP_CONCAT(DISTINCT NULLIF(alertas, \'\') SEPARATOR \' | \') AS alertas,
+        SELECT RPU, COUNT(*) AS tiene_lectura, MAX(severidad) AS severidad, GROUP_CONCAT(DISTINCT NULLIF(alertas, \'\') SEPARATOR \' | \') AS alertas,
                MAX(total) AS total, MAX(consumo) AS consumo, MAX(tarifa_cfe) AS tarifa_cfe
         FROM cfe_consumos
         WHERE reporte_id = ?
@@ -91,6 +92,7 @@ foreach ($consultaSinCoordenadas->fetchAll(PDO::FETCH_ASSOC) as $registro) {
         'nivel' => (string) $registro['NIVEL'],
         'subnivel' => (string) $registro['SUBNIVEL'],
         'alerta' => (int) ($registro['severidad'] ?? 0) >= 3 || trim((string) ($registro['alertas'] ?? '')) !== '',
+        'tiene_lectura' => (int) ($registro['tiene_lectura'] ?? 0) > 0,
         'total' => (float) ($registro['total'] ?? 0),
         'consumo' => (float) ($registro['consumo'] ?? 0),
         'tarifa' => (string) ($registro['tarifa_cfe'] ?? '')
@@ -295,7 +297,7 @@ function categoriaNivel(punto) {
 
 function estadoEnergetico(punto) {
     if (punto.alerta) return 'ALERTA';
-    if (Number(punto.consumo || 0) <= 0) return 'SIN_CONSUMO';
+    if (punto.tiene_lectura && Number(punto.consumo || 0) <= 0) return 'SIN_CONSUMO';
     return 'NORMAL';
 }
 
@@ -321,9 +323,11 @@ function clavePunto(punto) {
 function popupPunto(punto) {
     const estado = punto.alerta ? '<span class="map-popup-alert">Revisar último reporte</span>' : '<span class="map-popup-ok">Sin alerta reciente</span>';
     const alerta = punto.alertas ? `<p class="map-popup-warning"><strong>Alerta:</strong> ${textoSeguro(punto.alertas)}</p>` : '';
+    const consumo = punto.tiene_lectura ? `${Number(punto.consumo || 0).toLocaleString('es-MX')} kWh` : 'Sin lectura';
+    const total = punto.tiene_lectura ? moneda(punto.total) : 'Sin lectura';
     const ubicacion = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${punto.latitud},${punto.longitud}`)}`;
     const expediente = `rpus.php?rpu=${encodeURIComponent(punto.rpu)}`;
-    return `<div class="map-popup"><div class="map-popup-top"><span class="map-popup-rpu">RPU ${textoSeguro(punto.rpu)}</span>${estado}</div><h3>${textoSeguro(punto.nombre)}</h3><p class="map-popup-school"><strong>${textoSeguro(punto.cct)}</strong><span>${textoSeguro(punto.nivel || 'Nivel no registrado')}</span></p><p class="map-popup-location"><i class="bi bi-geo-alt"></i><span>${textoSeguro(punto.localidad)} · ${textoSeguro(punto.municipio)}<br>${textoSeguro(punto.domicilio || 'Domicilio no registrado')}</span></p><div class="map-popup-metrics"><span><small>Tarifa</small><strong>${textoSeguro(punto.tarifa || 'Sin dato')}</strong></span><span><small>Consumo</small><strong>${Number(punto.consumo || 0).toLocaleString('es-MX')} kWh</strong></span><span><small>Último total</small><strong>${moneda(punto.total)}</strong></span></div>${alerta}<div class="map-popup-actions"><a class="map-rpu-link" href="${expediente}"><i class="bi bi-file-earmark-text"></i>Abrir expediente RPU</a><a class="map-google-link" href="${ubicacion}" target="_blank" rel="noopener noreferrer"><i class="bi bi-box-arrow-up-right"></i>Google Maps</a></div></div>`;
+    return `<div class="map-popup"><div class="map-popup-top"><span class="map-popup-rpu">RPU ${textoSeguro(punto.rpu)}</span>${estado}</div><h3>${textoSeguro(punto.nombre)}</h3><p class="map-popup-school"><strong>${textoSeguro(punto.cct)}</strong><span>${textoSeguro(punto.nivel || 'Nivel no registrado')}</span></p><p class="map-popup-location"><i class="bi bi-geo-alt"></i><span>${textoSeguro(punto.localidad)} · ${textoSeguro(punto.municipio)}<br>${textoSeguro(punto.domicilio || 'Domicilio no registrado')}</span></p><div class="map-popup-metrics"><span><small>Tarifa</small><strong>${textoSeguro(punto.tarifa || 'Sin dato')}</strong></span><span><small>Consumo</small><strong>${consumo}</strong></span><span><small>Último total</small><strong>${total}</strong></span></div>${alerta}<div class="map-popup-actions"><a class="map-rpu-link" href="${expediente}"><i class="bi bi-file-earmark-text"></i>Abrir expediente RPU</a><a class="map-google-link" href="${ubicacion}" target="_blank" rel="noopener noreferrer"><i class="bi bi-box-arrow-up-right"></i>Google Maps</a></div></div>`;
 }
 
 function obtenerVisibles() {
