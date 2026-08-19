@@ -149,8 +149,8 @@ if (empty($_SESSION['seg_csrf'])) {
         </article>
         <article class="quick-card">
             <span class="quick-icon"><i class="bi bi-calendar2-x"></i></span>
-            <div><strong data-summary="ajuste_muchos_dias">0</strong><span>Muchos dias</span></div>
-            <small>Ajuste</small>
+            <div><strong data-summary="ajustes_confirmados">0</strong><span>Ajustes confirmados</span></div>
+            <small>Archivo plano</small>
         </article>
         <article class="quick-card">
             <span class="quick-icon"><i class="bi bi-graph-up-arrow"></i></span>
@@ -191,7 +191,7 @@ if (empty($_SESSION['seg_csrf'])) {
                 <h2>Alertas detectadas</h2>
             </div>
             <div class="adjustment-result-controls">
-                <label><span>Ver</span><select id="adjustment-kind-filter"><option value="all">Todas las alertas</option><option value="real">Solo ajustes reales</option><option value="increase">Solo aumentos sin ajuste</option></select></label>
+                <label><span>Ver</span><select id="adjustment-kind-filter"><option value="all">Todo lo detectado</option><option value="confirmed">Ajustes confirmados</option><option value="real">Ajustes por periodo</option><option value="increase">Aumentos sin ajuste</option></select></label>
                 <label><span>Ordenar</span><select id="adjustment-sort-filter"><option value="total-desc">Mayor importe</option><option value="total-asc">Menor importe</option><option value="rpu">RPU</option></select></label>
                 <span class="alert-gold" id="adjustment-file">Sin archivo</span>
             </div>
@@ -241,11 +241,16 @@ function escapeHtml(value) {
 }
 
 function problemRows() {
-    return currentRows.filter((row) => row.alertas.length > 0 || (row.tendencia && Number(row.tendencia.diferencia_total || 0) > 0));
+    return currentRows.filter((row) => isConfirmedAdjustment(row) || row.alertas.length > 0 || (row.tendencia && Number(row.tendencia.diferencia_total || 0) > 0));
+}
+
+function isConfirmedAdjustment(row) {
+    return ['06', '09'].includes(String(row.tipo_movimiento || ''));
 }
 
 function isRealAdjustment(row) {
-    if (['06', '09'].includes(String(row.tipo_movimiento || ''))) return false;
+    if (isConfirmedAdjustment(row)) return true;
+    if (['01', '04'].includes(String(row.tipo_movimiento || ''))) return false;
     const minDays = row.tipo_periodo === 'mensual' ? 25 : 50;
     const maxDays = row.tipo_periodo === 'mensual' ? 35 : 75;
     const days = Number(row.dias);
@@ -256,7 +261,8 @@ function visibleRows() {
     const kind = adjustmentKindFilter.value;
     const sort = adjustmentSortFilter.value;
     const rows = problemRows().filter((row) => {
-        if (kind === 'real') return isRealAdjustment(row);
+        if (kind === 'confirmed') return isConfirmedAdjustment(row);
+        if (kind === 'real') return isRealAdjustment(row) && !isConfirmedAdjustment(row);
         if (kind === 'increase') return !isRealAdjustment(row) && row.tendencia && Number(row.tendencia.diferencia_total || 0) > 0;
         return true;
     });
@@ -285,8 +291,9 @@ function actualizarSelectorReportes() {
 }
 
 function rowCase(row) {
-    if (['06', '09'].includes(String(row.tipo_movimiento || ''))) return `MOVIMIENTO AJUSTE (${row.tipo_movimiento})`;
+    if (isConfirmedAdjustment(row)) return `AJUSTE CONFIRMADO (${row.tipo_movimiento})`;
     if (String(row.tipo_movimiento || '') === '04') return 'FINIQUITO (04)';
+    if (String(row.tipo_movimiento || '') === '01') return 'NORMAL (01)';
     const maxDays = row.tipo_periodo === 'mensual' ? 35 : 75;
     const minDays = row.tipo_periodo === 'mensual' ? 25 : 50;
     const days = Number(row.dias || 0);
@@ -322,15 +329,21 @@ function render(data) {
         const trend = row.tendencia
             ? `${row.tendencia.diferencia_total <= 0 ? 'Bajo' : 'Subio'} ${money.format(Math.abs(row.tendencia.diferencia_total || 0))} vs ${escapeHtml(row.tendencia.periodo_anterior)}`
             : 'Sin historial previo';
+        const movementClass = isConfirmedAdjustment(row) ? 'movement-adjustment' : String(row.tipo_movimiento || '') === '04' ? 'movement-settlement' : String(row.tipo_movimiento || '') === '01' ? 'movement-normal' : 'movement-undetermined';
+        const planoDetalle = row.enriquecido_plano ? [
+            row.tipo_facturacion ? `Facturación ${row.tipo_facturacion}` : '',
+            row.medidor ? `Medidor ${row.medidor}` : '',
+            row.fecha_limite_pago ? `Límite ${row.fecha_limite_pago}` : ''
+        ].filter(Boolean).join(' · ') : '';
         return `<tr>
             <td><strong>${escapeHtml(row.rpu)}</strong><small>${escapeHtml(row.tarifa || 'Sin tarifa')}</small></td>
             <td><strong>${escapeHtml(row.nombre)}</strong><small>${escapeHtml(row.poblacion)}</small></td>
-            <td><strong>${escapeHtml(simpleCase)}</strong><small>${escapeHtml(row.desde)} / ${escapeHtml(row.hasta)}<br>${escapeHtml(row.tipo_periodo || '')} - ${escapeHtml(row.dias)} dias<br>${escapeHtml(row.movimiento || 'Movimiento no determinado')}</small></td>
+            <td><strong>${escapeHtml(simpleCase)}</strong><small>${escapeHtml(row.desde)} / ${escapeHtml(row.hasta)}<br>${escapeHtml(row.tipo_periodo || '')} - ${escapeHtml(row.dias)} dias</small><span class="movement-pill ${movementClass}">${escapeHtml(row.movimiento || 'Movimiento no determinado')}</span></td>
             <td>${school}</td>
             <td><strong>${number.format(row.consumo || 0)}</strong><small>kWh</small></td>
             <td><strong>${money.format(row.total || 0)}</strong><small>${escapeHtml(trend)}<br>Diferencia ${money.format(row.diferencia || 0)}</small></td>
             <td><strong>${money.format(row.cargos_depositos || 0)}</strong><small>Creditos ${money.format(row.creditos_redondeos || 0)}</small></td>
-            <td><span class="status-pill ${level}">Sev. ${escapeHtml(row.severidad)}</span><small>${escapeHtml(row.alertas.join(' | '))}</small></td>
+            <td><span class="status-pill ${level}">Sev. ${escapeHtml(row.severidad)}</span><small>${escapeHtml(row.alertas.join(' | ') || 'Sin alertas')}</small>${planoDetalle ? `<small class="plano-detail"><i class="bi bi-file-earmark-check"></i>${escapeHtml(planoDetalle)}</small>` : ''}</td>
         </tr>`;
     }).join('');
     summary.hidden = false;

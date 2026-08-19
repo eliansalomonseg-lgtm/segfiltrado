@@ -123,6 +123,7 @@ class AjustesController
         $lector = new LectorPlanoCfe();
         $procesados = [];
         $errores = [];
+        $periodosPlanos = is_array($_POST['periodos_planos'] ?? null) ? $_POST['periodos_planos'] : [];
 
         foreach ($archivos['name'] as $indice => $nombreOriginal) {
             if (($archivos['error'][$indice] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
@@ -134,6 +135,13 @@ class AjustesController
                 $errores[] = ['archivo' => $nombreOriginal, 'error' => 'El archivo plano debe estar en formato XLSX o CSV.'];
                 continue;
             }
+            $periodoSeleccionado = trim((string) ($periodosPlanos[$indice] ?? ''));
+            if (!preg_match('/^(20\d{2})-(0[1-9]|1[0-2])$/', $periodoSeleccionado, $coincidenciaPeriodo)) {
+                $errores[] = ['archivo' => $nombreOriginal, 'error' => 'Selecciona mes y año para este archivo plano.'];
+                continue;
+            }
+            $anioSeleccionado = (int) $coincidenciaPeriodo[1];
+            $mesSeleccionado = (int) $coincidenciaPeriodo[2];
             $ruta = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'cfe_plano_' . bin2hex(random_bytes(12)) . '.' . $extension;
             try {
                 if (!move_uploaded_file((string) $archivos['tmp_name'][$indice], $ruta)) {
@@ -161,7 +169,7 @@ class AjustesController
                 $usuario = segCurrentUser();
                 $insertarArchivo->execute([(string) $nombreOriginal, $hash, $usuario['id'] ?? null]);
                 $archivoPlanoId = (int) $conexion->lastInsertId();
-                $resultado = $this->conciliarArchivoPlano($conexion, $lector, $ruta, $archivoPlanoId);
+                $resultado = $this->conciliarArchivoPlano($conexion, $lector, $ruta, $archivoPlanoId, $anioSeleccionado, $mesSeleccionado);
                 $actualizarArchivo = $conexion->prepare(
                     'UPDATE cfe_archivos_planos
                      SET anio = ?, mes = ?, total_registros = ?, conciliados = ?, no_conciliados = ?, con_diferencia_consumo = ?, con_diferencia_total = ?, errores_formato = ?, movimientos_01 = ?, movimientos_04 = ?, movimientos_06 = ?, movimientos_09 = ?
@@ -193,7 +201,7 @@ class AjustesController
         $this->responder($respuesta, $procesados !== [] ? 200 : 422);
     }
 
-    private function conciliarArchivoPlano(PDO $conexion, LectorPlanoCfe $lector, string $ruta, int $archivoPlanoId): array
+    private function conciliarArchivoPlano(PDO $conexion, LectorPlanoCfe $lector, string $ruta, int $archivoPlanoId, int $anioSeleccionado, int $mesSeleccionado): array
     {
         $buscarConsumo = $conexion->prepare(
             'SELECT id, consumo, total FROM cfe_consumos WHERE RPU = ? AND desde = ? AND hasta = ? ORDER BY id'
@@ -213,24 +221,24 @@ class AjustesController
              ON DUPLICATE KEY UPDATE consumo_id = VALUES(consumo_id), estado = VALUES(estado), diferencia_consumo = VALUES(diferencia_consumo), diferencia_total = VALUES(diferencia_total), detalle = VALUES(detalle), datos_json = VALUES(datos_json), actualizado_en = CURRENT_TIMESTAMP'
         );
         $resumen = [
-            'anio' => null, 'mes' => null, 'total_registros' => 0, 'conciliados' => 0, 'no_conciliados' => 0,
+            'anio' => $anioSeleccionado, 'mes' => $mesSeleccionado, 'total_registros' => 0, 'conciliados' => 0, 'no_conciliados' => 0,
             'con_diferencia_consumo' => 0, 'con_diferencia_total' => 0, 'errores_formato' => 0,
-            'movimientos_01' => 0, 'movimientos_04' => 0, 'movimientos_06' => 0, 'movimientos_09' => 0
+            'movimientos_01' => 0, 'movimientos_04' => 0, 'movimientos_06' => 0, 'movimientos_09' => 0,
+            'periodo_interno' => null
         ];
         foreach ($lector->registros($ruta) as [$filaOrigen, $fila]) {
             $resumen['total_registros']++;
-            $rpu = preg_replace('/\D+/', '', $lector->valor($fila, ['rpu'])) ?? '';
-            $desde = $lector->fecha($lector->valor($fila, ['fechadesde', 'desde']));
-            $hasta = $lector->fecha($lector->valor($fila, ['fechahasta', 'hasta']));
+            $rpu = preg_replace('/\D+/', '', $lector->valor($fila, ['rpu', 'clrpu'])) ?? '';
+            $desde = $this->fechaPlano($lector, $fila, ['fechadesde', 'desde'], ['aniodesde'], ['mesdesde'], ['diadesde']);
+            $hasta = $this->fechaPlano($lector, $fila, ['fechahasta', 'hasta'], ['aniohasta'], ['meshasta'], ['diahasta']);
             $tipoMovimiento = $this->normalizarTipoMovimiento($lector->valor($fila, ['tipomov', 'tipomovimiento']));
             $this->sumarMovimientoPlano($resumen, $tipoMovimiento);
             $periodo = preg_replace('/\D+/', '', $lector->valor($fila, ['periodo'])) ?? '';
-            if ($resumen['anio'] === null && preg_match('/^(20\d{2})(0[1-9]|1[0-2])$/', $periodo, $coincidencia)) {
-                $resumen['anio'] = (int) $coincidencia[1];
-                $resumen['mes'] = (int) $coincidencia[2];
+            if ($resumen['periodo_interno'] === null && preg_match('/^(20\d{2})(0[1-9]|1[0-2])$/', $periodo, $coincidencia)) {
+                $resumen['periodo_interno'] = $coincidencia[1] . '-' . $coincidencia[2];
             }
-            $consumoPlano = $lector->numero($lector->valor($fila, ['consumo']));
-            $totalPlano = $lector->numero($lector->valor($fila, ['importetotal', 'total']));
+            $consumoPlano = $lector->numero($lector->valor($fila, ['consumo', 'consresu']));
+            $totalPlano = $lector->numero($lector->valor($fila, ['importetotal', 'total', 'imtotal']));
             if ($rpu === '' || strlen($rpu) < 8 || $desde === null || $hasta === null) {
                 $resumen['errores_formato']++;
                 $guardarConciliacion->execute([$archivoPlanoId, $filaOrigen, null, 'ERROR_FORMATO', $rpu ?: null, $desde, $hasta, $consumoPlano, $totalPlano, $tipoMovimiento, null, null, 'Falta RPU o fechas válidas para conciliar.', json_encode($fila, JSON_UNESCAPED_UNICODE)]);
@@ -258,15 +266,15 @@ class AjustesController
             $estado = ($hayDiferenciaConsumo || $hayDiferenciaTotal) ? 'CON_DIFERENCIA' : 'CONCILIADO';
             $actualizarConsumo->execute([
                 $tipoMovimiento,
-                $this->nuloTexto($lector->valor($fila, ['tipofac', 'tipofacturacion'])),
-                $this->nuloTexto($lector->valor($fila, ['numero', 'numeromedidor'])),
-                $lector->numero($lector->valor($fila, ['lecturaanterior'])),
-                $lector->numero($lector->valor($fila, ['lecturaactual'])),
-                $lector->numero($lector->valor($fila, ['multiplicador'])),
-                $lector->numero($lector->valor($fila, ['importeadeudoanterior', 'adeudoanterior'])),
-                $this->nuloTexto($lector->valor($fila, ['numerodeadeudo', 'numeroadeudo'])),
-                $lector->fecha($lector->valor($fila, ['fechafacturacion'])),
-                $lector->fecha($lector->valor($fila, ['fechalimitepago'])),
+                $this->nuloTexto($lector->valor($fila, ['tipofac', 'tipofacturacion', 'tipofac'])),
+                $this->nuloTexto($lector->valor($fila, ['numero', 'numeromedidor', 'nummed1', 'numed1', 'numedins'])),
+                $lector->numero($lector->valor($fila, ['lecturaanterior', 'lecant1'])),
+                $lector->numero($lector->valor($fila, ['lecturaactual', 'lecact1'])),
+                $lector->numero($lector->valor($fila, ['multiplicador', 'multi1'])),
+                $lector->numero($lector->valor($fila, ['importeadeudoanterior', 'adeudoanterior', 'imadeant'])),
+                $this->nuloTexto($lector->valor($fila, ['numerodeadeudo', 'numeroadeudo', 'nuadeud'])),
+                $this->fechaPlano($lector, $fila, ['fechafacturacion'], ['aniofac'], ['mesfac'], []),
+                $this->fechaPlano($lector, $fila, ['fechalimitepago'], ['aniolim'], ['meslim'], ['dialim']),
                 $archivoPlanoId,
                 (int) $consumo['id']
             ]);
@@ -299,6 +307,24 @@ class AjustesController
         return $valor === '' ? null : $valor;
     }
 
+    private function fechaPlano(LectorPlanoCfe $lector, array $fila, array $directas, array $anios, array $meses, array $dias): ?string
+    {
+        $fechaDirecta = $lector->fecha($lector->valor($fila, $directas));
+        if ($fechaDirecta !== null) {
+            return $fechaDirecta;
+        }
+        $anio = (int) $lector->valor($fila, $anios);
+        $mes = (int) $lector->valor($fila, $meses);
+        $dia = (int) $lector->valor($fila, $dias);
+        if ($anio < 1900 || $mes < 1 || $mes > 12 || $dia < 1 || $dia > 31) {
+            return null;
+        }
+        $fecha = DateTimeImmutable::createFromFormat('!Y-n-j', $anio . '-' . $mes . '-' . $dia);
+        return $fecha instanceof DateTimeImmutable && $fecha->format('Y-n-j') === $anio . '-' . $mes . '-' . $dia
+            ? $fecha->format('Y-m-d')
+            : null;
+    }
+
     private function etiquetaMovimiento(?string $tipoMovimiento): string
     {
         return match ($tipoMovimiento) {
@@ -321,6 +347,8 @@ class AjustesController
             'con_diferencia_total' => (int) $datos['con_diferencia_total'],
             'errores_formato' => (int) $datos['errores_formato'],
             'movimientos' => ['01' => (int) $datos['movimientos_01'], '04' => (int) $datos['movimientos_04'], '06' => (int) $datos['movimientos_06'], '09' => (int) $datos['movimientos_09']],
+            'periodo_interno' => $datos['periodo_interno'] ?? null,
+            'advertencia_periodo' => isset($datos['periodo_interno']) && $datos['periodo_interno'] !== null && $datos['periodo_interno'] !== sprintf('%04d-%02d', (int) $datos['anio'], (int) $datos['mes']),
             'repetido' => $repetido
         ];
     }
@@ -438,7 +466,8 @@ class AjustesController
                 'SELECT RPU, division_cfe, nombre_cfe, direccion_cfe, poblacion_cfe, tarifa_cfe, tipo_periodo,
                         desde, hasta, dias, consumo, demanda, reactivos, factor_potencia, factor_carga,
                         energia, iva, dap, cargos_depositos, creditos_redondeos, total, formula_validacion,
-                        diferencia, severidad, alertas, tipo_movimiento, tipo_facturacion, medidor, fecha_facturacion, fecha_limite_pago, enriquecido_plano
+                        diferencia, severidad, alertas, tipo_movimiento, tipo_facturacion, medidor, lectura_anterior, lectura_actual, multiplicador,
+                        adeudo_anterior, numero_adeudo, fecha_facturacion, fecha_limite_pago, enriquecido_plano
                  FROM cfe_consumos
                  WHERE reporte_id = ?
                  ORDER BY severidad DESC, total DESC, RPU'
@@ -477,6 +506,11 @@ class AjustesController
                     'movimiento' => $this->etiquetaMovimiento($fila['tipo_movimiento'] ?? null),
                     'tipo_facturacion' => (string) ($fila['tipo_facturacion'] ?? ''),
                     'medidor' => (string) ($fila['medidor'] ?? ''),
+                    'lectura_anterior' => $fila['lectura_anterior'] !== null ? (float) $fila['lectura_anterior'] : null,
+                    'lectura_actual' => $fila['lectura_actual'] !== null ? (float) $fila['lectura_actual'] : null,
+                    'multiplicador' => $fila['multiplicador'] !== null ? (float) $fila['multiplicador'] : null,
+                    'adeudo_anterior' => $fila['adeudo_anterior'] !== null ? (float) $fila['adeudo_anterior'] : null,
+                    'numero_adeudo' => (string) ($fila['numero_adeudo'] ?? ''),
                     'fecha_facturacion' => (string) ($fila['fecha_facturacion'] ?? ''),
                     'fecha_limite_pago' => (string) ($fila['fecha_limite_pago'] ?? ''),
                     'enriquecido_plano' => (bool) ($fila['enriquecido_plano'] ?? false)
@@ -486,6 +520,7 @@ class AjustesController
             $periodoCorrecto = 0;
             $conAlerta = 0;
             $severos = 0;
+            $ajustesConfirmados = 0;
             $importeTotal = 0.0;
             foreach ($registros as $registro) {
                 $tipo = $registro['tipo_periodo'] === 'mensual' ? 'mensual' : 'bimestral';
@@ -501,6 +536,9 @@ class AjustesController
                 if ($registro['severidad'] >= 7) {
                     $severos++;
                 }
+                if (in_array($registro['tipo_movimiento'], ['06', '09'], true)) {
+                    $ajustesConfirmados++;
+                }
                 $importeTotal += $registro['total'];
             }
 
@@ -514,6 +552,7 @@ class AjustesController
                     'registros' => count($registros),
                     'con_alerta' => $conAlerta,
                     'severos' => $severos,
+                    'ajustes_confirmados' => $ajustesConfirmados,
                     'periodo_bimestral' => $periodoCorrecto,
                     'importe_total' => round($importeTotal, 2)
                 ],

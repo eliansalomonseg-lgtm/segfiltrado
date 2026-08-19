@@ -33,6 +33,88 @@ $avance = $totalEscuelas > 0 ? min(100, round($totalVinculos / $totalEscuelas * 
 $meses = [1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril', 5 => 'Mayo', 6 => 'Junio', 7 => 'Julio', 8 => 'Agosto', 9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre'];
 $escuelaMayorPagoUltimo = null;
 $topPagosUltimo = [];
+$ultimoArchivoPlano = null;
+$topAjustesPlano = [];
+$archivosPlanos = [];
+$ajustesRecurrentes = [];
+$anioPlanoActual = 0;
+$resumenAjustesAnual = ['ajustes' => 0, 'rpus' => 0, 'importe' => 0];
+$rpusConDosAjustes = 0;
+$mesesPlanoAnual = 0;
+try {
+    $archivosPlanos = $conexion->query(
+        'SELECT id, nombre_archivo, anio, mes, creado_en
+         FROM cfe_archivos_planos
+         ORDER BY anio DESC, mes DESC, id DESC'
+    )->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    $planoSolicitado = filter_input(INPUT_GET, 'plano_id', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) ?: 0;
+    $idsPlanos = array_map('intval', array_column($archivosPlanos, 'id'));
+    $planoSeleccionadoId = in_array($planoSolicitado, $idsPlanos, true)
+        ? $planoSolicitado
+        : (int) ($archivosPlanos[0]['id'] ?? 0);
+    $anioPlanoActual = (int) ($archivosPlanos[0]['anio'] ?? 0);
+    $consultaPlano = $conexion->prepare(
+        "SELECT ap.id, ap.nombre_archivo, ap.anio, ap.mes, ap.total_registros, ap.conciliados, ap.no_conciliados,
+                ap.con_diferencia_consumo, ap.con_diferencia_total, ap.movimientos_01, ap.movimientos_04,
+                ap.movimientos_06, ap.movimientos_09, ap.creado_en,
+                COALESCE(SUM(CASE WHEN cc.tipo_movimiento IN ('06', '09') THEN cc.total ELSE 0 END), 0) AS importe_ajustes,
+                COALESCE(SUM(CASE WHEN cc.tipo_movimiento = '04' THEN cc.total ELSE 0 END), 0) AS importe_finiquitos
+         FROM cfe_archivos_planos ap
+         LEFT JOIN cfe_consumos cc ON cc.archivo_plano_id = ap.id
+         WHERE ap.id = ?
+         GROUP BY ap.id
+        "
+    );
+    $consultaPlano->execute([$planoSeleccionadoId]);
+    $ultimoArchivoPlano = $consultaPlano->fetch(PDO::FETCH_ASSOC) ?: null;
+
+    if ($ultimoArchivoPlano) {
+        $consultaAjustesPlano = $conexion->prepare(
+            "SELECT RPU, nombre_cfe, poblacion_cfe, total, tipo_movimiento
+             FROM cfe_consumos
+             WHERE archivo_plano_id = ? AND tipo_movimiento IN ('06', '09')
+             ORDER BY total DESC, id ASC"
+        );
+        $consultaAjustesPlano->execute([(int) $ultimoArchivoPlano['id']]);
+        $topAjustesPlano = $consultaAjustesPlano->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    }
+
+    if ($anioPlanoActual > 0) {
+        $consultaResumenAjustes = $conexion->prepare(
+            "SELECT COUNT(*) AS ajustes, COUNT(DISTINCT cc.RPU) AS rpus, COALESCE(SUM(cc.total), 0) AS importe
+             FROM cfe_consumos cc FORCE INDEX (idx_cfe_consumos_archivo_plano)
+             INNER JOIN cfe_archivos_planos ap ON ap.id = cc.archivo_plano_id
+             WHERE ap.anio = ? AND cc.tipo_movimiento IN ('06', '09')"
+        );
+        $consultaResumenAjustes->execute([$anioPlanoActual]);
+        $resumenAjustesAnual = $consultaResumenAjustes->fetch(PDO::FETCH_ASSOC) ?: $resumenAjustesAnual;
+
+        $consultaRecurrentesAnuales = $conexion->prepare(
+            "SELECT cc.RPU, MAX(NULLIF(cc.nombre_cfe, '')) AS nombre_cfe, MAX(NULLIF(cc.poblacion_cfe, '')) AS poblacion_cfe,
+                    COUNT(*) AS ajustes, SUM(cc.total) AS importe_acumulado
+             FROM cfe_consumos cc FORCE INDEX (idx_cfe_consumos_archivo_plano)
+             INNER JOIN cfe_archivos_planos ap ON ap.id = cc.archivo_plano_id
+             WHERE ap.anio = ? AND cc.tipo_movimiento IN ('06', '09')
+             GROUP BY cc.RPU
+             HAVING COUNT(*) >= 2
+             ORDER BY ajustes DESC, importe_acumulado DESC, cc.RPU ASC"
+        );
+        $consultaRecurrentesAnuales->execute([$anioPlanoActual]);
+        $ajustesRecurrentes = $consultaRecurrentesAnuales->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $rpusConDosAjustes = count($ajustesRecurrentes);
+        $mesesPlanoAnual = count(array_unique(array_map(
+            static fn (array $archivo): string => (string) $archivo['mes'],
+            array_filter($archivosPlanos, static fn (array $archivo): bool => (int) $archivo['anio'] === $anioPlanoActual)
+        )));
+    }
+} catch (Throwable) {
+    $ultimoArchivoPlano = null;
+    $topAjustesPlano = [];
+    $archivosPlanos = [];
+    $ajustesRecurrentes = [];
+    $anioPlanoActual = 0;
+}
+$vistaDashboard = $anioPlanoActual > 0 && ($_GET['vista'] ?? '') === 'ajustes' ? 'ajustes' : 'general';
 if ($ultimoReporte) {
     $consultaTopPagos = $conexion->prepare(
         'SELECT cc.RPU, cc.total, cc.consumo, cc.nombre_cfe, cc.poblacion_cfe, cc.tarifa_cfe,
@@ -50,10 +132,20 @@ if ($ultimoReporte) {
     $escuelaMayorPagoUltimo = $topPagosUltimo[0] ?? null;
 }
 $historialMensual = $conexion->query(
-    'SELECT anio, mes, SUM(importe_total) AS total_pagado, SUM(ajuste_muchos_dias) AS ajustes
-     FROM cfe_reportes
-     GROUP BY anio, mes
-     ORDER BY anio ASC, mes ASC'
+    "SELECT cr.anio, cr.mes, SUM(cr.importe_total) AS total_pagado, SUM(cr.ajuste_muchos_dias) AS ajustes_estimados,
+            SUM(COALESCE(plano.registros, 0)) AS registros_plano,
+            SUM(COALESCE(plano.ajustes_confirmados, 0)) AS ajustes_confirmados
+     FROM cfe_reportes cr
+     LEFT JOIN (
+        SELECT reporte_id,
+               COUNT(*) AS registros,
+               SUM(CASE WHEN tipo_movimiento IN ('06', '09') THEN 1 ELSE 0 END) AS ajustes_confirmados
+        FROM cfe_consumos
+        WHERE archivo_plano_id IS NOT NULL
+        GROUP BY reporte_id
+     ) plano ON plano.reporte_id = cr.id
+     GROUP BY cr.anio, cr.mes
+     ORDER BY cr.anio ASC, cr.mes ASC"
 )->fetchAll(PDO::FETCH_ASSOC);
 $pagosReales = [];
 try {
@@ -72,7 +164,10 @@ foreach ($historialMensual as $registroMensual) {
     $totalPagado = (float) $registroMensual['total_pagado'];
     $llavePeriodo = (int) $registroMensual['anio'] . '-' . (int) $registroMensual['mes'];
     $pagoReal = $pagosReales[$llavePeriodo] ?? null;
-    $ajustes = (int) $registroMensual['ajustes'];
+    $tienePlano = (int) $registroMensual['registros_plano'] > 0;
+    $ajustesConfirmados = (int) $registroMensual['ajustes_confirmados'];
+    $ajustesEstimados = $tienePlano ? 0 : (int) $registroMensual['ajustes_estimados'];
+    $ajustes = $tienePlano ? $ajustesConfirmados : $ajustesEstimados;
     $historialGraficas[] = [
         'anio' => (int) $registroMensual['anio'],
         'mes' => (int) $registroMensual['mes'],
@@ -80,7 +175,10 @@ foreach ($historialMensual as $registroMensual) {
         'facturado' => $totalPagado,
         'pagado' => $pagoReal ? (float) $pagoReal['importe_pagado'] : null,
         'referencia' => $pagoReal['referencia'] ?? '',
-        'ajustes' => $ajustes
+        'ajustes' => $ajustes,
+        'ajustes_confirmados' => $ajustesConfirmados,
+        'ajustes_estimados' => $ajustesEstimados,
+        'tiene_plano' => $tienePlano
     ];
     $aniosGraficas[(int) $registroMensual['anio']] = true;
     $pagoParaResumen = $pagoReal ? (float) $pagoReal['importe_pagado'] : $totalPagado;
@@ -126,6 +224,13 @@ $periodoConciliacionInicial = $periodosConciliacion[0] ?? null;
             <a class="btn-seg compact-action" href="consolidacion/consolidacion.php"><i class="bi bi-lightning-charge me-2"></i>Consolidar archivos</a>
         <?php endif; ?>
     </section>
+    <?php if ($anioPlanoActual > 0): ?>
+        <nav class="dashboard-data-tabs" aria-label="Secciones del dashboard">
+            <button class="<?= $vistaDashboard === 'general' ? 'is-active' : '' ?>" type="button" data-dashboard-tab="general"><i class="bi bi-grid-1x2"></i>Resumen general</button>
+            <button class="<?= $vistaDashboard === 'ajustes' ? 'is-active' : '' ?>" type="button" data-dashboard-tab="ajustes"><i class="bi bi-lightning-charge"></i>Control de ajustes confirmados</button>
+        </nav>
+    <?php endif; ?>
+    <section class="dashboard-data-panel <?= $vistaDashboard === 'general' ? 'is-active' : '' ?>" data-dashboard-panel="general" <?= $vistaDashboard === 'general' ? '' : 'hidden' ?>>
     <section class="quick-actions">
         <article class="quick-card dashboard-metric-schools">
             <span class="quick-icon"><i class="bi bi-building-check"></i></span>
@@ -153,6 +258,110 @@ $periodoConciliacionInicial = $periodosConciliacion[0] ?? null;
             <small><?= number_format($totalLecturasCfe) ?> lecturas</small>
         </article>
     </section>
+    </section>
+    <?php if ($anioPlanoActual > 0): ?>
+        <section class="dashboard-data-panel <?= $vistaDashboard === 'ajustes' ? 'is-active' : '' ?>" data-dashboard-panel="ajustes" <?= $vistaDashboard === 'ajustes' ? '' : 'hidden' ?>>
+            <section class="quick-actions dashboard-adjustment-metrics">
+                <article class="quick-card dashboard-metric-adjustments">
+                    <span class="quick-icon"><i class="bi bi-cash-coin"></i></span>
+                    <div><strong>$<?= number_format((float) $resumenAjustesAnual['importe'], 0) ?></strong><span>Importe facturado en ajustes <?= $anioPlanoActual ?></span></div>
+                    <small><?= number_format((int) $resumenAjustesAnual['ajustes']) ?> movimientos 06 y 09</small>
+                </article>
+                <article class="quick-card dashboard-metric-recurrent">
+                    <span class="quick-icon"><i class="bi bi-arrow-repeat"></i></span>
+                    <div><strong><?= number_format($rpusConDosAjustes) ?></strong><span>RPUs con 2 o más ajustes</span></div>
+                    <small>Requieren seguimiento preventivo</small>
+                </article>
+                <article class="quick-card dashboard-metric-coverage">
+                    <span class="quick-icon"><i class="bi bi-calendar2-check"></i></span>
+                    <div><strong><?= number_format($mesesPlanoAnual) ?></strong><span>Meses verificados con plano</span></div>
+                    <small><?= $anioPlanoActual ?> · Información confirmada</small>
+                </article>
+            </section>
+    <?php if ($ultimoArchivoPlano): ?>
+        <?php
+        $movimientosAjuste = (int) $ultimoArchivoPlano['movimientos_06'] + (int) $ultimoArchivoPlano['movimientos_09'];
+        $coberturaPlano = (int) $ultimoArchivoPlano['total_registros'] > 0
+            ? round((int) $ultimoArchivoPlano['conciliados'] / (int) $ultimoArchivoPlano['total_registros'] * 100, 1)
+            : 0;
+        $periodoPlano = ($meses[(int) $ultimoArchivoPlano['mes']] ?? 'Mes') . ' ' . $ultimoArchivoPlano['anio'];
+        ?>
+        <section class="flat-file-summary" aria-label="Resumen del ultimo archivo plano CFE">
+            <div class="flat-file-summary-head">
+                <div>
+                    <span class="eyebrow">ARCHIVO PLANO CFE</span>
+                    <h2>Movimientos confirmados</h2>
+                    <p><?= htmlspecialchars($periodoPlano, ENT_QUOTES, 'UTF-8') ?>. Datos conciliados con la facturación ya cargada.</p>
+                </div>
+                <div class="flat-file-summary-actions">
+                    <form method="get" action="dashboard.php" class="flat-file-selector">
+                        <input type="hidden" name="vista" value="ajustes">
+                        <label for="plano-selector">Archivo plano</label>
+                        <select id="plano-selector" name="plano_id" onchange="this.form.submit()">
+                            <?php foreach ($archivosPlanos as $archivoPlano): ?>
+                                <option value="<?= (int) $archivoPlano['id'] ?>" <?= (int) $archivoPlano['id'] === (int) $ultimoArchivoPlano['id'] ? 'selected' : '' ?>><?= htmlspecialchars(($meses[(int) $archivoPlano['mes']] ?? 'Mes') . ' ' . $archivoPlano['anio'] . ' · ID ' . $archivoPlano['id'], ENT_QUOTES, 'UTF-8') ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </form>
+                    <a href="ajustes.php" class="director-link">Revisar movimientos <i class="bi bi-arrow-right"></i></a>
+                </div>
+            </div>
+            <div class="flat-file-metrics">
+                <article>
+                    <span class="flat-file-icon"><i class="bi bi-check2-circle"></i></span>
+                    <div><small>Conciliación</small><strong><?= number_format($coberturaPlano, 1) ?>%</strong><em><?= number_format((int) $ultimoArchivoPlano['conciliados']) ?> de <?= number_format((int) $ultimoArchivoPlano['total_registros']) ?> registros</em></div>
+                </article>
+                <article class="is-adjustment">
+                    <span class="flat-file-icon"><i class="bi bi-lightning-charge"></i></span>
+                    <div><small>Ajustes confirmados</small><strong><?= number_format($movimientosAjuste) ?></strong><em>06: <?= number_format((int) $ultimoArchivoPlano['movimientos_06']) ?> · 09: <?= number_format((int) $ultimoArchivoPlano['movimientos_09']) ?></em></div>
+                </article>
+                <article class="is-money">
+                    <span class="flat-file-icon"><i class="bi bi-cash-coin"></i></span>
+                    <div><small>Importe en ajustes</small><strong>$<?= number_format((float) $ultimoArchivoPlano['importe_ajustes'], 2) ?></strong><em>Movimientos 06 y 09 del archivo</em></div>
+                </article>
+                <article>
+                    <span class="flat-file-icon"><i class="bi bi-receipt"></i></span>
+                    <div><small>Finiquitos</small><strong><?= number_format((int) $ultimoArchivoPlano['movimientos_04']) ?></strong><em>$<?= number_format((float) $ultimoArchivoPlano['importe_finiquitos'], 2) ?> registrados</em></div>
+                </article>
+            </div>
+            <?php if ($topAjustesPlano): ?>
+                <div class="flat-file-priority">
+                    <div><span class="eyebrow">AJUSTES CONFIRMADOS</span><h3>Todos los ajustes del archivo plano</h3></div>
+                    <ol>
+                        <?php foreach ($topAjustesPlano as $ajustePlano): ?>
+                            <li>
+                                <span class="flat-file-movement">AJUSTE <?= htmlspecialchars((string) $ajustePlano['tipo_movimiento'], ENT_QUOTES, 'UTF-8') ?></span>
+                                <div><strong><?= htmlspecialchars((string) ($ajustePlano['nombre_cfe'] ?: 'Servicio sin nombre'), ENT_QUOTES, 'UTF-8') ?></strong><small>RPU <?= htmlspecialchars((string) $ajustePlano['RPU'], ENT_QUOTES, 'UTF-8') ?> · <?= htmlspecialchars((string) ($ajustePlano['poblacion_cfe'] ?: 'Sin población'), ENT_QUOTES, 'UTF-8') ?></small></div>
+                                <b>$<?= number_format((float) $ajustePlano['total'], 2) ?></b>
+                            </li>
+                        <?php endforeach; ?>
+                    </ol>
+                </div>
+            <?php endif; ?>
+            <div class="flat-file-recurrence">
+                <div class="flat-file-recurrence-head">
+                    <span class="flat-file-icon"><i class="bi bi-arrow-repeat"></i></span>
+                    <div><span class="eyebrow">SEGUIMIENTO</span><h3>RPUs con 2 o más ajustes confirmados</h3><p>Se cuentan únicamente movimientos 06 y 09 de los archivos planos conciliados.</p></div>
+                    <strong><?= number_format(count($ajustesRecurrentes)) ?></strong>
+                </div>
+                <?php if ($ajustesRecurrentes): ?>
+                    <ol class="flat-file-recurrence-list">
+                        <?php foreach ($ajustesRecurrentes as $ajusteRecurrente): ?>
+                            <li>
+                                <span><?= number_format((int) $ajusteRecurrente['ajustes']) ?> ajustes</span>
+                                <div><strong><?= htmlspecialchars((string) ($ajusteRecurrente['nombre_cfe'] ?: 'Servicio sin nombre'), ENT_QUOTES, 'UTF-8') ?></strong><small>RPU <?= htmlspecialchars((string) $ajusteRecurrente['RPU'], ENT_QUOTES, 'UTF-8') ?> · <?= htmlspecialchars((string) ($ajusteRecurrente['poblacion_cfe'] ?: 'Sin población'), ENT_QUOTES, 'UTF-8') ?></small></div>
+                                <b>$<?= number_format((float) $ajusteRecurrente['importe_acumulado'], 2) ?></b>
+                            </li>
+                        <?php endforeach; ?>
+                    </ol>
+                <?php else: ?>
+                    <p class="flat-file-recurrence-empty">Aún no hay RPUs con dos o más ajustes confirmados.</p>
+                <?php endif; ?>
+            </div>
+        </section>
+    <?php endif; ?>
+        </section>
+    <?php endif; ?>
     <?php if (!$esAdmin): ?>
         <section class="consultant-briefing" aria-label="Resumen ejecutivo del ultimo reporte">
             <div class="consultant-briefing-head">
@@ -194,7 +403,7 @@ $periodoConciliacionInicial = $periodosConciliacion[0] ?? null;
     </section>
     <section class="analytics-overview">
         <div class="analytics-section-head">
-            <div><span class="eyebrow">PANORAMA FINANCIERO CFE</span><h2>Comportamiento mensual</h2><p>Consulta un año a la vez para comparar pagos y ajustes sin saturar las gráficas.</p></div>
+            <div><span class="eyebrow">PANORAMA FINANCIERO CFE</span><h2>Comportamiento mensual</h2><p>Los ajustes confirmados provienen del archivo plano; los demás siguen en revisión por fechas.</p></div>
             <label class="analytics-year-filter"><span>Año a consultar</span><select id="dashboard-year-filter"><option value="all">Todos los años</option><?php foreach ($aniosGraficas as $anioGrafica): ?><option value="<?= (int) $anioGrafica ?>" <?= $anioGrafica === $anioGraficaInicial ? 'selected' : '' ?>><?= (int) $anioGrafica ?></option><?php endforeach; ?></select></label>
         </div>
         <div id="analytics-totals" class="analytics-totals" hidden></div>
@@ -222,7 +431,7 @@ $periodoConciliacionInicial = $periodosConciliacion[0] ?? null;
             </div>
             <div class="insight-row">
                 <i class="bi bi-exclamation-circle"></i>
-                <span><small>Mes con mas ajustes</small><strong><?= $mesMayorAjustes ? htmlspecialchars($mesMayorAjustes['etiqueta'], ENT_QUOTES, 'UTF-8') : 'Sin reportes' ?></strong><b><?= $mesMayorAjustes ? number_format($mesMayorAjustes['valor']) . ' recibos' : '0 recibos' ?></b></span>
+                <span><small>Mes con mas ajustes confirmados o por revisar</small><strong><?= $mesMayorAjustes ? htmlspecialchars($mesMayorAjustes['etiqueta'], ENT_QUOTES, 'UTF-8') : 'Sin reportes' ?></strong><b><?= $mesMayorAjustes ? number_format($mesMayorAjustes['valor']) . ' recibos' : '0 recibos' ?></b></span>
             </div>
             <a href="ajustes.php" class="director-link">Ver reportes CFE <i class="bi bi-arrow-right"></i></a>
         </div>
@@ -294,6 +503,21 @@ const dashboardCsrf = <?= json_encode($_SESSION['seg_csrf'], JSON_UNESCAPED_UNIC
 const dashboardMonths = <?= json_encode($meses, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 let paymentsChart;
 let adjustmentsChart;
+const dashboardTabs = document.querySelectorAll('[data-dashboard-tab]');
+const dashboardPanels = document.querySelectorAll('[data-dashboard-panel]');
+
+dashboardTabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+        const target = tab.dataset.dashboardTab;
+        dashboardTabs.forEach((item) => item.classList.toggle('is-active', item === tab));
+        dashboardPanels.forEach((panel) => {
+            const active = panel.dataset.dashboardPanel === target;
+            panel.hidden = !active;
+            panel.classList.toggle('is-active', active);
+        });
+    });
+});
+
 const moneyFormat = new Intl.NumberFormat('es-MX', {style: 'currency', currency: 'MXN'});
 const compactMoneyFormat = new Intl.NumberFormat('es-MX', {notation: 'compact', maximumFractionDigits: 1});
 const analyticsTotals = document.getElementById('analytics-totals');
@@ -344,16 +568,17 @@ function renderDashboardCharts(year) {
     const series = year === 'all'
         ? Object.values(history.reduce((groups, item) => {
             const key = String(item.anio);
-            if (!groups[key]) groups[key] = {label: key, facturado: 0, pagado: 0, tienePago: false, ajustes: 0};
+            if (!groups[key]) groups[key] = {label: key, facturado: 0, pagado: 0, tienePago: false, ajustesConfirmados: 0, ajustesEstimados: 0};
             groups[key].facturado += Number(item.facturado || 0);
-            groups[key].ajustes += Number(item.ajustes || 0);
+            groups[key].ajustesConfirmados += Number(item.ajustes_confirmados || 0);
+            groups[key].ajustesEstimados += Number(item.ajustes_estimados || 0);
             if (item.pagado !== null && item.pagado !== undefined) {
                 groups[key].pagado += Number(item.pagado || 0);
                 groups[key].tienePago = true;
             }
             return groups;
         }, {})).sort((a, b) => Number(a.label) - Number(b.label))
-        : history.map((item) => ({label: item.etiqueta, facturado: Number(item.facturado || 0), pagado: Number(item.pagado || 0), tienePago: item.pagado !== null && item.pagado !== undefined, ajustes: Number(item.ajustes || 0)}));
+        : history.map((item) => ({label: item.etiqueta, facturado: Number(item.facturado || 0), pagado: Number(item.pagado || 0), tienePago: item.pagado !== null && item.pagado !== undefined, ajustesConfirmados: Number(item.ajustes_confirmados || 0), ajustesEstimados: Number(item.ajustes_estimados || 0)}));
     const labels = series.map(item => item.label);
     const chartCompact = window.matchMedia('(max-width: 760px)').matches;
     const xTicks = {color: '#5d5860', font: {size: chartCompact ? 10 : 11, weight: '600'}, maxRotation: 0, minRotation: 0, autoSkip: true, maxTicksLimit: chartCompact ? 5 : 12};
@@ -364,8 +589,8 @@ function renderDashboardCharts(year) {
     });
     adjustmentsChart = new Chart(document.getElementById('adjustments-chart'), {
         type: 'line',
-        data: {labels, datasets: [{label: 'Ajustes detectados', data: series.map(item => item.ajustes), borderColor: '#9a6314', backgroundColor: 'rgba(191, 162, 118, .2)', borderWidth: 3, fill: true, tension: .28, pointBackgroundColor: '#6a1b29', pointBorderColor: '#fff', pointBorderWidth: 2, pointRadius: 5, pointHoverRadius: 7}]},
-        options: {responsive: true, maintainAspectRatio: false, interaction: {mode: 'index', intersect: false}, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12, padding: 18, font: {size: chartCompact ? 10 : 12, weight: '600'}}}, tooltip: {callbacks: {label: context => `${context.raw || 0} ajustes`}}}, scales: {x: {grid: {display: false}, ticks: xTicks}, y: {beginAtZero: true, ticks: {precision: 0, color: '#5d5860', font: {size: chartCompact ? 10 : 11}}, grid: {color: '#eee9e4'}}}}
+        data: {labels, datasets: [{label: 'Ajustes confirmados por plano', data: series.map(item => item.ajustesConfirmados || 0), borderColor: '#8d1d2d', backgroundColor: 'rgba(141, 29, 45, .16)', borderWidth: 3, fill: true, tension: .28, pointBackgroundColor: '#8d1d2d', pointBorderColor: '#fff', pointBorderWidth: 2, pointRadius: 5, pointHoverRadius: 7}, {label: 'Revision por fechas sin plano', data: series.map(item => item.ajustesEstimados || 0), borderColor: '#9a6314', backgroundColor: 'rgba(191, 162, 118, .14)', borderDash: [6, 4], borderWidth: 2, fill: false, tension: .28, pointBackgroundColor: '#bfa276', pointBorderColor: '#fff', pointBorderWidth: 2, pointRadius: 4, pointHoverRadius: 6}]},
+        options: {responsive: true, maintainAspectRatio: false, interaction: {mode: 'index', intersect: false}, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12, padding: 18, font: {size: chartCompact ? 10 : 12, weight: '600'}}}, tooltip: {callbacks: {label: context => `${context.raw || 0} ${context.datasetIndex === 0 ? 'ajustes confirmados' : 'casos por revisar'}`}}}, scales: {x: {grid: {display: false}, ticks: xTicks}, y: {beginAtZero: true, ticks: {precision: 0, color: '#5d5860', font: {size: chartCompact ? 10 : 11}}, grid: {color: '#eee9e4'}}}}
     });
 }
 

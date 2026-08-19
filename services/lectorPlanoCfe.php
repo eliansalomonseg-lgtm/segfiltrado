@@ -24,13 +24,13 @@ final class LectorPlanoCfe
                 foreach ($this->filasXlsx($hoja, $cadenas) as [$numeroFila, $valores]) {
                     if ($cabeceras === null) {
                         $candidatas = $this->normalizarCabeceras($valores);
-                        if (in_array('rpu', $candidatas, true) && in_array('tipomov', $candidatas, true)) {
+                        if ($this->sonCabecerasPlano($candidatas)) {
                             $cabeceras = $candidatas;
                         }
                         continue;
                     }
                     $registro = $this->asociarFila($cabeceras, $valores);
-                    if ($this->valor($registro, ['rpu']) === '') {
+                    if ($this->valor($registro, ['rpu', 'clrpu']) === '') {
                         continue;
                     }
                     yield [$numeroFila, $registro];
@@ -101,13 +101,13 @@ final class LectorPlanoCfe
                 $fila++;
                 if ($cabeceras === null) {
                     $candidatas = $this->normalizarCabeceras($valores);
-                    if (in_array('rpu', $candidatas, true) && in_array('tipomov', $candidatas, true)) {
+                    if ($this->sonCabecerasPlano($candidatas)) {
                         $cabeceras = $candidatas;
                     }
                     continue;
                 }
                 $registro = $this->asociarFila($cabeceras, $valores);
-                if ($this->valor($registro, ['rpu']) !== '') {
+                if ($this->valor($registro, ['rpu', 'clrpu']) !== '') {
                     yield [$fila, $registro];
                 }
             }
@@ -210,6 +210,13 @@ final class LectorPlanoCfe
             $cabeceras[$columna] = $this->normalizarTexto((string) $valor);
         }
         return $cabeceras;
+    }
+
+    private function sonCabecerasPlano(array $cabeceras): bool
+    {
+        $tieneRpu = in_array('rpu', $cabeceras, true) || in_array('clrpu', $cabeceras, true);
+        $tieneMovimiento = in_array('tipomov', $cabeceras, true) || in_array('tipomovimiento', $cabeceras, true);
+        return $tieneRpu && $tieneMovimiento;
     }
 
     private function asociarFila(array $cabeceras, array $valores): array

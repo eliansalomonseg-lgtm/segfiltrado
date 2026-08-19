@@ -84,7 +84,7 @@ try {
         .consolidation-view .load-shell{padding:22px}.consolidation-view .source-column{height:100%;padding:19px!important}.consolidation-view .source-title{align-items:center;display:flex;font-family:"Montserrat","Segoe UI",Arial,sans-serif;font-size:18px!important;font-weight:700;gap:10px;margin-bottom:16px!important}.consolidation-view .source-title span{align-items:center;border-radius:10px;display:flex;font-size:15px;height:38px;justify-content:center;width:38px}
         .consolidation-view .source-stack{gap:12px}.consolidation-view .source-stack .drop-zone{align-items:center;min-height:148px;padding:18px}.consolidation-view .file-icon{border-radius:12px;font-size:20px;height:48px;margin-bottom:11px;width:48px}.consolidation-view .drop-zone strong{font-size:14px!important}.consolidation-view .drop-zone small{font-size:12px!important;line-height:1.45}.consolidation-view .file-name{font-size:11px!important}.consolidation-view .btn-sync-catalogs{border-radius:6px;font-size:13px;margin-top:14px;min-height:44px}.consolidation-view .btn-sync-catalogs i{font-size:16px}
         .consolidation-view .cfe-drop{min-height:208px!important}.consolidation-view .selected-reports{font-size:12px;max-height:144px;padding:12px}.consolidation-view .selected-reports strong{font-size:12px}.consolidation-view .load-actions{margin-top:20px;padding-top:18px}.consolidation-view .load-note{font-size:12px}.consolidation-view .load-actions .btn-seg{font-size:13px;min-height:42px;padding:10px 16px}
-        .plano-import{margin-top:20px}.plano-import .source-column{padding:18px}.plano-drop{min-height:132px!important}.plano-summary{background:#f8f5f1;border:1px solid #e9e1d9;border-radius:5px;color:#675e65;font-size:12px;line-height:1.5;margin-top:12px;padding:12px}.plano-summary strong{color:#5b1724;display:block}.plano-summary ul{margin:6px 0 0;padding-left:18px}.plano-result{border-top:1px solid #ece5df;color:#675e65;font-size:12px;margin-top:16px;padding-top:14px}.plano-result ul{margin:7px 0 0;padding-left:18px}.plano-result strong{color:#5b1724}
+        .plano-import{margin-top:20px}.plano-import .source-column{padding:18px}.plano-drop{min-height:132px!important}.plano-summary{background:#f8f5f1;border:1px solid #e9e1d9;border-radius:5px;color:#675e65;font-size:12px;line-height:1.5;margin-top:12px;padding:12px}.plano-summary strong{color:#5b1724;display:block}.plano-summary ul{margin:6px 0 0;padding-left:18px}.plano-period-list{display:grid;gap:8px;margin-top:9px}.plano-period-row{align-items:center;border-top:1px solid #e9e1d9;display:grid;gap:8px;grid-template-columns:minmax(170px,1fr) 140px 100px;padding-top:9px}.plano-period-row label{display:grid;gap:3px}.plano-period-row small{font-size:10px;font-weight:800;text-transform:uppercase}.plano-period-row select,.plano-period-row input{border:1px solid #ddd3c8;border-radius:5px;font-size:12px;min-height:34px;padding:6px 8px}.plano-result{border-top:1px solid #ece5df;color:#675e65;font-size:12px;margin-top:16px;padding-top:14px}.plano-result ul{margin:7px 0 0;padding-left:18px}.plano-result strong{color:#5b1724}@media(max-width:650px){.plano-period-row{grid-template-columns:1fr 1fr}.plano-period-row>span{grid-column:1/-1}}
         .consolidation-view #results{margin-top:22px;padding:22px!important}.consolidation-view .results-head h2{font-family:"Montserrat","Segoe UI",Arial,sans-serif;font-size:22px}.consolidation-view .result-search{font-size:13px;min-height:40px}.consolidation-view .summary strong{font-size:20px}.consolidation-view .option{background:#fff;border-radius:7px;gap:10px;grid-template-columns:minmax(260px,1fr) auto auto auto auto;padding:12px}.consolidation-view .option-data strong{font-size:13px!important}.consolidation-view .option-data small{font-size:11px!important;line-height:1.5}.consolidation-view .tag,.consolidation-view .score,.consolidation-view .confirm,.consolidation-view .manual-search{font-size:10px!important}.consolidation-view .confirm{min-height:34px;padding:7px 10px}
         @media(max-width:950px){.consolidation-view .load-state{grid-template-columns:repeat(2,minmax(0,1fr))}.consolidation-view .option{grid-template-columns:1fr auto auto}.consolidation-view .option-data{grid-column:span 3}}
         @media(max-width:600px){.consolidation-view .heading{padding:20px!important}.consolidation-view .heading h1{font-size:25px!important}.consolidation-view .load-state{grid-template-columns:1fr}.consolidation-view .load-shell,.consolidation-view #results{padding:15px!important}.consolidation-view .option{grid-template-columns:1fr}.consolidation-view .option-data{grid-column:auto}.consolidation-view .confirm{width:100%}.consolidation-view .result-search{min-width:100%;width:100%}}
@@ -174,7 +174,7 @@ try {
                         <small>Complementan consumos existentes por RPU y periodo. No crean facturación nueva.</small>
                         <em class="file-name">Seleccionar XLSX o CSV</em>
                     </label>
-                    <div id="selected-planos" class="plano-summary"><strong>Sin archivos planos seleccionados</strong><span>El periodo se toma del campo Periodo del archivo.</span></div>
+                    <div id="selected-planos" class="plano-summary"><strong>Sin archivos planos seleccionados</strong><span>Selecciona el mes y año que corresponde a cada archivo.</span></div>
                 </div>
                 <div class="col-lg-4">
                     <div class="plano-summary"><strong>Conciliación segura</strong><span>Se requiere RPU, fecha desde y fecha hasta. Las diferencias de consumo o total se registran para revisión.</span></div>
@@ -222,6 +222,7 @@ try {
     const months = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
     let selectedReportFiles = [];
     const reportPeriods = new Map();
+    const planoPeriods = new Map();
     const reportFileKey = file => `${file.name}|${file.size}|${file.lastModified}`;
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character]));
     const parseServerJson = text => {
@@ -273,6 +274,7 @@ try {
                     update();
                 }));
             }
+            if (input.id === 'archivos_planos') renderPlanos();
         };
         const accumulateReports = files => {
             rememberReportPeriods();
@@ -312,12 +314,26 @@ try {
             update();
         });
     });
+    const rememberPlanoPeriods = () => {
+        Array.from(planoInput.files || []).forEach((archivo, indice) => {
+            const mes = document.querySelector(`[data-plano-month="${indice}"]`)?.value || '';
+            const anio = document.querySelector(`[data-plano-year="${indice}"]`)?.value || '';
+            if (mes || anio) planoPeriods.set(reportFileKey(archivo), {mes, anio});
+        });
+    };
     const renderPlanos = () => {
         const archivos = Array.from(planoInput.files || []);
         uploadPlanos.disabled = !archivos.length;
         selectedPlanos.innerHTML = archivos.length
-            ? `<strong>${archivos.length} archivo(s) plano(s) listo(s)</strong><ul>${archivos.map(archivo => `<li>${escapeHtml(archivo.name)}</li>`).join('')}</ul>`
-            : '<strong>Sin archivos planos seleccionados</strong><span>El periodo se toma del campo Periodo del archivo.</span>';
+            ? `<strong>${archivos.length} archivo(s) plano(s) listo(s)</strong><div class="plano-period-list">${archivos.map((archivo, indice) => {
+                const detectado = archivo.name.match(/(20\d{2})[-_](0[1-9]|1[0-2])/);
+                const guardado = planoPeriods.get(reportFileKey(archivo));
+                const anio = guardado?.anio || (detectado ? detectado[1] : '');
+                const mes = guardado?.mes || (detectado ? String(Number(detectado[2])) : '');
+                return `<div class="plano-period-row"><span title="${escapeHtml(archivo.name)}">${escapeHtml(archivo.name)}</span><label><small>Mes</small><select data-plano-month="${indice}"><option value="">Selecciona</option>${months.map((nombre, numero) => `<option value="${numero + 1}" ${mes === String(numero + 1) ? 'selected' : ''}>${nombre}</option>`).join('')}</select></label><label><small>Año</small><input data-plano-year="${indice}" type="number" min="2020" max="2100" value="${anio}" placeholder="2026"></label></div>`;
+            }).join('')}</div>`
+            : '<strong>Sin archivos planos seleccionados</strong><span>Selecciona el mes y año que corresponde a cada archivo.</span>';
+        selectedPlanos.querySelectorAll('[data-plano-month],[data-plano-year]').forEach(control => control.addEventListener('change', rememberPlanoPeriods));
     };
     planoInput.addEventListener('change', renderPlanos);
     planoForm.addEventListener('submit', async event => {
@@ -325,6 +341,15 @@ try {
         const archivos = Array.from(planoInput.files || []);
         if (!archivos.length) {
             Swal.fire({icon:'warning',title:'Sin archivos planos',text:'Selecciona uno o más archivos planos CFE.',confirmButtonColor:'#6c1d24'});
+            return;
+        }
+        rememberPlanoPeriods();
+        const periodosPlanos = archivos.map(archivo => {
+            const periodo = planoPeriods.get(reportFileKey(archivo));
+            return periodo?.mes && /^20\d{2}$/.test(periodo.anio || '') ? `${periodo.anio}-${String(periodo.mes).padStart(2, '0')}` : '';
+        });
+        if (periodosPlanos.some(periodo => !periodo)) {
+            Swal.fire({icon:'warning',title:'Falta periodo',text:'Selecciona mes y año para cada archivo plano.',confirmButtonColor:'#6c1d24'});
             return;
         }
         const confirmacion = await Swal.fire({
@@ -344,6 +369,7 @@ try {
         body.append('accion', 'importar_archivos_planos');
         body.append('csrf', token);
         archivos.forEach(archivo => body.append('archivos_planos[]', archivo));
+        periodosPlanos.forEach(periodo => body.append('periodos_planos[]', periodo));
         try {
             const response = await fetch(ajustesController, {method:'POST',headers:{'X-CSRF-Token':token},body});
             const data = parseServerJson(await response.text());
@@ -351,7 +377,8 @@ try {
             const resumen = (data.archivos || []).map(archivo => {
                 const movimientos = archivo.movimientos || {};
                 const estado = archivo.repetido ? 'Ya estaba importado' : 'Procesado';
-                return `<li><strong>${escapeHtml(archivo.archivo)}</strong> · ${escapeHtml(archivo.periodo || 'Periodo no identificado')} · ${estado}: ${Number(archivo.conciliados || 0).toLocaleString('es-MX')} conciliados, ${Number(archivo.no_conciliados || 0).toLocaleString('es-MX')} sin coincidencia, ${Number(archivo.con_diferencia_consumo || 0) + Number(archivo.con_diferencia_total || 0)} con diferencia. Movimientos 01: ${Number(movimientos['01'] || 0)}, 04: ${Number(movimientos['04'] || 0)}, 06: ${Number(movimientos['06'] || 0)}, 09: ${Number(movimientos['09'] || 0)}.</li>`;
+                const advertencia = archivo.advertencia_periodo ? ` El archivo indica ${escapeHtml(archivo.periodo_interno)}, pero se registró con el periodo seleccionado.` : '';
+                return `<li><strong>${escapeHtml(archivo.archivo)}</strong> · ${escapeHtml(archivo.periodo || 'Periodo no identificado')} · ${estado}: ${Number(archivo.conciliados || 0).toLocaleString('es-MX')} conciliados, ${Number(archivo.no_conciliados || 0).toLocaleString('es-MX')} sin coincidencia, ${Number(archivo.con_diferencia_consumo || 0) + Number(archivo.con_diferencia_total || 0)} con diferencia. Movimientos 01: ${Number(movimientos['01'] || 0)}, 04: ${Number(movimientos['04'] || 0)}, 06: ${Number(movimientos['06'] || 0)}, 09: ${Number(movimientos['09'] || 0)}.${advertencia}</li>`;
             }).join('');
             const errores = (data.errores || []).map(error => `<li><strong>${escapeHtml(error.archivo)}</strong>: ${escapeHtml(error.error)}</li>`).join('');
             planoResult.innerHTML = `<strong>Conciliación terminada</strong><ul>${resumen}${errores}</ul>`;
