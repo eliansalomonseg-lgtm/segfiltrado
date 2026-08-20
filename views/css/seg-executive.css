@@ -2039,6 +2039,14 @@ body {
     width: fit-content;
 }
 
+.match-type-evidence {
+    align-items: center;
+    color: #746144 !important;
+    display: flex;
+    font-weight: 700;
+    gap: 5px;
+}
+
 .match-location-state {
     align-items: center;
     display: flex;
@@ -6554,10 +6562,11 @@ body {
     z-index: 1;
 }
 
-.rpu-directory-view .rpu-history-card .control-table th:nth-child(1) { width: 20%; }
-.rpu-directory-view .rpu-history-card .control-table th:nth-child(2) { width: 18%; }
-.rpu-directory-view .rpu-history-card .control-table th:nth-child(3) { width: 18%; }
-.rpu-directory-view .rpu-history-card .control-table th:nth-child(4) { width: 44%; }
+.rpu-directory-view .rpu-history-card .control-table th:nth-child(1) { width: 18%; }
+.rpu-directory-view .rpu-history-card .control-table th:nth-child(2) { width: 16%; }
+.rpu-directory-view .rpu-history-card .control-table th:nth-child(3) { width: 15%; }
+.rpu-directory-view .rpu-history-card .control-table th:nth-child(4) { width: 17%; }
+.rpu-directory-view .rpu-history-card .control-table th:nth-child(5) { width: 34%; }
 
 .rpu-directory-view .rpu-history-card .control-table td {
     background: #fff;
@@ -6685,11 +6694,25 @@ body {
         text-align: right;
     }
 
-    .rpu-directory-view .rpu-history-card .control-table td:nth-child(4) {
+    .rpu-directory-view .rpu-history-card .control-table td:nth-child(4),
+    .rpu-directory-view .rpu-history-card .control-table td:nth-child(5) {
         border-top: 1px solid #eee7e0;
         grid-column: 1 / -1;
         padding-top: 10px !important;
     }
+
+    .rpu-directory-view .rpu-history-card .control-table td:nth-child(4)::before,
+    .rpu-directory-view .rpu-history-card .control-table td:nth-child(5)::before {
+        color: #7b7278;
+        display: block;
+        font-size: 10px;
+        font-weight: 800;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+    }
+
+    .rpu-directory-view .rpu-history-card .control-table td:nth-child(4)::before { content: 'Movimiento'; }
+    .rpu-directory-view .rpu-history-card .control-table td:nth-child(5)::before { content: 'Alertas'; }
 
     .rpu-directory-view .rpu-history-card .control-table td strong {
         font-size: 14px;

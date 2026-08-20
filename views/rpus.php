@@ -118,6 +118,7 @@ if (empty($_SESSION['seg_csrf'])) {
                             <th>Periodo</th>
                             <th>Total</th>
                             <th>Consumo</th>
+                            <th>Movimiento</th>
                             <th>Alertas</th>
                         </tr>
                     </thead>
@@ -255,9 +256,25 @@ function renderHistory(historial) {
             <td><strong>${escapeHtml(row.anio)}-${String(row.mes).padStart(2, '0')}</strong><small>${escapeHtml(row.desde || '')} / ${escapeHtml(row.hasta || '')}</small></td>
             <td><strong>${money.format(row.total || 0)}</strong><small>${escapeHtml(row.tarifa_cfe || 'Sin tarifa')}</small></td>
             <td><strong>${number.format(row.consumo || 0)}</strong><small>kWh</small></td>
+            <td>${etiquetaMovimiento(row)}</td>
             <td><span class="status-pill ${Number(row.severidad) >= 4 ? 'status-warn' : 'status-ok'}">Sev. ${escapeHtml(row.severidad || 0)}</span><small>${escapeHtml(row.alertas || 'Sin alertas')}</small></td>
         </tr>`).join('')
-        : '<tr><td colspan="4" class="empty-state"><i class="bi bi-clock-history"></i><strong>Sin historial</strong><span>Analiza reportes en Ajustes CFE para alimentar esta vista.</span></td></tr>';
+        : '<tr><td colspan="5" class="empty-state"><i class="bi bi-clock-history"></i><strong>Sin historial</strong><span>Analiza reportes en Ajustes CFE para alimentar esta vista.</span></td></tr>';
+}
+
+function etiquetaMovimiento(row) {
+    const codigo = String(row.tipo_movimiento || '').trim().padStart(2, '0');
+    const etiquetas = {
+        '01': ['Normal', 'movement-normal'],
+        '04': ['Finiquito', 'movement-settlement'],
+        '06': ['Ajuste (06)', 'movement-adjustment'],
+        '09': ['Ajuste (09)', 'movement-adjustment']
+    };
+    const movimiento = etiquetas[codigo];
+    if (!movimiento) {
+        return '<span class="movement-pill movement-undetermined">Movimiento no determinado</span><small>Sin archivo plano</small>';
+    }
+    return `<span class="movement-pill ${movimiento[1]}">${movimiento[0]}</span><small>Código ${escapeHtml(codigo)} · Archivo plano</small>`;
 }
 
 function resumenHistorial(historial) {

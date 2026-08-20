@@ -1281,7 +1281,7 @@ class RpuController
     {
         $consulta = $conexion->prepare(
             'SELECT cc.id, cc.RPU, cc.division_cfe, cc.nombre_cfe, cc.direccion_cfe, cc.poblacion_cfe, cc.tarifa_cfe,
-                    cc.tipo_periodo, cc.desde, cc.hasta, cc.consumo, cc.total, cc.severidad, cc.alertas, cr.anio, cr.mes
+                    cc.tipo_periodo, cc.tipo_movimiento, cc.enriquecido_plano, cc.desde, cc.hasta, cc.consumo, cc.total, cc.severidad, cc.alertas, cr.anio, cr.mes
              FROM cfe_consumos cc FORCE INDEX (idx_cfe_consumos_rpu_id)
              INNER JOIN cfe_reportes cr ON cr.id = cc.reporte_id
              WHERE cc.RPU = ?
@@ -1387,10 +1387,14 @@ class RpuController
             $texto = $this->normalizar(implode(' ', [
                 (string) ($fila['NOMBRECT'] ?? ''),
                 (string) ($fila['DOMICILIO'] ?? ''),
-                (string) ($fila['NOMBRELOC'] ?? '')
+                (string) ($fila['NOMBRELOC'] ?? ''),
+                (string) ($fila['NIVEL'] ?? ''),
+                (string) ($fila['SUBNIVEL'] ?? ''),
+                (string) ($fila['HOMO'] ?? ''),
+                (string) ($fila['TIPOCT'] ?? '')
             ]));
             foreach (array_unique(explode(' ', $texto)) as $palabra) {
-                if (strlen($palabra) >= 5) {
+                if (strlen($palabra) >= 4) {
                     $porTexto[$palabra][] = $fila;
                 }
             }
@@ -1449,16 +1453,26 @@ class RpuController
             return array_values($candidatos);
         }
 
-        $palabras = $this->palabrasClave($localidad . ' ' . $direccion . ' ' . $nombre);
+        $busqueda = $this->terminosBusquedaCfe($localidad . ' ' . $direccion . ' ' . $nombre);
+        $palabras = array_merge($busqueda['especificas'], $busqueda['apoyos']);
         $coincidencias = [];
+        $coincidenciasEspecificas = [];
         foreach ($palabras as $palabra) {
             foreach (($indice['texto'][$palabra] ?? []) as $fila) {
                 $clave = (string) ($fila['id'] ?? $fila['CCT']);
                 $candidatos[$clave] = $fila;
                 $coincidencias[$clave] = ($coincidencias[$clave] ?? 0) + 1;
+                if (in_array($palabra, $busqueda['especificas'], true)) {
+                    $coincidenciasEspecificas[$clave] = ($coincidenciasEspecificas[$clave] ?? 0) + 1;
+                }
             }
         }
-        return array_values(array_filter($candidatos, static fn (array $fila): bool => ($coincidencias[(string) ($fila['id'] ?? $fila['CCT'])] ?? 0) >= 2));
+        return array_values(array_filter($candidatos, static function (array $fila) use ($coincidencias, $coincidenciasEspecificas): bool {
+            $clave = (string) ($fila['id'] ?? $fila['CCT']);
+            $total = $coincidencias[$clave] ?? 0;
+            $especificas = $coincidenciasEspecificas[$clave] ?? 0;
+            return $especificas >= 2 || ($especificas >= 1 && $total >= 2);
+        }));
     }
 
     private function evaluarSugerencias(array $filas, string $nombre, array $referencia, string $direccion): array
@@ -1537,6 +1551,7 @@ class RpuController
             'similitud' => (float) ($evaluacion['similitud'] ?? $score),
             'confianza' => (int) ($evaluacion['confianza'] ?? $score),
             'nivel_coincide' => (bool) ($evaluacion['nivel_coincide'] ?? false),
+            'evidencia_tipo' => (string) ($evaluacion['evidencia_tipo'] ?? ''),
             'ubicacion' => (string) ($evaluacion['ubicacion'] ?? ''),
             'ubicacion_confirmada' => (bool) ($evaluacion['ubicacion_confirmada'] ?? false),
             'administrativa' => (bool) ($evaluacion['administrativa'] ?? false),
@@ -1560,6 +1575,10 @@ class RpuController
         $coincideMunicipio = $municipio !== '' && ($this->coincideTerritorioEnTexto($municipio, $referenciaMunicipio) || $this->coincideTerritorioEnTexto($municipio, $contextoCfe));
         $ubicacion = $coincideLocalidad ? 'Misma localidad/población' : ($coincideMunicipio ? 'Municipio coincidente' : 'Nombre o domicilio cercano');
         $nivelCoincide = $this->coincideNivelCfe($nivelCfe, $escuela);
+        $etiquetasCoincidentes = array_values(array_intersect(
+            $this->etiquetasServicioCfe($nombreCfe),
+            $this->etiquetasEscuela($escuela)
+        ));
         $activa = $this->estaActiva((string) ($escuela['STATUS'] ?? ''));
         $administrativa = $this->esAdministrativa($escuela);
         $direccion = $this->normalizar($direccionCfe);
@@ -1590,6 +1609,7 @@ class RpuController
             'similitud' => round($similitud, 2),
             'confianza' => max(0, min(100, (int) round($confianza))),
             'nivel_coincide' => $nivelCoincide,
+            'evidencia_tipo' => implode(' / ', $etiquetasCoincidentes),
             'ubicacion' => $ubicacion,
             'ubicacion_confirmada' => $ubicacionConfirmada,
             'administrativa' => $administrativa,
@@ -1603,8 +1623,86 @@ class RpuController
         $ignorar = ['ESCUELA', 'JARDIN', 'NINOS', 'PRIMARIA', 'SECUNDARIA', 'PREESCOLAR', 'TELESECUNDARIA', 'GENERAL', 'SERVICIO', 'CALLE', 'CARRETERA', 'DOMICILIO', 'CENTRO', 'FEDERAL'];
         return array_values(array_unique(array_filter(
             explode(' ', $this->normalizar($texto)),
-            static fn (string $palabra): bool => strlen($palabra) >= 5 && !in_array($palabra, $ignorar, true)
+            static fn (string $palabra): bool => strlen($palabra) >= 4 && !in_array($palabra, $ignorar, true)
         )));
+    }
+
+    private function terminosBusquedaCfe(string $texto): array
+    {
+        $normalizado = $this->normalizar($texto);
+        $apoyos = [];
+        if (preg_match('/(^| )ESC( |$)/', $normalizado) || str_contains($normalizado, 'ESCUELA')) {
+            $apoyos[] = 'ESCUELA';
+        }
+        if (str_contains($normalizado, 'PRIM')) {
+            $apoyos[] = 'PRIMARIA';
+        }
+        if (str_contains($normalizado, 'SEC')) {
+            $apoyos[] = 'SECUNDARIA';
+        }
+        if (str_contains($normalizado, 'JARDIN') || str_contains($normalizado, 'KINDER') || preg_match('/(^| )JN( |$)/', $normalizado)) {
+            $apoyos[] = 'PREESCOLAR';
+        }
+        if (str_contains($normalizado, 'TELE')) {
+            $apoyos[] = 'TELESECUNDARIA';
+        }
+        if (str_contains($normalizado, 'INDIGENA')) {
+            $apoyos[] = 'INDIGENA';
+        }
+        if (str_contains($normalizado, 'FEDERAL')) {
+            $apoyos[] = 'FEDERAL';
+        }
+        return [
+            'especificas' => $this->palabrasClave($texto),
+            'apoyos' => array_values(array_unique($apoyos))
+        ];
+    }
+
+    private function etiquetasServicioCfe(string $nombre): array
+    {
+        $texto = $this->normalizar($nombre);
+        $etiquetas = [];
+        if (preg_match('/(^| )ESC( |$)/', $texto) || str_contains($texto, 'ESCUELA')) {
+            $etiquetas[] = 'ESCUELA';
+        }
+        if (str_contains($texto, 'FEDERAL')) {
+            $etiquetas[] = 'FEDERAL';
+        }
+        if (str_contains($texto, 'INDIGENA')) {
+            $etiquetas[] = 'INDIGENA';
+        }
+        $nivel = $this->identificarNivelCfe($nombre);
+        if ($nivel !== null) {
+            $etiquetas[] = $nivel;
+        }
+        return array_values(array_unique($etiquetas));
+    }
+
+    private function etiquetasEscuela(array $escuela): array
+    {
+        $texto = $this->normalizar(implode(' ', [
+            (string) ($escuela['NOMBRECT'] ?? ''),
+            (string) ($escuela['NIVEL'] ?? ''),
+            (string) ($escuela['SUBNIVEL'] ?? ''),
+            (string) ($escuela['HOMO'] ?? ''),
+            (string) ($escuela['TIPOCT'] ?? '')
+        ]));
+        $etiquetas = [];
+        if (!$this->esAdministrativa($escuela)) {
+            $etiquetas[] = 'ESCUELA';
+        }
+        if (str_contains($texto, 'FEDERAL') || str_starts_with($this->normalizar((string) ($escuela['HOMO'] ?? '')), 'D')) {
+            $etiquetas[] = 'FEDERAL';
+        }
+        if (str_contains($texto, 'INDIGENA')) {
+            $etiquetas[] = 'INDIGENA';
+        }
+        foreach (['PREESCOLAR', 'PRIMARIA', 'SECUNDARIA', 'TELESECUNDARIA'] as $nivel) {
+            if (str_contains($texto, $nivel)) {
+                $etiquetas[] = $nivel;
+            }
+        }
+        return array_values(array_unique($etiquetas));
     }
 
     private function nombreComparable(string $texto): string
