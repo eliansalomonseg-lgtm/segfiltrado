@@ -1351,6 +1351,13 @@ class RpuController
                 break;
             }
         }
+        if ($busquedaAmplia) {
+            $indice = $this->indiceEscuelasPorUbicacion($conexion);
+            $candidatosPrecisos = $this->candidatosRapidosPorUbicacion($indice, $referencia, $nombre, $direccion);
+            if ($candidatosPrecisos) {
+                $filas = $candidatosPrecisos;
+            }
+        }
         return $this->evaluarSugerencias($filas, $nombre, $referencia, $direccion);
     }
 
@@ -1395,6 +1402,19 @@ class RpuController
     {
         $localidad = $this->normalizar((string) ($referencia['localidad'] ?? ''));
         $municipio = $this->normalizar((string) ($referencia['municipio'] ?? ''));
+        $contextoTerritorial = implode(' ', [(string) ($referencia['texto'] ?? ''), $direccion]);
+        $candidatosTerritoriales = [];
+        foreach (($indice['municipio'] ?? []) as $municipioCatalogo => $filas) {
+            if (!$this->coincideTerritorioEnTexto($municipioCatalogo, $contextoTerritorial)) {
+                continue;
+            }
+            foreach ($filas as $fila) {
+                $candidatosTerritoriales[(string) ($fila['id'] ?? $fila['CCT'])] = $fila;
+            }
+        }
+        if ($candidatosTerritoriales) {
+            return array_values($candidatosTerritoriales);
+        }
         if ($localidad !== '' && $municipio !== '') {
             $exactos = $indice['ubicacion'][$localidad . '|' . $municipio] ?? [];
             if ($exactos) {
@@ -1443,16 +1463,22 @@ class RpuController
 
     private function evaluarSugerencias(array $filas, string $nombre, array $referencia, string $direccion): array
     {
+        $perfilServicio = $this->perfilServicioCfe($nombre);
         $nivelCfe = $this->identificarNivelCfe($nombre);
         $requiereIndigena = $this->requiereSubnivelIndigena($nombre);
         $sugerencias = [];
         foreach ($filas as $fila) {
-            $evaluacion = $this->puntaje($nombre, $referencia['localidad'], $referencia['municipio'], $direccion, $nivelCfe, $fila);
+            $evaluacion = $this->puntaje($nombre, $referencia, $direccion, $nivelCfe, $perfilServicio, $fila);
             if ($evaluacion['score'] >= 35) {
                 $sugerencias[] = $this->escuelaDesdeFila($fila, $evaluacion['score'], 'Sugerencia por padrón maestro', $evaluacion);
             }
         }
-        $fisicas = array_values(array_filter($sugerencias, fn (array $escuela): bool => !($escuela['administrativa'] ?? false)));
+        $fisicas = array_values(array_filter(
+            $sugerencias,
+            static fn (array $escuela): bool => $perfilServicio === 'ADMINISTRATIVO'
+                ? (bool) ($escuela['administrativa'] ?? false)
+                : !(bool) ($escuela['administrativa'] ?? false)
+        ));
         if ($requiereIndigena) {
             $fisicas = array_values(array_filter($fisicas, fn (array $escuela): bool => str_contains($this->normalizar((string) ($escuela['subnivel'] ?? '')), 'INDIGENA')));
         }
@@ -1460,7 +1486,7 @@ class RpuController
             return [];
         }
         $porNivel = array_values(array_filter($fisicas, fn (array $escuela): bool => $escuela['nivel_coincide'] ?? false));
-        if ($nivelCfe !== null) {
+        if ($perfilServicio !== 'ADMINISTRATIVO' && $nivelCfe !== null) {
             $sugerencias = $porNivel;
         } else {
             $sugerencias = $fisicas;
@@ -1514,22 +1540,24 @@ class RpuController
             'ubicacion' => (string) ($evaluacion['ubicacion'] ?? ''),
             'ubicacion_confirmada' => (bool) ($evaluacion['ubicacion_confirmada'] ?? false),
             'administrativa' => (bool) ($evaluacion['administrativa'] ?? false),
+            'grupo' => (string) ($evaluacion['grupo'] ?? ($this->esAdministrativa($fila) ? 'INMUEBLE SEG' : 'ESCUELA')),
             'activa' => (bool) ($evaluacion['activa'] ?? false),
             'origen' => $origen
         ];
     }
 
-    private function puntaje(string $nombreCfe, string $localidadCfe, string $municipioCfe, string $direccionCfe, ?string $nivelCfe, array $escuela): array
+    private function puntaje(string $nombreCfe, array $referencia, string $direccionCfe, ?string $nivelCfe, string $perfilServicio, array $escuela): array
     {
         $nombreBase = $this->nombreComparable($nombreCfe);
         $nombreEscuela = $this->nombreComparable((string) ($escuela['NOMBRECT'] ?? ''));
         similar_text($nombreBase, $nombreEscuela, $similitud);
         $localidad = $this->normalizar((string) ($escuela['NOMBRELOC'] ?? ''));
         $municipio = $this->normalizar((string) ($escuela['NOMBREMUN'] ?? ''));
-        $referenciaLocalidad = $this->normalizar($localidadCfe);
-        $referenciaMunicipio = $this->normalizar($municipioCfe);
-        $coincideLocalidad = $referenciaLocalidad !== '' && $localidad !== '' && ($localidad === $referenciaLocalidad || str_contains($referenciaLocalidad, $localidad) || str_contains($localidad, $referenciaLocalidad));
-        $coincideMunicipio = $referenciaMunicipio !== '' && $municipio !== '' && ($municipio === $referenciaMunicipio || str_contains($referenciaMunicipio, $municipio) || str_contains($municipio, $referenciaMunicipio));
+        $referenciaLocalidad = $this->normalizar((string) ($referencia['localidad'] ?? ''));
+        $referenciaMunicipio = $this->normalizar((string) ($referencia['municipio'] ?? ''));
+        $contextoCfe = implode(' ', [(string) ($referencia['texto'] ?? ''), $direccionCfe, $nombreCfe]);
+        $coincideLocalidad = $localidad !== '' && ($this->coincideTerritorioEnTexto($localidad, $referenciaLocalidad) || $this->coincideTerritorioEnTexto($localidad, $contextoCfe));
+        $coincideMunicipio = $municipio !== '' && ($this->coincideTerritorioEnTexto($municipio, $referenciaMunicipio) || $this->coincideTerritorioEnTexto($municipio, $contextoCfe));
         $ubicacion = $coincideLocalidad ? 'Misma localidad/población' : ($coincideMunicipio ? 'Municipio coincidente' : 'Nombre o domicilio cercano');
         $nivelCoincide = $this->coincideNivelCfe($nivelCfe, $escuela);
         $activa = $this->estaActiva((string) ($escuela['STATUS'] ?? ''));
@@ -1542,17 +1570,19 @@ class RpuController
             $palabrasEscuela = array_unique(array_filter(explode(' ', $domicilio), fn (string $palabra): bool => strlen($palabra) >= 4));
             $coincidenciasDireccion = count(array_intersect($palabrasCfe, $palabrasEscuela));
         }
-        $ubicacionConfirmada = $coincideLocalidad || ($coincideMunicipio && $coincidenciasDireccion >= 1);
+        $ubicacionConfirmada = ($coincideLocalidad && $coincideMunicipio) || ($coincideMunicipio && $coincidenciasDireccion >= 1);
         $ubicacion = $coincideLocalidad ? 'Localidad confirmada' : ($ubicacionConfirmada ? 'Municipio y dirección confirmados' : ($coincideMunicipio ? 'Municipio coincidente' : ($coincidenciasDireccion >= 2 ? 'Dirección cercana' : 'Ubicación por revisar')));
         $confianza = ($similitud * 0.45)
-            + ($coincideLocalidad ? 35 : ($coincideMunicipio ? 18 : 0))
+            + ($coincideLocalidad ? 28 : 0)
+            + ($coincideMunicipio ? 25 : 0)
             + min(12, $coincidenciasDireccion * 4)
             + ($nivelCoincide ? 8 : 0)
             + ($activa ? 4 : 0);
         if (!$ubicacionConfirmada) {
             $confianza = min($confianza, 49);
         }
-        if ($administrativa) {
+        $tipoCompatible = $perfilServicio === 'ADMINISTRATIVO' ? $administrativa : !$administrativa;
+        if (!$tipoCompatible) {
             $confianza = 0;
         }
         return [
@@ -1563,6 +1593,7 @@ class RpuController
             'ubicacion' => $ubicacion,
             'ubicacion_confirmada' => $ubicacionConfirmada,
             'administrativa' => $administrativa,
+            'grupo' => $administrativa ? 'INMUEBLE SEG' : 'ESCUELA',
             'activa' => $activa
         ];
     }
@@ -1593,8 +1624,45 @@ class RpuController
         }
         return [
             'localidad' => $localidad,
-            'municipio' => $municipio
+            'municipio' => $municipio,
+            'texto' => $texto
         ];
+    }
+
+    private function coincideTerritorioEnTexto(string $territorio, string $texto): bool
+    {
+        $territorio = $this->normalizar($territorio);
+        $texto = $this->normalizar($texto);
+        if ($territorio === '' || $texto === '') {
+            return false;
+        }
+        if (str_contains($texto, $territorio) || str_contains($territorio, $texto)) {
+            return true;
+        }
+        if (strlen($territorio) < 7) {
+            return false;
+        }
+        foreach (array_unique(explode(' ', $texto)) as $palabra) {
+            if (strlen($palabra) < 7) {
+                continue;
+            }
+            $longitud = min(strlen($territorio), strlen($palabra));
+            if ($longitud >= 7 && levenshtein($territorio, $palabra) <= max(1, (int) floor($longitud * 0.12))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function perfilServicioCfe(string $nombre): string
+    {
+        $texto = $this->normalizar($nombre);
+        foreach (['SUPERVISION', 'SUPERV', 'JEFATURA', 'JEFAT', 'SECTOR', 'ZONA ESCOLAR', 'COORDINACION', 'DIRECCION', 'ADMINISTRAT', 'ALMACEN', 'CENTRO DE MAESTROS', 'SERVICIOS EDUCATIVOS'] as $termino) {
+            if (str_contains($texto, $termino)) {
+                return 'ADMINISTRATIVO';
+            }
+        }
+        return 'ESCUELA';
     }
 
     private function identificarNivelCfe(string $nombre): ?string

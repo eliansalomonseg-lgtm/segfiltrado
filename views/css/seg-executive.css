@@ -2025,6 +2025,20 @@ body {
     justify-self: start;
 }
 
+.candidate-kind {
+    align-items: center;
+    background: #f5f0e8;
+    border: 1px solid #e3d3b8;
+    border-radius: 999px;
+    color: #76521e;
+    display: inline-flex;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .05em;
+    padding: 3px 7px;
+    width: fit-content;
+}
+
 .match-location-state {
     align-items: center;
     display: flex;
