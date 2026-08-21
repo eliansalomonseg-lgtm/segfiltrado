@@ -1281,9 +1281,15 @@ class RpuController
     {
         $consulta = $conexion->prepare(
             'SELECT cc.id, cc.RPU, cc.division_cfe, cc.nombre_cfe, cc.direccion_cfe, cc.poblacion_cfe, cc.tarifa_cfe,
-                    cc.tipo_periodo, cc.tipo_movimiento, cc.enriquecido_plano, cc.desde, cc.hasta, cc.consumo, cc.total, cc.severidad, cc.alertas, cr.anio, cr.mes
+                    cc.tipo_periodo, cc.tipo_movimiento, cc.enriquecido_plano, cc.desde, cc.hasta, cc.dias, cc.consumo, cc.total,
+                    COALESCE(cc.medidor, JSON_UNQUOTE(JSON_EXTRACT(cp.datos_json, \'$.numero\'))) AS medidor,
+                    COALESCE(cc.lectura_anterior, CAST(JSON_UNQUOTE(JSON_EXTRACT(cp.datos_json, \'$.lecturaanterior\')) AS DECIMAL(18,4))) AS lectura_anterior,
+                    COALESCE(cc.lectura_actual, CAST(JSON_UNQUOTE(JSON_EXTRACT(cp.datos_json, \'$.lecturaactual\')) AS DECIMAL(18,4))) AS lectura_actual,
+                    COALESCE(cc.multiplicador, CAST(JSON_UNQUOTE(JSON_EXTRACT(cp.datos_json, \'$.multiplicador\')) AS DECIMAL(18,4))) AS multiplicador,
+                    cc.severidad, cc.alertas, cr.anio, cr.mes
              FROM cfe_consumos cc FORCE INDEX (idx_cfe_consumos_rpu_id)
              INNER JOIN cfe_reportes cr ON cr.id = cc.reporte_id
+             LEFT JOIN cfe_plano_conciliaciones cp ON cp.consumo_id = cc.id AND cp.estado = \'CONCILIADO\'
              WHERE cc.RPU = ?
              ORDER BY cr.anio DESC, cr.mes DESC, cc.hasta DESC, cc.id DESC'
         );
