@@ -158,7 +158,20 @@ class AjustesController
                 $consultaExistente->execute([$hash]);
                 $existente = $consultaExistente->fetch();
                 if ($existente) {
-                    $procesados[] = $this->resumenArchivoPlano((string) $nombreOriginal, $existente, true);
+                    $conexion->beginTransaction();
+                    $resultado = $this->conciliarArchivoPlano($conexion, $lector, $ruta, (int) $existente['id'], $anioSeleccionado, $mesSeleccionado);
+                    $actualizarArchivo = $conexion->prepare(
+                        'UPDATE cfe_archivos_planos
+                         SET anio = ?, mes = ?, total_registros = ?, conciliados = ?, no_conciliados = ?, con_diferencia_consumo = ?, con_diferencia_total = ?, errores_formato = ?, movimientos_01 = ?, movimientos_04 = ?, movimientos_06 = ?, movimientos_09 = ?, actualizado_en = CURRENT_TIMESTAMP
+                         WHERE id = ?'
+                    );
+                    $actualizarArchivo->execute([
+                        $resultado['anio'], $resultado['mes'], $resultado['total_registros'], $resultado['conciliados'], $resultado['no_conciliados'],
+                        $resultado['con_diferencia_consumo'], $resultado['con_diferencia_total'], $resultado['errores_formato'],
+                        $resultado['movimientos_01'], $resultado['movimientos_04'], $resultado['movimientos_06'], $resultado['movimientos_09'], (int) $existente['id']
+                    ]);
+                    $conexion->commit();
+                    $procesados[] = $this->resumenArchivoPlano((string) $nombreOriginal, $resultado + ['id' => (int) $existente['id']], true);
                     continue;
                 }
 
@@ -220,6 +233,18 @@ class AjustesController
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE consumo_id = VALUES(consumo_id), estado = VALUES(estado), diferencia_consumo = VALUES(diferencia_consumo), diferencia_total = VALUES(diferencia_total), detalle = VALUES(detalle), datos_json = VALUES(datos_json), actualizado_en = CURRENT_TIMESTAMP'
         );
+        $guardarLecturaMedidor = $conexion->prepare(
+            'INSERT INTO cfe_lecturas_medidores
+             (archivo_plano_id, fila_origen, consumo_id, RPU, tipo_medidor, posicion, numero_medidor, caratula, ley_medidor, anomalia, lectura_anterior, lectura_actual, diferencia_lectura, multiplicador)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE consumo_id = VALUES(consumo_id), RPU = VALUES(RPU), numero_medidor = COALESCE(VALUES(numero_medidor), numero_medidor), caratula = COALESCE(VALUES(caratula), caratula), ley_medidor = COALESCE(VALUES(ley_medidor), ley_medidor), anomalia = COALESCE(VALUES(anomalia), anomalia), lectura_anterior = COALESCE(VALUES(lectura_anterior), lectura_anterior), lectura_actual = COALESCE(VALUES(lectura_actual), lectura_actual), diferencia_lectura = COALESCE(VALUES(diferencia_lectura), diferencia_lectura), multiplicador = COALESCE(VALUES(multiplicador), multiplicador), actualizado_en = CURRENT_TIMESTAMP'
+        );
+        $guardarDetallePlano = $conexion->prepare(
+            'INSERT INTO cfe_plano_detalles
+             (archivo_plano_id, fila_origen, consumo_id, RPU, direccion_plano, poblacion_plano, municipio_plano, estado_plano, colonia_plano, calle_1, calle_2, carga_contratada, carga_conectada, medidores_instalados_declarados, medidores_retirados_declarados, tipo_estimacion)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE consumo_id = COALESCE(VALUES(consumo_id), consumo_id), RPU = VALUES(RPU), direccion_plano = COALESCE(VALUES(direccion_plano), direccion_plano), poblacion_plano = COALESCE(VALUES(poblacion_plano), poblacion_plano), municipio_plano = COALESCE(VALUES(municipio_plano), municipio_plano), estado_plano = COALESCE(VALUES(estado_plano), estado_plano), colonia_plano = COALESCE(VALUES(colonia_plano), colonia_plano), calle_1 = COALESCE(VALUES(calle_1), calle_1), calle_2 = COALESCE(VALUES(calle_2), calle_2), carga_contratada = COALESCE(VALUES(carga_contratada), carga_contratada), carga_conectada = COALESCE(VALUES(carga_conectada), carga_conectada), medidores_instalados_declarados = COALESCE(VALUES(medidores_instalados_declarados), medidores_instalados_declarados), medidores_retirados_declarados = COALESCE(VALUES(medidores_retirados_declarados), medidores_retirados_declarados), tipo_estimacion = COALESCE(VALUES(tipo_estimacion), tipo_estimacion), actualizado_en = CURRENT_TIMESTAMP'
+        );
         $resumen = [
             'anio' => $anioSeleccionado, 'mes' => $mesSeleccionado, 'total_registros' => 0, 'conciliados' => 0, 'no_conciliados' => 0,
             'con_diferencia_consumo' => 0, 'con_diferencia_total' => 0, 'errores_formato' => 0,
@@ -250,6 +275,8 @@ class AjustesController
                 $resumen['no_conciliados']++;
                 $motivo = $coincidencias === [] ? 'No existe un consumo con el mismo RPU y periodo.' : 'Hay más de un consumo con el mismo RPU y periodo.';
                 $guardarConciliacion->execute([$archivoPlanoId, $filaOrigen, null, 'SIN_COINCIDENCIA', $rpu, $desde, $hasta, $consumoPlano, $totalPlano, $tipoMovimiento, null, null, $motivo, json_encode($fila, JSON_UNESCAPED_UNICODE)]);
+                $this->guardarLecturasMedidoresPlano($guardarLecturaMedidor, $lector, $fila, $archivoPlanoId, $filaOrigen, $rpu, null);
+                $this->guardarDetallePlano($guardarDetallePlano, $lector, $fila, $archivoPlanoId, $filaOrigen, $rpu, null);
                 continue;
             }
             $consumo = $coincidencias[0];
@@ -280,9 +307,107 @@ class AjustesController
             ]);
             $detalle = $estado === 'CONCILIADO' ? 'Conciliado por RPU, fecha desde y fecha hasta.' : 'Conciliado por RPU y periodo; existen diferencias de consumo o total.';
             $guardarConciliacion->execute([$archivoPlanoId, $filaOrigen, (int) $consumo['id'], $estado, $rpu, $desde, $hasta, $consumoPlano, $totalPlano, $tipoMovimiento, $diferenciaConsumo, $diferenciaTotal, $detalle, null]);
+            $this->guardarLecturasMedidoresPlano($guardarLecturaMedidor, $lector, $fila, $archivoPlanoId, $filaOrigen, $rpu, (int) $consumo['id']);
+            $this->guardarDetallePlano($guardarDetallePlano, $lector, $fila, $archivoPlanoId, $filaOrigen, $rpu, (int) $consumo['id']);
             $resumen['conciliados']++;
         }
         return $resumen;
+    }
+
+    private function guardarLecturasMedidoresPlano(PDOStatement $guardarLectura, LectorPlanoCfe $lector, array $fila, int $archivoPlanoId, int $filaOrigen, string $rpu, ?int $consumoId): void
+    {
+        foreach (['INSTALADO', 'RETIRADO'] as $tipoMedidor) {
+            for ($posicion = 1; $posicion <= 6; $posicion++) {
+                $numeroMedidor = $this->nuloTexto($lector->valor($fila, $this->clavesMedidorPlano($tipoMedidor, $posicion, 'numero')));
+                if ($numeroMedidor === null || $numeroMedidor === '0') {
+                    continue;
+                }
+                $lecturaAnterior = $lector->numero($lector->valor($fila, $this->clavesMedidorPlano($tipoMedidor, $posicion, 'lectura_anterior')));
+                $lecturaActual = $lector->numero($lector->valor($fila, $this->clavesMedidorPlano($tipoMedidor, $posicion, 'lectura_actual')));
+                $diferenciaLectura = $lector->numero($lector->valor($fila, $this->clavesMedidorPlano($tipoMedidor, $posicion, 'diferencia_lectura')));
+                if ($diferenciaLectura === null && $lecturaAnterior !== null && $lecturaActual !== null) {
+                    $diferenciaLectura = $lecturaActual - $lecturaAnterior;
+                }
+                $guardarLectura->execute([
+                    $archivoPlanoId,
+                    $filaOrigen,
+                    $consumoId,
+                    $rpu,
+                    $tipoMedidor,
+                    $posicion,
+                    $numeroMedidor,
+                    $this->nuloTexto($lector->valor($fila, $this->clavesMedidorPlano($tipoMedidor, $posicion, 'caratula'))),
+                    $this->nuloTexto($lector->valor($fila, $this->clavesMedidorPlano($tipoMedidor, $posicion, 'ley_medidor'))),
+                    $this->nuloTexto($lector->valor($fila, $this->clavesMedidorPlano($tipoMedidor, $posicion, 'anomalia'))),
+                    $lecturaAnterior,
+                    $lecturaActual,
+                    $diferenciaLectura,
+                    $lector->numero($lector->valor($fila, $this->clavesMedidorPlano($tipoMedidor, $posicion, 'multiplicador')))
+                ]);
+            }
+        }
+    }
+
+    private function guardarDetallePlano(PDOStatement $guardarDetalle, LectorPlanoCfe $lector, array $fila, int $archivoPlanoId, int $filaOrigen, string $rpu, ?int $consumoId): void
+    {
+        $guardarDetalle->execute([
+            $archivoPlanoId,
+            $filaOrigen,
+            $consumoId,
+            $rpu,
+            $this->nuloTexto($lector->valor($fila, ['direccion', 'direcc'])),
+            $this->nuloTexto($lector->valor($fila, ['ciudad', 'dspob', 'poblacion'])),
+            $this->nuloTexto($lector->valor($fila, ['municipio', 'nombremunicipio', 'municipio_plano'])),
+            $this->nuloTexto($lector->valor($fila, ['estado', 'dsedo'])),
+            $this->nuloTexto($lector->valor($fila, ['colonia'])),
+            $this->nuloTexto($lector->valor($fila, ['calle1'])),
+            $this->nuloTexto($lector->valor($fila, ['calle2'])),
+            $lector->numero($lector->valor($fila, ['cargacontratada', 'cgacontr'])),
+            $lector->numero($lector->valor($fila, ['cargaconectada', 'cgaconec'])),
+            $this->enteroPlano($lector->numero($lector->valor($fila, ['medidoresinstalados', 'cantmedinst', 'numedins']))),
+            $this->enteroPlano($lector->numero($lector->valor($fila, ['medidoresretirados']))),
+            $this->nuloTexto($lector->valor($fila, ['tipoestimacion', 'clestima']))
+        ]);
+    }
+
+    private function enteroPlano(?float $valor): ?int
+    {
+        return $valor === null || $valor < 0 ? null : (int) $valor;
+    }
+
+    private function clavesMedidorPlano(string $tipoMedidor, int $posicion, string $campo): array
+    {
+        $sufijoInstalado = $posicion === 1 ? '' : '_' . $posicion;
+        $sufijoRetirado = '_' . (6 + $posicion);
+        $historico = (string) $posicion;
+        if ($tipoMedidor === 'INSTALADO') {
+            return match ($campo) {
+                'numero' => array_filter(['numero' . $sufijoInstalado, 'nummed' . $historico, 'numed' . $historico, $posicion === 1 ? 'numeromedidor' : null]),
+                'caratula' => ['caratula' . $sufijoInstalado, 'caratula' . $historico],
+                'ley_medidor' => ['ley' . $sufijoInstalado, 'leymed' . $historico],
+                'anomalia' => ['anomalia' . $sufijoInstalado, 'anomalia' . $historico],
+                'lectura_anterior' => ['lecturaanterior' . $sufijoInstalado, 'lecant' . $historico],
+                'lectura_actual' => ['lecturaactual' . $sufijoInstalado, 'lecact' . $historico],
+                'diferencia_lectura' => array_filter([
+                    $posicion === 1 ? 'diferencialectura' : 'diferencialecutra' . ($posicion === 2 ? '' : '_' . ($posicion - 1)),
+                    'diferencialectura' . $sufijoInstalado,
+                    'diflec' . $historico
+                ]),
+                'multiplicador' => ['multiplicador' . $sufijoInstalado, 'multi' . $historico],
+                default => []
+            };
+        }
+        return match ($campo) {
+            'numero' => ['numero' . $sufijoRetirado, 'numedret' . $historico, 'numeroret' . $historico],
+            'caratula' => ['caratula' . $sufijoRetirado, 'caratret' . $historico],
+            'ley_medidor' => ['ley' . $sufijoRetirado, 'leymedret' . $historico],
+            'anomalia' => [],
+            'lectura_anterior' => ['lecturaanterior' . $sufijoRetirado, 'lecantret' . $historico],
+            'lectura_actual' => ['lecturaactual' . $sufijoRetirado, 'lecactret' . $historico],
+            'diferencia_lectura' => ['diferencialectura_' . ($posicion + 1), 'diflecret' . $historico],
+            'multiplicador' => ['multiplicador' . $sufijoRetirado, 'multiret' . $historico],
+            default => []
+        };
     }
 
     private function normalizarTipoMovimiento(string $valor): ?string
@@ -755,6 +880,58 @@ class AjustesController
                 INDEX idx_cfe_plano_conciliaciones_consumo (consumo_id),
                 INDEX idx_cfe_plano_conciliaciones_estado (estado),
                 INDEX idx_cfe_plano_conciliaciones_rpu (RPU)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
+        $conexion->exec(
+            "CREATE TABLE IF NOT EXISTS cfe_lecturas_medidores (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                archivo_plano_id INT NOT NULL,
+                fila_origen INT NOT NULL,
+                consumo_id INT NULL,
+                RPU VARCHAR(20) NOT NULL,
+                tipo_medidor VARCHAR(12) NOT NULL,
+                posicion TINYINT UNSIGNED NOT NULL,
+                numero_medidor VARCHAR(100) NULL,
+                caratula VARCHAR(50) NULL,
+                ley_medidor VARCHAR(100) NULL,
+                anomalia VARCHAR(100) NULL,
+                lectura_anterior DECIMAL(18,4) NULL,
+                lectura_actual DECIMAL(18,4) NULL,
+                diferencia_lectura DECIMAL(18,4) NULL,
+                multiplicador DECIMAL(18,4) NULL,
+                creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                actualizado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_cfe_lecturas_medidor_origen (archivo_plano_id, fila_origen, tipo_medidor, posicion),
+                INDEX idx_cfe_lecturas_medidores_consumo (consumo_id),
+                INDEX idx_cfe_lecturas_medidores_rpu_numero (RPU, numero_medidor),
+                INDEX idx_cfe_lecturas_medidores_archivo (archivo_plano_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
+        $conexion->exec(
+            "CREATE TABLE IF NOT EXISTS cfe_plano_detalles (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                archivo_plano_id INT NOT NULL,
+                fila_origen INT NOT NULL,
+                consumo_id INT NULL,
+                RPU VARCHAR(20) NOT NULL,
+                direccion_plano VARCHAR(255) NULL,
+                poblacion_plano VARCHAR(255) NULL,
+                municipio_plano VARCHAR(255) NULL,
+                estado_plano VARCHAR(100) NULL,
+                colonia_plano VARCHAR(255) NULL,
+                calle_1 VARCHAR(255) NULL,
+                calle_2 VARCHAR(255) NULL,
+                carga_contratada DECIMAL(18,4) NULL,
+                carga_conectada DECIMAL(18,4) NULL,
+                medidores_instalados_declarados TINYINT UNSIGNED NULL,
+                medidores_retirados_declarados TINYINT UNSIGNED NULL,
+                tipo_estimacion VARCHAR(50) NULL,
+                creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                actualizado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_cfe_plano_detalles_origen (archivo_plano_id, fila_origen),
+                INDEX idx_cfe_plano_detalles_consumo (consumo_id),
+                INDEX idx_cfe_plano_detalles_rpu (RPU),
+                INDEX idx_cfe_plano_detalles_ubicacion (poblacion_plano, municipio_plano)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
     }

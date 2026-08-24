@@ -336,6 +336,25 @@ try {
         selectedPlanos.querySelectorAll('[data-plano-month],[data-plano-year]').forEach(control => control.addEventListener('change', rememberPlanoPeriods));
     };
     planoInput.addEventListener('change', renderPlanos);
+    const enviarPlanos = (body, actualizar) => new Promise((resolve, reject) => {
+        const solicitud = new XMLHttpRequest();
+        solicitud.open('POST', ajustesController, true);
+        solicitud.setRequestHeader('X-CSRF-Token', token);
+        solicitud.upload.addEventListener('progress', event => {
+            if (event.lengthComputable) actualizar(Math.round((event.loaded / event.total) * 100), false);
+        });
+        solicitud.upload.addEventListener('load', () => actualizar(100, true));
+        solicitud.addEventListener('load', () => {
+            const data = parseServerJson(solicitud.responseText);
+            if (solicitud.status < 200 || solicitud.status >= 300 || !data.ok) {
+                reject(new Error(data.error || 'No fue posible procesar los archivos planos.'));
+                return;
+            }
+            resolve(data);
+        });
+        solicitud.addEventListener('error', () => reject(new Error('No fue posible comunicarse con el servidor.')));
+        solicitud.send(body);
+    });
     planoForm.addEventListener('submit', async event => {
         event.preventDefault();
         const archivos = Array.from(planoInput.files || []);
@@ -364,6 +383,14 @@ try {
         if (!confirmacion.isConfirmed) return;
         uploadPlanos.disabled = true;
         planoResult.hidden = false;
+        Swal.fire({
+            title: 'Conciliando archivos planos',
+            html: `<div class="text-start"><div id="plano-progreso-estado" class="fw-semibold mb-2">Preparando ${archivos.length} archivo(s)...</div><div class="progress mb-2" style="height:12px"><div id="plano-progreso-barra" class="progress-bar progress-bar-striped progress-bar-animated bg-success" style="width:0%"></div></div><div id="plano-progreso-contador" class="small text-muted">0% cargado</div><p class="small text-muted mb-0 mt-3">Al terminar la carga, el servidor revisará cada RPU con fecha desde y fecha hasta exactas antes de enriquecerlo.</p></div>`,
+            showConfirmButton: false,
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            didOpen: () => Swal.showLoading()
+        });
         planoResult.innerHTML = '<strong>Procesando archivos planos...</strong><span>Conciliando RPU y periodos existentes.</span>';
         const body = new FormData();
         body.append('accion', 'importar_archivos_planos');
@@ -371,12 +398,19 @@ try {
         archivos.forEach(archivo => body.append('archivos_planos[]', archivo));
         periodosPlanos.forEach(periodo => body.append('periodos_planos[]', periodo));
         try {
-            const response = await fetch(ajustesController, {method:'POST',headers:{'X-CSRF-Token':token},body});
-            const data = parseServerJson(await response.text());
-            if (!response.ok || !data.ok) throw new Error(data.error || 'No fue posible procesar los archivos planos.');
+            const actualizarProgreso = (porcentaje, conciliando) => {
+                const barra = document.getElementById('plano-progreso-barra');
+                const estado = document.getElementById('plano-progreso-estado');
+                const contador = document.getElementById('plano-progreso-contador');
+                if (barra) barra.style.width = `${porcentaje}%`;
+                if (estado) estado.textContent = conciliando ? `Conciliando ${archivos.length} archivo(s) en la base local...` : `Cargando ${archivos.length} archivo(s) al servidor...`;
+                if (contador) contador.textContent = conciliando ? 'Carga terminada. Validando RPU y periodos exactos.' : `${porcentaje}% cargado`;
+            };
+            const data = await enviarPlanos(body, actualizarProgreso);
+            actualizarProgreso(100, true);
             const resumen = (data.archivos || []).map(archivo => {
                 const movimientos = archivo.movimientos || {};
-                const estado = archivo.repetido ? 'Ya estaba importado' : 'Procesado';
+                const estado = archivo.repetido ? 'Reprocesado de forma segura' : 'Procesado';
                 const advertencia = archivo.advertencia_periodo ? ` El archivo indica ${escapeHtml(archivo.periodo_interno)}, pero se registró con el periodo seleccionado.` : '';
                 return `<li><strong>${escapeHtml(archivo.archivo)}</strong> · ${escapeHtml(archivo.periodo || 'Periodo no identificado')} · ${estado}: ${Number(archivo.conciliados || 0).toLocaleString('es-MX')} conciliados, ${Number(archivo.no_conciliados || 0).toLocaleString('es-MX')} sin coincidencia, ${Number(archivo.con_diferencia_consumo || 0) + Number(archivo.con_diferencia_total || 0)} con diferencia. Movimientos 01: ${Number(movimientos['01'] || 0)}, 04: ${Number(movimientos['04'] || 0)}, 06: ${Number(movimientos['06'] || 0)}, 09: ${Number(movimientos['09'] || 0)}.${advertencia}</li>`;
             }).join('');

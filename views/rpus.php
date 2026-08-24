@@ -110,6 +110,7 @@ if (empty($_SESSION['seg_csrf'])) {
         <article class="results-card rpu-history-card">
             <div class="results-head">
                 <div><span class="eyebrow">DETALLE</span><h2>Reportes del RPU</h2><p class="section-note">Consulta fechas, total, consumo y alertas de cada periodo.</p></div>
+                <label class="rpu-history-filter rpu-meter-selector"><span>Medidor para lecturas e impresión</span><select id="rpu-history-meter" disabled><option value="all">Todos los medidores</option></select></label>
             </div>
             <div class="table-wrap">
                 <table class="control-table">
@@ -141,6 +142,7 @@ const linkState = document.getElementById('rpu-link-state');
 const chart = document.getElementById('rpu-chart');
 const historyBody = document.getElementById('rpu-history-body');
 const historyYearFilter = document.getElementById('rpu-history-year');
+const historyMeterFilter = document.getElementById('rpu-history-meter');
 const printModeFilter = document.getElementById('rpu-print-mode');
 const printRpuHistory = document.getElementById('print-rpu-history');
 const printRpuTable = document.getElementById('print-rpu-table');
@@ -270,23 +272,48 @@ function diasFacturados(row) {
     return Number.isFinite(dias) && dias > 0 ? `${number.format(dias)} días facturados` : 'Días no disponibles';
 }
 
-function textoLecturas(row) {
-    const lecturaAnterior = row.lectura_anterior;
-    const lecturaActual = row.lectura_actual;
-    if (Number(row.enriquecido_plano) !== 1 || lecturaAnterior === null || lecturaAnterior === '' || lecturaActual === null || lecturaActual === '') {
-        return '';
-    }
-    const anterior = Number(lecturaAnterior);
-    const actual = Number(lecturaActual);
+function lecturasSeleccionadas(row) {
+    const lecturas = Array.isArray(row.medidores) ? row.medidores : [];
+    const instalados = lecturas.filter((lectura) => String(lectura.tipo_medidor || '') === 'INSTALADO');
+    const consumo = instalados.filter((lectura) => esRegistroConsumo(lectura));
+    const base = consumo.length ? consumo : instalados;
+    return historyMeterFilter.value === 'all'
+        ? base
+        : base.filter((lectura) => String(lectura.numero_medidor || '') === historyMeterFilter.value);
+}
+
+function esRegistroConsumo(lectura) {
+    const etiqueta = normalizar(lectura.ley_medidor || '');
+    return etiqueta === '' || (etiqueta.startsWith('CONS') && !etiqueta.includes('RET'));
+}
+
+function detalleLectura(lectura) {
+    if (lectura.lectura_anterior === null || lectura.lectura_anterior === '' || lectura.lectura_actual === null || lectura.lectura_actual === '') return '';
+    const anterior = Number(lectura.lectura_anterior);
+    const actual = Number(lectura.lectura_actual);
     if (!Number.isFinite(anterior) || !Number.isFinite(actual)) return '';
-    return `${lecturaNumber.format(actual)} - ${lecturaNumber.format(anterior)} = ${lecturaNumber.format(actual - anterior)}`;
+    const diferencia = Number(lectura.diferencia_lectura);
+    const resultado = Number.isFinite(diferencia) ? diferencia : actual - anterior;
+    return `${lecturaNumber.format(actual)} - ${lecturaNumber.format(anterior)} = ${lecturaNumber.format(resultado)}`;
+}
+
+function textoLecturas(row) {
+    const lecturas = lecturasSeleccionadas(row);
+    return lecturas.map((lectura) => {
+        const detalle = detalleLectura(lectura);
+        if (!detalle) return '';
+        const medidor = String(lectura.numero_medidor || 'Sin serie');
+        const registro = lecturas.length > 1 ? ` (${lectura.tipo_medidor || 'Registro'} ${lectura.posicion || 1})` : '';
+        return `${medidor}${registro}: ${detalle}`;
+    }).filter(Boolean).join(' | ');
 }
 
 function lecturasFacturadas(row) {
-    const lectura = textoLecturas(row);
-    return lectura
-        ? `<strong>${escapeHtml(lectura)}</strong><small>${escapeHtml(row.medidor ? `Medidor ${row.medidor}` : 'Archivo plano')}</small>`
-        : `<small>${Number(row.enriquecido_plano) === 1 ? 'Archivo plano sin lecturas disponibles' : 'Sin archivo plano'}</small>`;
+    const lecturas = lecturasSeleccionadas(row).map((lectura) => ({lectura, detalle: detalleLectura(lectura)})).filter((item) => item.detalle);
+    const medidorSeleccionado = historyMeterFilter.value;
+    return lecturas.length
+        ? `<div class="rpu-reading-list">${lecturas.map(({lectura, detalle}) => { const multiplicador = Number(lectura.multiplicador); const diferencia = Number.isFinite(Number(lectura.diferencia_lectura)) ? Number(lectura.diferencia_lectura) : Number(lectura.lectura_actual) - Number(lectura.lectura_anterior); const consumoCalculado = Number.isFinite(multiplicador) && multiplicador > 0 ? diferencia * multiplicador : null; return `<div><small>${escapeHtml(`Medidor ${lectura.numero_medidor || 'Sin serie'} · Lectura de consumo`)}</small><strong>${escapeHtml(detalle)}</strong>${consumoCalculado !== null ? `<small>Multiplicador × ${escapeHtml(multiplicador)} · Consumo calculado ${escapeHtml(number.format(consumoCalculado))} kWh</small>` : ''}</div>`; }).join('')}</div>`
+        : `<small>${escapeHtml(medidorSeleccionado === 'all' ? (Number(row.enriquecido_plano) === 1 ? 'Archivo plano sin lecturas disponibles' : 'Sin archivo plano') : 'Sin lectura para el medidor seleccionado')}</small>`;
 }
 
 function etiquetaMovimiento(row) {
@@ -419,7 +446,11 @@ function encabezadoFormalRpu(etiqueta) {
     const encabezado = datosEncabezadoRpu();
     const ubicacion = [encabezado.domicilio, encabezado.localidad, encabezado.municipio].filter(Boolean).map(escapeHtml).join(' - ');
     const cct = encabezado.cct ? `<p><b>CCT vinculado:</b> ${escapeHtml(encabezado.cct)}</p>` : '';
-    return `<header class="rpu-export-header"><span>SECRETARIA DE EDUCACION GUERRERO</span><h1>RPU ${escapeHtml(currentRpu)}</h1><p class="rpu-export-name">${escapeHtml(encabezado.nombre)}</p>${cct}<p>${ubicacion}</p><small>${escapeHtml(etiqueta)}</small></header>`;
+    return `<header class="rpu-export-header"><span>SECRETARIA DE EDUCACION GUERRERO</span><h1>RPU ${escapeHtml(currentRpu)}</h1><p class="rpu-export-name">${escapeHtml(encabezado.nombre)}</p>${cct}<p>${ubicacion}</p><small>${escapeHtml(etiqueta)} · ${escapeHtml(etiquetaMedidorSeleccionado())}</small></header>`;
+}
+
+function etiquetaMedidorSeleccionado() {
+    return historyMeterFilter.value === 'all' ? 'Lecturas: todos los medidores' : `Lecturas: medidor ${historyMeterFilter.value}`;
 }
 
 function contenidoImpresionFormal(historial) {
@@ -526,9 +557,9 @@ function abrirImpresionRpu() {
             const height = Math.max(10, Math.round((Number(fila.total) || 0) / maximo * 180));
             return `<div class="bar"><i style="height:${height}px"></i><strong>${money.format(fila.total || 0)}</strong><small>${escapeHtml(fila.anio)}-${String(fila.mes).padStart(2, '0')}<br>${number.format(fila.consumo || 0)} kWh</small></div>`;
         }).join('');
-        return `<section class="summary-sheet"><header><span>SECRETARÍA DE EDUCACIÓN GUERRERO</span><h1>RPU ${escapeHtml(currentRpu)}</h1><p>${escapeHtml(etiqueta)} · ${number.format(suma.registros)} reportes · Total acumulado ${money.format(suma.total_acumulado)} · Consumo ${number.format(suma.consumo_acumulado)} kWh</p></header><div class="chart">${barras}</div><table><thead><tr><th>Periodo</th><th>Total</th><th>Consumo</th><th>Tarifa</th><th>Alertas</th></tr></thead><tbody>${filas.slice().reverse().map((fila) => `<tr><td>${escapeHtml(fila.anio)}-${String(fila.mes).padStart(2, '0')}</td><td>${money.format(fila.total || 0)}</td><td>${number.format(fila.consumo || 0)} kWh</td><td>${escapeHtml(fila.tarifa_cfe || 'Sin tarifa')}</td><td>${escapeHtml(fila.alertas || 'Sin alertas')}</td></tr>`).join('')}</tbody></table></section>`;
+        return `<section class="summary-sheet"><header><span>SECRETARÍA DE EDUCACIÓN GUERRERO</span><h1>RPU ${escapeHtml(currentRpu)}</h1><p>${escapeHtml(etiqueta)} · ${number.format(suma.registros)} reportes · Total acumulado ${money.format(suma.total_acumulado)} · Consumo ${number.format(suma.consumo_acumulado)} kWh</p><small>${escapeHtml(etiquetaMedidorSeleccionado())}</small></header><div class="chart">${barras}</div><table><thead><tr><th>Periodo</th><th>Total</th><th>Consumo</th><th>Tarifa</th><th>Alertas</th></tr></thead><tbody>${filas.slice().reverse().map((fila) => `<tr><td>${escapeHtml(fila.anio)}-${String(fila.mes).padStart(2, '0')}</td><td>${money.format(fila.total || 0)}</td><td>${number.format(fila.consumo || 0)} kWh</td><td>${escapeHtml(fila.tarifa_cfe || 'Sin tarifa')}</td><td>${escapeHtml(fila.alertas || 'Sin alertas')}</td></tr>`).join('')}</tbody></table></section>`;
     };
-    const detallePorPeriodo = historial.map((fila, index) => `<section class="period-sheet"><header><span>SECRETARÍA DE EDUCACIÓN GUERRERO</span><h1>RPU ${escapeHtml(currentRpu)}</h1><p>Periodo ${escapeHtml(fila.anio)}-${String(fila.mes).padStart(2, '0')} · Hoja ${index + 1} de ${historial.length}</p></header><div class="period-grid"><div><span>Total facturado</span><strong>${money.format(fila.total || 0)}</strong></div><div><span>Consumo</span><strong>${number.format(fila.consumo || 0)} kWh</strong></div><div><span>Tarifa</span><strong>${escapeHtml(fila.tarifa_cfe || 'Sin tarifa')}</strong></div><div><span>Fechas del recibo</span><strong>${escapeHtml(fila.desde || 'Sin fecha')} / ${escapeHtml(fila.hasta || 'Sin fecha')}</strong></div></div><div class="single-bar"><i style="height:${Math.max(30, Math.round((Number(fila.total) || 0) / maxTotal * 260))}px"></i><strong>${money.format(fila.total || 0)}</strong></div><p class="alerts"><b>Alertas:</b> ${escapeHtml(fila.alertas || 'Sin alertas')}</p></section>`).join('');
+    const detallePorPeriodo = historial.map((fila, index) => `<section class="period-sheet"><header><span>SECRETARÍA DE EDUCACIÓN GUERRERO</span><h1>RPU ${escapeHtml(currentRpu)}</h1><p>Periodo ${escapeHtml(fila.anio)}-${String(fila.mes).padStart(2, '0')} · Hoja ${index + 1} de ${historial.length}</p><small>${escapeHtml(etiquetaMedidorSeleccionado())}</small></header><div class="period-grid"><div><span>Total facturado</span><strong>${money.format(fila.total || 0)}</strong></div><div><span>Consumo</span><strong>${number.format(fila.consumo || 0)} kWh</strong></div><div><span>Tarifa</span><strong>${escapeHtml(fila.tarifa_cfe || 'Sin tarifa')}</strong></div><div><span>Fechas del recibo</span><strong>${escapeHtml(fila.desde || 'Sin fecha')} / ${escapeHtml(fila.hasta || 'Sin fecha')}</strong></div></div><div class="single-bar"><i style="height:${Math.max(30, Math.round((Number(fila.total) || 0) / maxTotal * 260))}px"></i><strong>${money.format(fila.total || 0)}</strong></div><p class="alerts"><b>Lectura:</b> ${escapeHtml(textoLecturas(fila) || 'Sin lectura para el medidor seleccionado')}</p><p class="alerts"><b>Alertas:</b> ${escapeHtml(fila.alertas || 'Sin alertas')}</p></section>`).join('');
     const resumenesPorAnio = historyYearFilter.value === 'all'
         ? Object.values(historial.reduce((grupos, fila) => {
             (grupos[fila.anio] ||= []).push(fila);
@@ -554,12 +585,21 @@ function cargarAniosHistorial(historial) {
     historyYearFilter.value = years.includes(year) ? year : 'all';
 }
 
+function cargarMedidoresHistorial(historial) {
+    const seleccionado = historyMeterFilter.value;
+    const medidores = [...new Set(historial.flatMap((fila) => Array.isArray(fila.medidores) ? fila.medidores : []).filter((lectura) => String(lectura.tipo_medidor || '') === 'INSTALADO' && esRegistroConsumo(lectura)).map((lectura) => String(lectura.numero_medidor || '').trim()).filter(Boolean))].sort();
+    historyMeterFilter.innerHTML = `<option value="all">Todos los medidores</option>${medidores.map((medidor) => `<option value="${escapeHtml(medidor)}">Medidor ${escapeHtml(medidor)}</option>`).join('')}`;
+    historyMeterFilter.disabled = medidores.length === 0;
+    historyMeterFilter.value = medidores.includes(seleccionado) ? seleccionado : 'all';
+}
+
 function render(data) {
     currentHistory = data.historial || [];
     currentSchool = (data.vinculos || [])[0] || {};
     currentCfe = data.cfe || {};
     currentSystemPeriod = data.ultimo_periodo_sistema || '';
     cargarAniosHistorial(currentHistory);
+    cargarMedidoresHistorial(currentHistory);
     renderSchool(data);
     aplicarFiltroHistorial();
     summary.hidden = false;
@@ -569,6 +609,7 @@ function render(data) {
 
 async function searchRpu(rpu) {
     currentRpu = rpu;
+    historyMeterFilter.value = 'all';
     const button = form.querySelector('button[type="submit"]');
     button.disabled = true;
     button.innerHTML = '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Cargando expediente';
@@ -608,6 +649,7 @@ if (/^[A-Za-z0-9]{4,20}$/.test(rpuInicial)) {
 }
 
 historyYearFilter.addEventListener('change', aplicarFiltroHistorial);
+historyMeterFilter.addEventListener('change', aplicarFiltroHistorial);
 printRpuHistory.addEventListener('click', abrirImpresionRpu);
 printRpuTable.addEventListener('click', imprimirTablaRpu);
 exportRpuExcel.addEventListener('click', exportarTablaRpuExcel);

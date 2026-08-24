@@ -255,6 +255,56 @@ CREATE TABLE IF NOT EXISTS `cfe_plano_conciliaciones` (
   INDEX `idx_cfe_plano_conciliaciones_rpu` (`RPU`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS `cfe_lecturas_medidores` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `archivo_plano_id` INT NOT NULL,
+  `fila_origen` INT NOT NULL,
+  `consumo_id` INT NULL,
+  `RPU` VARCHAR(20) NOT NULL,
+  `tipo_medidor` VARCHAR(12) NOT NULL,
+  `posicion` TINYINT UNSIGNED NOT NULL,
+  `numero_medidor` VARCHAR(100) NULL,
+  `caratula` VARCHAR(50) NULL,
+  `ley_medidor` VARCHAR(100) NULL,
+  `anomalia` VARCHAR(100) NULL,
+  `lectura_anterior` DECIMAL(18,4) NULL,
+  `lectura_actual` DECIMAL(18,4) NULL,
+  `diferencia_lectura` DECIMAL(18,4) NULL,
+  `multiplicador` DECIMAL(18,4) NULL,
+  `creado_en` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `actualizado_en` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uq_cfe_lecturas_medidor_origen` (`archivo_plano_id`, `fila_origen`, `tipo_medidor`, `posicion`),
+  INDEX `idx_cfe_lecturas_medidores_consumo` (`consumo_id`),
+  INDEX `idx_cfe_lecturas_medidores_rpu_numero` (`RPU`, `numero_medidor`),
+  INDEX `idx_cfe_lecturas_medidores_archivo` (`archivo_plano_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `cfe_plano_detalles` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `archivo_plano_id` INT NOT NULL,
+  `fila_origen` INT NOT NULL,
+  `consumo_id` INT NULL,
+  `RPU` VARCHAR(20) NOT NULL,
+  `direccion_plano` VARCHAR(255) NULL,
+  `poblacion_plano` VARCHAR(255) NULL,
+  `municipio_plano` VARCHAR(255) NULL,
+  `estado_plano` VARCHAR(100) NULL,
+  `colonia_plano` VARCHAR(255) NULL,
+  `calle_1` VARCHAR(255) NULL,
+  `calle_2` VARCHAR(255) NULL,
+  `carga_contratada` DECIMAL(18,4) NULL,
+  `carga_conectada` DECIMAL(18,4) NULL,
+  `medidores_instalados_declarados` TINYINT UNSIGNED NULL,
+  `medidores_retirados_declarados` TINYINT UNSIGNED NULL,
+  `tipo_estimacion` VARCHAR(50) NULL,
+  `creado_en` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `actualizado_en` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uq_cfe_plano_detalles_origen` (`archivo_plano_id`, `fila_origen`),
+  INDEX `idx_cfe_plano_detalles_consumo` (`consumo_id`),
+  INDEX `idx_cfe_plano_detalles_rpu` (`RPU`),
+  INDEX `idx_cfe_plano_detalles_ubicacion` (`poblacion_plano`, `municipio_plano`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS `cfe_documentos_pdf` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   `anio` SMALLINT UNSIGNED NOT NULL,

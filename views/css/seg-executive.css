@@ -2021,6 +2021,86 @@ body {
     gap: 3px;
 }
 
+.match-field-comparison {
+    display: grid;
+    gap: 5px;
+    margin-top: 8px;
+}
+
+.match-field-row {
+    align-items: center;
+    background: #faf8f5;
+    border: 1px solid #ebe3da;
+    border-radius: 5px;
+    display: grid;
+    gap: 6px;
+    grid-template-columns: 116px minmax(110px, 1fr) minmax(110px, 1fr) minmax(110px, 1fr) 18px;
+    padding: 6px 8px;
+}
+
+.match-field-row > span {
+    color: #62464b;
+    font-size: 10px;
+    font-weight: 800;
+}
+
+.match-field-row small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.match-field-row b {
+    color: #594146;
+    font-weight: 800;
+}
+
+.match-field-row i {
+    font-size: 13px;
+    text-align: center;
+}
+
+.match-field-row.is-match i {
+    color: #168354;
+}
+
+.match-field-row.is-review i {
+    color: #a87822;
+}
+
+.match-plane-source {
+    align-items: center;
+    color: #6a562d !important;
+    display: flex;
+    font-weight: 700;
+    gap: 5px;
+}
+
+.rpu-reading-list {
+    display: grid;
+    gap: 5px;
+}
+
+.rpu-reading-list > div {
+    background: #faf8f5;
+    border-left: 3px solid #bfa276;
+    display: grid;
+    gap: 2px;
+    padding: 4px 7px;
+}
+
+.rpu-reading-list small {
+    color: #74645c;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.rpu-reading-list strong {
+    color: #31252a;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
 .school-match-card .status-pill {
     justify-self: start;
 }
@@ -2215,6 +2295,25 @@ body {
 
     .school-match-card .btn-seg {
         width: 100%;
+    }
+
+    .match-field-row {
+        align-items: start;
+        grid-template-columns: 1fr 18px;
+    }
+
+    .match-field-row > span {
+        grid-column: 1;
+    }
+
+    .match-field-row small {
+        grid-column: 1;
+        white-space: normal;
+    }
+
+    .match-field-row i {
+        grid-column: 2;
+        grid-row: 1 / span 4;
     }
 
     .school-match-actions {

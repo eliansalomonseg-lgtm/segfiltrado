@@ -349,13 +349,21 @@ class RpuController
             $pagina = min($pagina, $paginas);
             $offset = ($pagina - 1) * $porPagina;
             $consulta = $conexion->prepare(
-                'SELECT cc.RPU, cc.division_cfe, cc.nombre_cfe, cc.direccion_cfe, cc.poblacion_cfe, cc.tarifa_cfe, cc.desde, cc.hasta, cc.total, cc.consumo
+                'SELECT cc.RPU, cc.division_cfe, cc.nombre_cfe, cc.direccion_cfe, cc.poblacion_cfe, cc.tarifa_cfe, cc.desde, cc.hasta, cc.total, cc.consumo,
+                        pd.direccion_plano, pd.poblacion_plano, pd.municipio_plano, pd.estado_plano, pd.colonia_plano, pd.calle_1, pd.calle_2
                  FROM (
                     SELECT MAX(id) AS consumo_id
                     FROM cfe_consumos FORCE INDEX (idx_cfe_consumos_rpu_id)
                     GROUP BY RPU
                  ) ultimos
                  INNER JOIN cfe_consumos cc ON cc.id = ultimos.consumo_id
+                 LEFT JOIN cfe_plano_detalles pd ON pd.id = (
+                    SELECT detalle.id
+                    FROM cfe_plano_detalles detalle
+                    WHERE detalle.consumo_id = cc.id
+                    ORDER BY detalle.actualizado_en DESC, detalle.id DESC
+                    LIMIT 1
+                 )
                  LEFT JOIN (SELECT DISTINCT RPU FROM escuelas_rpu) er ON er.RPU = cc.RPU
                  WHERE er.RPU IS NULL
                  ORDER BY cc.id DESC
@@ -365,7 +373,6 @@ class RpuController
             $consulta->bindValue(':offset', $offset, PDO::PARAM_INT);
             $consulta->execute();
             $coincidencias = [];
-            $indiceEscuelas = $this->indiceEscuelasPorUbicacion($conexion);
             foreach ($consulta->fetchAll() as $fila) {
                 $referencia = $this->referenciaGeograficaCfe((string) ($fila['poblacion_cfe'] ?? ''));
                 $coincidencias[] = [
@@ -376,21 +383,20 @@ class RpuController
                         'direccion' => (string) ($fila['direccion_cfe'] ?? ''),
                         'poblacion' => (string) ($fila['poblacion_cfe'] ?? ''),
                         'tarifa' => (string) ($fila['tarifa_cfe'] ?? ''),
+                        'plano' => [
+                            'direccion' => (string) ($fila['direccion_plano'] ?? ''),
+                            'poblacion' => (string) ($fila['poblacion_plano'] ?? ''),
+                            'municipio' => (string) ($fila['municipio_plano'] ?? ''),
+                            'estado' => (string) ($fila['estado_plano'] ?? ''),
+                            'colonia' => (string) ($fila['colonia_plano'] ?? ''),
+                            'calle_1' => (string) ($fila['calle_1'] ?? ''),
+                            'calle_2' => (string) ($fila['calle_2'] ?? '')
+                        ],
                         'periodo' => trim((string) ($fila['desde'] ?? '') . ' / ' . (string) ($fila['hasta'] ?? '')),
                         'total' => (float) $fila['total'],
                         'consumo' => (float) $fila['consumo']
                     ],
-                    'sugerencias' => $this->evaluarSugerencias(
-                        $this->candidatosRapidosPorUbicacion(
-                            $indiceEscuelas,
-                            $referencia,
-                            (string) ($fila['nombre_cfe'] ?? ''),
-                            (string) ($fila['direccion_cfe'] ?? '')
-                        ),
-                        (string) ($fila['nombre_cfe'] ?? ''),
-                        $referencia,
-                        (string) ($fila['direccion_cfe'] ?? '')
-                    )
+                    'sugerencias' => $this->sugerencias($conexion, (string) $fila['RPU'], $fila)
                 ];
             }
             $this->responder([
@@ -1294,7 +1300,37 @@ class RpuController
              ORDER BY cr.anio DESC, cr.mes DESC, cc.hasta DESC, cc.id DESC'
         );
         $consulta->execute([$rpu]);
-        return $consulta->fetchAll();
+        $historial = $consulta->fetchAll();
+        if (!$historial) {
+            return [];
+        }
+        $lecturas = $conexion->prepare(
+            'SELECT consumo_id, numero_medidor, tipo_medidor, posicion, ley_medidor, lectura_anterior, lectura_actual, diferencia_lectura, multiplicador
+             FROM cfe_lecturas_medidores
+             WHERE RPU = ? AND consumo_id IS NOT NULL
+             ORDER BY consumo_id, tipo_medidor, posicion'
+        );
+        $lecturas->execute([$rpu]);
+        $porConsumo = [];
+        foreach ($lecturas->fetchAll() as $lectura) {
+            $porConsumo[(int) $lectura['consumo_id']][] = $lectura;
+        }
+        foreach ($historial as &$fila) {
+            $fila['medidores'] = $porConsumo[(int) $fila['id']] ?? [];
+            if (!$fila['medidores'] && !empty($fila['medidor'])) {
+                $fila['medidores'][] = [
+                    'numero_medidor' => $fila['medidor'],
+                    'tipo_medidor' => 'INSTALADO',
+                    'posicion' => 1,
+                    'lectura_anterior' => $fila['lectura_anterior'],
+                    'lectura_actual' => $fila['lectura_actual'],
+                    'diferencia_lectura' => null,
+                    'multiplicador' => $fila['multiplicador']
+                ];
+            }
+        }
+        unset($fila);
+        return $historial;
     }
 
     private function vinculos(PDO $conexion, string $rpu): array
@@ -1318,7 +1354,29 @@ class RpuController
         $poblacion = trim((string) ($ultimo['poblacion_cfe'] ?? ''));
         $nombre = trim((string) ($ultimo['nombre_cfe'] ?? ''));
         $direccion = trim((string) ($ultimo['direccion_cfe'] ?? ''));
-        $referencia = $this->referenciaGeograficaCfe($poblacion);
+        $plano = is_array($ultimo['plano'] ?? null) ? $ultimo['plano'] : [
+            'direccion' => (string) ($ultimo['direccion_plano'] ?? ''),
+            'poblacion' => (string) ($ultimo['poblacion_plano'] ?? ''),
+            'municipio' => (string) ($ultimo['municipio_plano'] ?? ''),
+            'estado' => (string) ($ultimo['estado_plano'] ?? ''),
+            'colonia' => (string) ($ultimo['colonia_plano'] ?? ''),
+            'calle_1' => (string) ($ultimo['calle_1'] ?? ''),
+            'calle_2' => (string) ($ultimo['calle_2'] ?? '')
+        ];
+        $referenciaCfe = $this->referenciaGeograficaCfe($poblacion);
+        $referenciaPlano = $this->referenciaGeograficaCfe((string) ($plano['poblacion'] ?? ''));
+        $municipioPlano = trim((string) ($plano['municipio'] ?? ''));
+        $referencia = [
+            'localidad' => $referenciaPlano['localidad'] !== '' ? $referenciaPlano['localidad'] : $referenciaCfe['localidad'],
+            'municipio' => $municipioPlano !== '' ? $municipioPlano : ($referenciaPlano['municipio'] !== '' ? $referenciaPlano['municipio'] : $referenciaCfe['municipio']),
+            'texto' => implode(' ', array_filter([$referenciaCfe['texto'], $referenciaPlano['texto'], $plano['direccion'] ?? '', $plano['colonia'] ?? '', $plano['calle_1'] ?? '', $plano['calle_2'] ?? ''])),
+            'localidad_cfe' => $referenciaCfe['localidad'],
+            'municipio_cfe' => $referenciaCfe['municipio'],
+            'localidad_plano' => $referenciaPlano['localidad'],
+            'municipio_plano' => $municipioPlano !== '' ? $municipioPlano : $referenciaPlano['municipio'],
+            'direccion_plano' => trim(implode(' ', array_filter([$plano['direccion'] ?? '', $plano['colonia'] ?? '', $plano['calle_1'] ?? '', $plano['calle_2'] ?? ''])))
+        ];
+        $direccionBusqueda = trim(implode(' ', array_filter([$direccion, $referencia['direccion_plano']])));
         if ($referencia['localidad'] === '' && $referencia['municipio'] === '') {
             return [];
         }
@@ -1357,9 +1415,9 @@ class RpuController
                 break;
             }
         }
-        if ($busquedaAmplia) {
+        if ($busquedaAmplia && !$filas) {
             $indice = $this->indiceEscuelasPorUbicacion($conexion);
-            $candidatosPrecisos = $this->candidatosRapidosPorUbicacion($indice, $referencia, $nombre, $direccion);
+            $candidatosPrecisos = $this->candidatosRapidosPorUbicacion($indice, $referencia, $nombre, $direccionBusqueda);
             if ($candidatosPrecisos) {
                 $filas = $candidatosPrecisos;
             }
@@ -1412,19 +1470,6 @@ class RpuController
     {
         $localidad = $this->normalizar((string) ($referencia['localidad'] ?? ''));
         $municipio = $this->normalizar((string) ($referencia['municipio'] ?? ''));
-        $contextoTerritorial = implode(' ', [(string) ($referencia['texto'] ?? ''), $direccion]);
-        $candidatosTerritoriales = [];
-        foreach (($indice['municipio'] ?? []) as $municipioCatalogo => $filas) {
-            if (!$this->coincideTerritorioEnTexto($municipioCatalogo, $contextoTerritorial)) {
-                continue;
-            }
-            foreach ($filas as $fila) {
-                $candidatosTerritoriales[(string) ($fila['id'] ?? $fila['CCT'])] = $fila;
-            }
-        }
-        if ($candidatosTerritoriales) {
-            return array_values($candidatosTerritoriales);
-        }
         if ($localidad !== '' && $municipio !== '') {
             $exactos = $indice['ubicacion'][$localidad . '|' . $municipio] ?? [];
             if ($exactos) {
@@ -1439,6 +1484,19 @@ class RpuController
         }
         if ($municipio !== '' && !empty($indice['municipio'][$municipio])) {
             return $indice['municipio'][$municipio];
+        }
+        $contextoTerritorial = implode(' ', [(string) ($referencia['texto'] ?? ''), $direccion]);
+        $candidatosTerritoriales = [];
+        foreach (($indice['municipio'] ?? []) as $municipioCatalogo => $filas) {
+            if (!$this->coincideTerritorioEnTexto($municipioCatalogo, $contextoTerritorial)) {
+                continue;
+            }
+            foreach ($filas as $fila) {
+                $candidatosTerritoriales[(string) ($fila['id'] ?? $fila['CCT'])] = $fila;
+            }
+        }
+        if ($candidatosTerritoriales) {
+            return array_values($candidatosTerritoriales);
         }
 
         $candidatos = [];
@@ -1558,6 +1616,8 @@ class RpuController
             'confianza' => (int) ($evaluacion['confianza'] ?? $score),
             'nivel_coincide' => (bool) ($evaluacion['nivel_coincide'] ?? false),
             'evidencia_tipo' => (string) ($evaluacion['evidencia_tipo'] ?? ''),
+            'evidencias' => $evaluacion['evidencias'] ?? [],
+            'comparacion' => $evaluacion['comparacion'] ?? [],
             'ubicacion' => (string) ($evaluacion['ubicacion'] ?? ''),
             'ubicacion_confirmada' => (bool) ($evaluacion['ubicacion_confirmada'] ?? false),
             'administrativa' => (bool) ($evaluacion['administrativa'] ?? false),
@@ -1576,7 +1636,8 @@ class RpuController
         $municipio = $this->normalizar((string) ($escuela['NOMBREMUN'] ?? ''));
         $referenciaLocalidad = $this->normalizar((string) ($referencia['localidad'] ?? ''));
         $referenciaMunicipio = $this->normalizar((string) ($referencia['municipio'] ?? ''));
-        $contextoCfe = implode(' ', [(string) ($referencia['texto'] ?? ''), $direccionCfe, $nombreCfe]);
+        $direccionPlano = trim((string) ($referencia['direccion_plano'] ?? ''));
+        $contextoCfe = implode(' ', [(string) ($referencia['texto'] ?? ''), $direccionCfe, $direccionPlano, $nombreCfe]);
         $coincideLocalidad = $localidad !== '' && ($this->coincideTerritorioEnTexto($localidad, $referenciaLocalidad) || $this->coincideTerritorioEnTexto($localidad, $contextoCfe));
         $coincideMunicipio = $municipio !== '' && ($this->coincideTerritorioEnTexto($municipio, $referenciaMunicipio) || $this->coincideTerritorioEnTexto($municipio, $contextoCfe));
         $ubicacion = $coincideLocalidad ? 'Misma localidad/población' : ($coincideMunicipio ? 'Municipio coincidente' : 'Nombre o domicilio cercano');
@@ -1587,7 +1648,7 @@ class RpuController
         ));
         $activa = $this->estaActiva((string) ($escuela['STATUS'] ?? ''));
         $administrativa = $this->esAdministrativa($escuela);
-        $direccion = $this->normalizar($direccionCfe);
+        $direccion = $this->normalizar(trim($direccionCfe . ' ' . $direccionPlano));
         $domicilio = $this->normalizar((string) ($escuela['DOMICILIO'] ?? ''));
         $coincidenciasDireccion = 0;
         if ($direccion !== '' && $domicilio !== '') {
@@ -1610,12 +1671,60 @@ class RpuController
         if (!$tipoCompatible) {
             $confianza = 0;
         }
+        $evidencias = [];
+        if ($coincideLocalidad) {
+            $evidencias[] = 'Localidad coincide';
+        }
+        if ($coincideMunicipio) {
+            $evidencias[] = 'Municipio coincide';
+        }
+        if ($coincidenciasDireccion > 0) {
+            $evidencias[] = 'Domicilio con ' . $coincidenciasDireccion . ' coincidencia' . ($coincidenciasDireccion === 1 ? '' : 's');
+        }
+        if ($nivelCoincide) {
+            $evidencias[] = 'Nivel coincide';
+        }
+        if ($similitud >= 45) {
+            $evidencias[] = 'Nombre ' . (int) round($similitud) . '%';
+        }
+        $comparacion = [
+            [
+                'campo' => 'Población / localidad',
+                'cfe' => (string) ($referencia['localidad_cfe'] ?? $referencia['localidad'] ?? ''),
+                'plano' => (string) ($referencia['localidad_plano'] ?? ''),
+                'catalogo' => (string) ($escuela['NOMBRELOC'] ?? ''),
+                'coincide' => $coincideLocalidad
+            ],
+            [
+                'campo' => 'Municipio',
+                'cfe' => (string) ($referencia['municipio_cfe'] ?? $referencia['municipio'] ?? ''),
+                'plano' => (string) ($referencia['municipio_plano'] ?? ''),
+                'catalogo' => (string) ($escuela['NOMBREMUN'] ?? ''),
+                'coincide' => $coincideMunicipio
+            ],
+            [
+                'campo' => 'Domicilio',
+                'cfe' => $direccionCfe,
+                'plano' => $direccionPlano,
+                'catalogo' => (string) ($escuela['DOMICILIO'] ?? ''),
+                'coincide' => $coincidenciasDireccion > 0
+            ],
+            [
+                'campo' => 'Nivel',
+                'cfe' => $nivelCfe ?? '',
+                'plano' => '',
+                'catalogo' => (string) ($escuela['NIVEL'] ?? '') !== '' ? (string) $escuela['NIVEL'] : (string) ($escuela['SUBNIVEL'] ?? ''),
+                'coincide' => $nivelCoincide
+            ]
+        ];
         return [
             'score' => max(0, min(100, (int) round($confianza))),
             'similitud' => round($similitud, 2),
             'confianza' => max(0, min(100, (int) round($confianza))),
             'nivel_coincide' => $nivelCoincide,
             'evidencia_tipo' => implode(' / ', $etiquetasCoincidentes),
+            'evidencias' => $evidencias,
+            'comparacion' => $comparacion,
             'ubicacion' => $ubicacion,
             'ubicacion_confirmada' => $ubicacionConfirmada,
             'administrativa' => $administrativa,
