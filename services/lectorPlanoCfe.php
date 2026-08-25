@@ -48,6 +48,10 @@ final class LectorPlanoCfe
     public function valor(array $registro, array $claves): string
     {
         foreach ($claves as $clave) {
+            $directa = trim($clave);
+            if (array_key_exists($directa, $registro) && trim((string) $registro[$directa]) !== '') {
+                return trim((string) $registro[$directa]);
+            }
             $normalizada = $this->normalizarTexto($clave);
             if (array_key_exists($normalizada, $registro) && trim((string) $registro[$normalizada]) !== '') {
                 return trim((string) $registro[$normalizada]);
