@@ -183,6 +183,10 @@ class RpuController
             $vinculos = $this->vinculos($conexion, $rpu);
             $ultimoPeriodoSistema = $conexion->query('SELECT anio, mes FROM cfe_reportes ORDER BY anio DESC, mes DESC, id DESC LIMIT 1')->fetch();
             $ultimo = $historial[0] ?? null;
+            $ubicacionPlano = $this->ubicacionPlano($conexion, $rpu);
+            if ($ultimo !== null && $ubicacionPlano !== []) {
+                $ultimo['plano'] = $ubicacionPlano;
+            }
             $cctsVinculados = array_flip(array_map(static fn (array $vinculo): string => (string) $vinculo['cct'], $vinculos));
             $incluirSugerencias = (string) ($_POST['incluir_sugerencias'] ?? '1') !== '0';
             $sugerencias = $incluirSugerencias
@@ -205,7 +209,8 @@ class RpuController
                     'direccion' => $ultimo['direccion_cfe'] ?? '',
                     'poblacion' => $ultimo['poblacion_cfe'] ?? ($vinculos[0]['poblacion_cfe'] ?? ''),
                     'tarifa' => $ultimo['tarifa_cfe'] ?? ($vinculos[0]['tarifa_cfe'] ?? ''),
-                    'periodo' => $ultimo ? sprintf('%04d-%02d', (int) $ultimo['anio'], (int) $ultimo['mes']) : ''
+                    'periodo' => $ultimo ? sprintf('%04d-%02d', (int) $ultimo['anio'], (int) $ultimo['mes']) : '',
+                    'plano' => $ubicacionPlano
                 ],
                 'vinculos' => $vinculos,
                 'sugerencias' => $sugerencias,
@@ -1344,6 +1349,34 @@ class RpuController
         );
         $consulta->execute([$rpu]);
         return array_map(fn (array $fila): array => $this->escuelaDesdeFila($fila, 100, 'Vinculo confirmado'), $consulta->fetchAll());
+    }
+
+    private function ubicacionPlano(PDO $conexion, string $rpu): array
+    {
+        $consulta = $conexion->prepare(
+            'SELECT pd.direccion_plano, pd.poblacion_plano, pd.municipio_plano, pd.estado_plano, pd.colonia_plano, pd.calle_1, pd.calle_2
+             FROM cfe_plano_detalles pd
+             INNER JOIN cfe_consumos cc ON cc.id = pd.consumo_id
+             INNER JOIN cfe_reportes cr ON cr.id = cc.reporte_id
+             WHERE pd.RPU = ?
+               AND (pd.direccion_plano IS NOT NULL OR pd.poblacion_plano IS NOT NULL OR pd.municipio_plano IS NOT NULL OR pd.colonia_plano IS NOT NULL)
+             ORDER BY cr.anio DESC, cr.mes DESC, pd.id DESC
+             LIMIT 1'
+        );
+        $consulta->execute([$rpu]);
+        $fila = $consulta->fetch();
+        if (!$fila) {
+            return [];
+        }
+        return [
+            'direccion' => trim((string) ($fila['direccion_plano'] ?? '')),
+            'poblacion' => trim((string) ($fila['poblacion_plano'] ?? '')),
+            'municipio' => trim((string) ($fila['municipio_plano'] ?? '')),
+            'estado' => trim((string) ($fila['estado_plano'] ?? '')),
+            'colonia' => trim((string) ($fila['colonia_plano'] ?? '')),
+            'calle_1' => trim((string) ($fila['calle_1'] ?? '')),
+            'calle_2' => trim((string) ($fila['calle_2'] ?? ''))
+        ];
     }
 
     private function sugerencias(PDO $conexion, string $rpu, ?array $ultimo, bool $busquedaAmplia = true): array

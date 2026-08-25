@@ -533,7 +533,7 @@ function renderRpuMatch(data) {
     const cfe = data.cfe || {};
     const plano = cfe.plano || {};
     const planoUbicacion = [plano.direccion, plano.colonia, plano.poblacion, plano.municipio].filter(Boolean).join(' · ');
-    const planoDetalle = planoUbicacion ? `<small class="match-plane-source"><i class="bi bi-file-earmark-check"></i>Plano CFE: ${matchEscape(planoUbicacion)}</small>` : '';
+    const planoDetalle = planoUbicacion ? `<small class="match-plane-source"><i class="bi bi-file-earmark-check"></i>UbicaciÃ³n del archivo plano: ${matchEscape(planoUbicacion)}</small>` : '';
     const cfeCard = `<article class="match-cfe-card"><span>RECIBO CFE</span><strong>${matchEscape(cfe.rpu || data.rpu)} - ${matchEscape(cfe.nombre || 'Sin nombre')}</strong><small>${matchEscape(cfe.direccion || 'Sin dirección')} · ${matchEscape(cfe.poblacion || 'Sin población')}</small>${planoDetalle}<small>División ${matchEscape(cfe.division || 'Sin división')} · Tarifa ${matchEscape(cfe.tarifa || 'N/D')} · Periodo ${matchEscape(cfe.periodo || 'Sin periodo')}</small></article>`;
     const vinculados = data.vinculos || [];
     const sugerencias = data.sugerencias || [];
