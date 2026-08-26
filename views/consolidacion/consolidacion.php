@@ -171,14 +171,14 @@ try {
                         <input id="archivos_planos" name="archivos_planos[]" type="file" accept=".xlsx,.csv" multiple>
                         <span class="file-icon"><i class="bi bi-file-earmark-spreadsheet"></i></span>
                         <strong>Selecciona archivos planos de CFE</strong>
-                        <small>Complementan consumos existentes por RPU y periodo. No crean facturación nueva.</small>
+                        <small>Enriquecen facturas existentes o guardan historial consultable cuando solo existe el archivo plano.</small>
                         <em class="file-name">Seleccionar XLSX o CSV</em>
                     </label>
                     <div id="selected-planos" class="plano-summary"><strong>Sin archivos planos seleccionados</strong><span>Selecciona el mes y año que corresponde a cada archivo.</span></div>
                 </div>
                 <div class="col-lg-4">
-                    <div class="plano-summary"><strong>Conciliación segura</strong><span>Se requiere RPU, fecha desde y fecha hasta. Las diferencias de consumo o total se registran para revisión.</span></div>
-                    <button id="upload-planos" class="btn-seg compact-action w-100 mt-3" type="submit" disabled><i class="bi bi-database-add me-2"></i>Enriquecer consumos</button>
+                    <div class="plano-summary"><strong>Conciliación segura</strong><span>Sin factura, el plano queda como historial del RPU. No modifica consumos ni totales ya cargados.</span></div>
+                    <button id="upload-planos" class="btn-seg compact-action w-100 mt-3" type="submit" disabled><i class="bi bi-database-add me-2"></i>Procesar archivos planos</button>
                 </div>
             </div>
             <div id="plano-result" class="plano-result" hidden></div>
@@ -391,7 +391,7 @@ try {
             allowEscapeKey: false,
             didOpen: () => Swal.showLoading()
         });
-        planoResult.innerHTML = '<strong>Procesando archivos planos...</strong><span>Conciliando RPU y periodos existentes.</span>';
+        planoResult.innerHTML = '<strong>Procesando archivos planos...</strong><span>Conciliando facturas existentes y resguardando periodos sin factura.</span>';
         const body = new FormData();
         body.append('accion', 'importar_archivos_planos');
         body.append('csrf', token);
@@ -412,7 +412,7 @@ try {
                 const movimientos = archivo.movimientos || {};
                 const estado = archivo.repetido ? 'Reprocesado de forma segura' : 'Procesado';
                 const advertencia = archivo.advertencia_periodo ? ` El archivo indica ${escapeHtml(archivo.periodo_interno)}, pero se registró con el periodo seleccionado.` : '';
-                return `<li><strong>${escapeHtml(archivo.archivo)}</strong> · ${escapeHtml(archivo.periodo || 'Periodo no identificado')} · ${estado}: ${Number(archivo.conciliados || 0).toLocaleString('es-MX')} conciliados, ${Number(archivo.no_conciliados || 0).toLocaleString('es-MX')} sin coincidencia, ${Number(archivo.con_diferencia_consumo || 0) + Number(archivo.con_diferencia_total || 0)} con diferencia. Movimientos 01: ${Number(movimientos['01'] || 0)}, 04: ${Number(movimientos['04'] || 0)}, 06: ${Number(movimientos['06'] || 0)}, 09: ${Number(movimientos['09'] || 0)}.${advertencia}</li>`;
+                return `<li><strong>${escapeHtml(archivo.archivo)}</strong> · ${escapeHtml(archivo.periodo || 'Periodo no identificado')} · ${estado}: ${Number(archivo.conciliados || 0).toLocaleString('es-MX')} conciliados, ${Number(archivo.historicos_sin_factura || 0).toLocaleString('es-MX')} guardados como historial sin factura, ${Number(archivo.con_diferencia_consumo || 0) + Number(archivo.con_diferencia_total || 0)} con diferencia. Movimientos 01: ${Number(movimientos['01'] || 0)}, 04: ${Number(movimientos['04'] || 0)}, 06: ${Number(movimientos['06'] || 0)}, 09: ${Number(movimientos['09'] || 0)}.${advertencia}</li>`;
             }).join('');
             const errores = (data.errores || []).map(error => `<li><strong>${escapeHtml(error.archivo)}</strong>: ${escapeHtml(error.error)}</li>`).join('');
             planoResult.innerHTML = `<strong>Conciliación terminada</strong><ul>${resumen}${errores}</ul>`;

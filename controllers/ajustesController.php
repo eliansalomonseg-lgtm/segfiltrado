@@ -152,7 +152,7 @@ class AjustesController
                     throw new RuntimeException('No fue posible identificar el archivo plano.');
                 }
                 $consultaExistente = $conexion->prepare(
-                    'SELECT id, anio, mes, total_registros, conciliados, no_conciliados, con_diferencia_consumo, con_diferencia_total, errores_formato, movimientos_01, movimientos_04, movimientos_06, movimientos_09
+                    'SELECT id, anio, mes, total_registros, conciliados, no_conciliados, historicos_sin_factura, con_diferencia_consumo, con_diferencia_total, errores_formato, movimientos_01, movimientos_04, movimientos_06, movimientos_09
                      FROM cfe_archivos_planos WHERE hash_archivo = ? LIMIT 1'
                 );
                 $consultaExistente->execute([$hash]);
@@ -162,11 +162,11 @@ class AjustesController
                     $resultado = $this->conciliarArchivoPlano($conexion, $lector, $ruta, (int) $existente['id'], $anioSeleccionado, $mesSeleccionado);
                     $actualizarArchivo = $conexion->prepare(
                         'UPDATE cfe_archivos_planos
-                         SET anio = ?, mes = ?, total_registros = ?, conciliados = ?, no_conciliados = ?, con_diferencia_consumo = ?, con_diferencia_total = ?, errores_formato = ?, movimientos_01 = ?, movimientos_04 = ?, movimientos_06 = ?, movimientos_09 = ?, actualizado_en = CURRENT_TIMESTAMP
+                         SET anio = ?, mes = ?, total_registros = ?, conciliados = ?, no_conciliados = ?, historicos_sin_factura = ?, con_diferencia_consumo = ?, con_diferencia_total = ?, errores_formato = ?, movimientos_01 = ?, movimientos_04 = ?, movimientos_06 = ?, movimientos_09 = ?, actualizado_en = CURRENT_TIMESTAMP
                          WHERE id = ?'
                     );
                     $actualizarArchivo->execute([
-                        $resultado['anio'], $resultado['mes'], $resultado['total_registros'], $resultado['conciliados'], $resultado['no_conciliados'],
+                        $resultado['anio'], $resultado['mes'], $resultado['total_registros'], $resultado['conciliados'], $resultado['no_conciliados'], $resultado['historicos_sin_factura'],
                         $resultado['con_diferencia_consumo'], $resultado['con_diferencia_total'], $resultado['errores_formato'],
                         $resultado['movimientos_01'], $resultado['movimientos_04'], $resultado['movimientos_06'], $resultado['movimientos_09'], (int) $existente['id']
                     ]);
@@ -185,11 +185,11 @@ class AjustesController
                 $resultado = $this->conciliarArchivoPlano($conexion, $lector, $ruta, $archivoPlanoId, $anioSeleccionado, $mesSeleccionado);
                 $actualizarArchivo = $conexion->prepare(
                     'UPDATE cfe_archivos_planos
-                     SET anio = ?, mes = ?, total_registros = ?, conciliados = ?, no_conciliados = ?, con_diferencia_consumo = ?, con_diferencia_total = ?, errores_formato = ?, movimientos_01 = ?, movimientos_04 = ?, movimientos_06 = ?, movimientos_09 = ?
+                     SET anio = ?, mes = ?, total_registros = ?, conciliados = ?, no_conciliados = ?, historicos_sin_factura = ?, con_diferencia_consumo = ?, con_diferencia_total = ?, errores_formato = ?, movimientos_01 = ?, movimientos_04 = ?, movimientos_06 = ?, movimientos_09 = ?
                      WHERE id = ?'
                 );
                 $actualizarArchivo->execute([
-                    $resultado['anio'], $resultado['mes'], $resultado['total_registros'], $resultado['conciliados'], $resultado['no_conciliados'],
+                    $resultado['anio'], $resultado['mes'], $resultado['total_registros'], $resultado['conciliados'], $resultado['no_conciliados'], $resultado['historicos_sin_factura'],
                     $resultado['con_diferencia_consumo'], $resultado['con_diferencia_total'], $resultado['errores_formato'],
                     $resultado['movimientos_01'], $resultado['movimientos_04'], $resultado['movimientos_06'], $resultado['movimientos_09'], $archivoPlanoId
                 ]);
@@ -245,8 +245,16 @@ class AjustesController
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE consumo_id = COALESCE(VALUES(consumo_id), consumo_id), RPU = VALUES(RPU), direccion_plano = COALESCE(VALUES(direccion_plano), direccion_plano), poblacion_plano = COALESCE(VALUES(poblacion_plano), poblacion_plano), municipio_plano = COALESCE(VALUES(municipio_plano), municipio_plano), estado_plano = COALESCE(VALUES(estado_plano), estado_plano), colonia_plano = COALESCE(VALUES(colonia_plano), colonia_plano), calle_1 = COALESCE(VALUES(calle_1), calle_1), calle_2 = COALESCE(VALUES(calle_2), calle_2), carga_contratada = COALESCE(VALUES(carga_contratada), carga_contratada), carga_conectada = COALESCE(VALUES(carga_conectada), carga_conectada), medidores_instalados_declarados = COALESCE(VALUES(medidores_instalados_declarados), medidores_instalados_declarados), medidores_retirados_declarados = COALESCE(VALUES(medidores_retirados_declarados), medidores_retirados_declarados), tipo_estimacion = COALESCE(VALUES(tipo_estimacion), tipo_estimacion), actualizado_en = CURRENT_TIMESTAMP'
         );
+        $guardarHistorico = $conexion->prepare(
+            'INSERT INTO cfe_plano_historico
+             (archivo_plano_id, fila_origen, RPU, desde, hasta, fecha_facturacion, fecha_limite_pago, division_cfe, nombre_cfe, direccion_cfe, poblacion_cfe, tarifa_cfe, tipo_facturacion, tipo_movimiento, consumo, energia, iva, dap, cargos_depositos, creditos_redondeos, total, adeudo_anterior, numero_adeudo)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON DUPLICATE KEY UPDATE desde = VALUES(desde), hasta = VALUES(hasta), fecha_facturacion = COALESCE(VALUES(fecha_facturacion), fecha_facturacion), fecha_limite_pago = COALESCE(VALUES(fecha_limite_pago), fecha_limite_pago), division_cfe = COALESCE(VALUES(division_cfe), division_cfe), nombre_cfe = COALESCE(VALUES(nombre_cfe), nombre_cfe), direccion_cfe = COALESCE(VALUES(direccion_cfe), direccion_cfe), poblacion_cfe = COALESCE(VALUES(poblacion_cfe), poblacion_cfe), tarifa_cfe = COALESCE(VALUES(tarifa_cfe), tarifa_cfe), tipo_facturacion = COALESCE(VALUES(tipo_facturacion), tipo_facturacion), tipo_movimiento = COALESCE(VALUES(tipo_movimiento), tipo_movimiento), consumo = COALESCE(VALUES(consumo), consumo), energia = COALESCE(VALUES(energia), energia), iva = COALESCE(VALUES(iva), iva), dap = COALESCE(VALUES(dap), dap), cargos_depositos = COALESCE(VALUES(cargos_depositos), cargos_depositos), creditos_redondeos = COALESCE(VALUES(creditos_redondeos), creditos_redondeos), total = COALESCE(VALUES(total), total), adeudo_anterior = COALESCE(VALUES(adeudo_anterior), adeudo_anterior), numero_adeudo = COALESCE(VALUES(numero_adeudo), numero_adeudo), actualizado_en = CURRENT_TIMESTAMP'
+        );
+        $eliminarHistorico = $conexion->prepare('DELETE FROM cfe_plano_historico WHERE archivo_plano_id = ? AND fila_origen = ?');
         $resumen = [
             'anio' => $anioSeleccionado, 'mes' => $mesSeleccionado, 'total_registros' => 0, 'conciliados' => 0, 'no_conciliados' => 0,
+            'historicos_sin_factura' => 0,
             'con_diferencia_consumo' => 0, 'con_diferencia_total' => 0, 'errores_formato' => 0,
             'movimientos_01' => 0, 'movimientos_04' => 0, 'movimientos_06' => 0, 'movimientos_09' => 0,
             'periodo_interno' => null
@@ -277,6 +285,12 @@ class AjustesController
                 $guardarConciliacion->execute([$archivoPlanoId, $filaOrigen, null, 'SIN_COINCIDENCIA', $rpu, $desde, $hasta, $consumoPlano, $totalPlano, $tipoMovimiento, null, null, $motivo, json_encode($fila, JSON_UNESCAPED_UNICODE)]);
                 $this->guardarLecturasMedidoresPlano($guardarLecturaMedidor, $lector, $fila, $archivoPlanoId, $filaOrigen, $rpu, null);
                 $this->guardarDetallePlano($guardarDetallePlano, $lector, $fila, $archivoPlanoId, $filaOrigen, $rpu, null);
+                if ($coincidencias === []) {
+                    $guardarHistorico->execute($this->valoresHistoricoPlano($lector, $fila, $archivoPlanoId, $filaOrigen, $rpu, $desde, $hasta, $consumoPlano, $totalPlano, $tipoMovimiento));
+                    $resumen['historicos_sin_factura']++;
+                } else {
+                    $eliminarHistorico->execute([$archivoPlanoId, $filaOrigen]);
+                }
                 continue;
             }
             $consumo = $coincidencias[0];
@@ -309,9 +323,39 @@ class AjustesController
             $guardarConciliacion->execute([$archivoPlanoId, $filaOrigen, (int) $consumo['id'], $estado, $rpu, $desde, $hasta, $consumoPlano, $totalPlano, $tipoMovimiento, $diferenciaConsumo, $diferenciaTotal, $detalle, null]);
             $this->guardarLecturasMedidoresPlano($guardarLecturaMedidor, $lector, $fila, $archivoPlanoId, $filaOrigen, $rpu, (int) $consumo['id']);
             $this->guardarDetallePlano($guardarDetallePlano, $lector, $fila, $archivoPlanoId, $filaOrigen, $rpu, (int) $consumo['id']);
+            $eliminarHistorico->execute([$archivoPlanoId, $filaOrigen]);
             $resumen['conciliados']++;
         }
         return $resumen;
+    }
+
+    private function valoresHistoricoPlano(LectorPlanoCfe $lector, array $fila, int $archivoPlanoId, int $filaOrigen, string $rpu, string $desde, string $hasta, ?float $consumo, ?float $total, ?string $tipoMovimiento): array
+    {
+        return [
+            $archivoPlanoId,
+            $filaOrigen,
+            $rpu,
+            $desde,
+            $hasta,
+            $this->fechaPlano($lector, $fila, ['fechafacturacion'], ['aniofac'], ['mesfac'], []),
+            $this->fechaPlano($lector, $fila, ['fechalimitepago'], ['aniolim'], ['meslim'], ['dialim']),
+            $this->nuloTexto($lector->valor($fila, ['division', 'div', 'divisioncfe'])),
+            $this->nuloTexto($lector->valor($fila, ['nombre', 'nombrecliente', 'nombreservicio', 'dnombre'])),
+            $this->nuloTexto($lector->valor($fila, ['direccion', 'direcc'])),
+            $this->nuloTexto($lector->valor($fila, ['ciudad', 'dspob', 'poblacion'])),
+            $this->nuloTexto($lector->valor($fila, ['tarifa', 'tarif'])),
+            $this->nuloTexto($lector->valor($fila, ['tipofac', 'tipofacturacion'])),
+            $tipoMovimiento,
+            $consumo,
+            $lector->numero($lector->valor($fila, ['energia', 'imenergia'])),
+            $lector->numero($lector->valor($fila, ['iva', 'imiva'])),
+            $lector->numero($lector->valor($fila, ['dap', 'imdap'])),
+            $lector->numero($lector->valor($fila, ['cargosydepositos', 'cargosdepositos', 'imcarg'])),
+            $lector->numero($lector->valor($fila, ['creditosyredondeos', 'creditosredondeos', 'imcred'])),
+            $total,
+            $lector->numero($lector->valor($fila, ['importeadeudoanterior', 'adeudoanterior', 'imadeant'])),
+            $this->nuloTexto($lector->valor($fila, ['numerodeadeudo', 'numeroadeudo', 'nuadeud']))
+        ];
     }
 
     private function guardarLecturasMedidoresPlano(PDOStatement $guardarLectura, LectorPlanoCfe $lector, array $fila, int $archivoPlanoId, int $filaOrigen, string $rpu, ?int $consumoId): void
@@ -468,6 +512,7 @@ class AjustesController
             'total_registros' => (int) $datos['total_registros'],
             'conciliados' => (int) $datos['conciliados'],
             'no_conciliados' => (int) $datos['no_conciliados'],
+            'historicos_sin_factura' => (int) ($datos['historicos_sin_factura'] ?? 0),
             'con_diferencia_consumo' => (int) $datos['con_diferencia_consumo'],
             'con_diferencia_total' => (int) $datos['con_diferencia_total'],
             'errores_formato' => (int) $datos['errores_formato'],
@@ -857,6 +902,7 @@ class AjustesController
                 INDEX idx_cfe_archivos_planos_periodo (anio, mes)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
+        $this->asegurarColumna($conexion, 'cfe_archivos_planos', 'historicos_sin_factura', 'INT NOT NULL DEFAULT 0');
         $conexion->exec(
             "CREATE TABLE IF NOT EXISTS cfe_plano_conciliaciones (
                 id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -932,6 +978,39 @@ class AjustesController
                 INDEX idx_cfe_plano_detalles_consumo (consumo_id),
                 INDEX idx_cfe_plano_detalles_rpu (RPU),
                 INDEX idx_cfe_plano_detalles_ubicacion (poblacion_plano, municipio_plano)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
+        $conexion->exec(
+            "CREATE TABLE IF NOT EXISTS cfe_plano_historico (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                archivo_plano_id INT NOT NULL,
+                fila_origen INT NOT NULL,
+                RPU VARCHAR(20) NOT NULL,
+                desde DATE NOT NULL,
+                hasta DATE NOT NULL,
+                fecha_facturacion DATE NULL,
+                fecha_limite_pago DATE NULL,
+                division_cfe VARCHAR(100) NULL,
+                nombre_cfe VARCHAR(255) NULL,
+                direccion_cfe VARCHAR(255) NULL,
+                poblacion_cfe VARCHAR(255) NULL,
+                tarifa_cfe VARCHAR(30) NULL,
+                tipo_facturacion VARCHAR(30) NULL,
+                tipo_movimiento VARCHAR(2) NULL,
+                consumo DECIMAL(14,2) NULL,
+                energia DECIMAL(14,2) NULL,
+                iva DECIMAL(14,2) NULL,
+                dap DECIMAL(14,2) NULL,
+                cargos_depositos DECIMAL(14,2) NULL,
+                creditos_redondeos DECIMAL(14,2) NULL,
+                total DECIMAL(14,2) NULL,
+                adeudo_anterior DECIMAL(14,2) NULL,
+                numero_adeudo VARCHAR(100) NULL,
+                creado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                actualizado_en TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_cfe_plano_historico_origen (archivo_plano_id, fila_origen),
+                INDEX idx_cfe_plano_historico_rpu_periodo (RPU, desde, hasta),
+                INDEX idx_cfe_plano_historico_archivo (archivo_plano_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
     }

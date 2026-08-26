@@ -1290,38 +1290,63 @@ class RpuController
 
     private function historial(PDO $conexion, string $rpu): array
     {
-        $consulta = $conexion->prepare(
-            'SELECT cc.id, cc.RPU, cc.division_cfe, cc.nombre_cfe, cc.direccion_cfe, cc.poblacion_cfe, cc.tarifa_cfe,
+        $facturas = 'SELECT cc.id, cc.RPU, cc.division_cfe, cc.nombre_cfe, cc.direccion_cfe, cc.poblacion_cfe, cc.tarifa_cfe,
                     cc.tipo_periodo, cc.tipo_movimiento, cc.enriquecido_plano, cc.desde, cc.hasta, cc.dias, cc.consumo, cc.total,
                     COALESCE(cc.medidor, JSON_UNQUOTE(JSON_EXTRACT(cp.datos_json, \'$.numero\'))) AS medidor,
                     COALESCE(cc.lectura_anterior, CAST(JSON_UNQUOTE(JSON_EXTRACT(cp.datos_json, \'$.lecturaanterior\')) AS DECIMAL(18,4))) AS lectura_anterior,
                     COALESCE(cc.lectura_actual, CAST(JSON_UNQUOTE(JSON_EXTRACT(cp.datos_json, \'$.lecturaactual\')) AS DECIMAL(18,4))) AS lectura_actual,
                     COALESCE(cc.multiplicador, CAST(JSON_UNQUOTE(JSON_EXTRACT(cp.datos_json, \'$.multiplicador\')) AS DECIMAL(18,4))) AS multiplicador,
-                    cc.severidad, cc.alertas, cr.anio, cr.mes
+                    cc.severidad, cc.alertas, cr.anio, cr.mes, \'FACTURA\' AS fuente, NULL AS archivo_plano_id, NULL AS fila_origen
              FROM cfe_consumos cc FORCE INDEX (idx_cfe_consumos_rpu_id)
              INNER JOIN cfe_reportes cr ON cr.id = cc.reporte_id
              LEFT JOIN cfe_plano_conciliaciones cp ON cp.consumo_id = cc.id AND cp.estado = \'CONCILIADO\'
-             WHERE cc.RPU = ?
-             ORDER BY cr.anio DESC, cr.mes DESC, cc.hasta DESC, cc.id DESC'
+             WHERE cc.RPU = ?';
+        $parametros = [$rpu];
+        if ($this->planoHistoricoDisponible($conexion)) {
+            $facturas .= ' UNION ALL
+                SELECT h.id, h.RPU, h.division_cfe, h.nombre_cfe, h.direccion_cfe, h.poblacion_cfe, h.tarifa_cfe,
+                       NULL AS tipo_periodo, h.tipo_movimiento, 1 AS enriquecido_plano, h.desde, h.hasta, DATEDIFF(h.hasta, h.desde) + 1 AS dias, h.consumo, h.total,
+                       NULL AS medidor, NULL AS lectura_anterior, NULL AS lectura_actual, NULL AS multiplicador,
+                       0 AS severidad, \'Archivo plano histórico sin factura\' AS alertas,
+                       COALESCE(ap.anio, YEAR(h.hasta)) AS anio, COALESCE(ap.mes, MONTH(h.hasta)) AS mes,
+                       \'PLANO_HISTORICO\' AS fuente, h.archivo_plano_id, h.fila_origen
+                FROM cfe_plano_historico h
+                INNER JOIN cfe_archivos_planos ap ON ap.id = h.archivo_plano_id
+                WHERE h.RPU = ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM cfe_consumos existente
+                      WHERE existente.RPU = h.RPU AND existente.desde = h.desde AND existente.hasta = h.hasta
+                  )';
+            $parametros[] = $rpu;
+        }
+        $consulta = $conexion->prepare(
+            'SELECT * FROM (' . $facturas . ') historial
+             ORDER BY anio DESC, mes DESC, hasta DESC, id DESC'
         );
-        $consulta->execute([$rpu]);
+        $consulta->execute($parametros);
         $historial = $consulta->fetchAll();
         if (!$historial) {
             return [];
         }
         $lecturas = $conexion->prepare(
-            'SELECT consumo_id, numero_medidor, tipo_medidor, posicion, ley_medidor, lectura_anterior, lectura_actual, diferencia_lectura, multiplicador
+            'SELECT consumo_id, archivo_plano_id, fila_origen, numero_medidor, tipo_medidor, posicion, ley_medidor, lectura_anterior, lectura_actual, diferencia_lectura, multiplicador
              FROM cfe_lecturas_medidores
-             WHERE RPU = ? AND consumo_id IS NOT NULL
-             ORDER BY consumo_id, tipo_medidor, posicion'
+             WHERE RPU = ?
+             ORDER BY archivo_plano_id, fila_origen, tipo_medidor, posicion'
         );
         $lecturas->execute([$rpu]);
         $porConsumo = [];
+        $porArchivoFila = [];
         foreach ($lecturas->fetchAll() as $lectura) {
-            $porConsumo[(int) $lectura['consumo_id']][] = $lectura;
+            if ($lectura['consumo_id'] !== null) {
+                $porConsumo[(int) $lectura['consumo_id']][] = $lectura;
+            }
+            $porArchivoFila[(int) $lectura['archivo_plano_id'] . ':' . (int) $lectura['fila_origen']][] = $lectura;
         }
         foreach ($historial as &$fila) {
-            $fila['medidores'] = $porConsumo[(int) $fila['id']] ?? [];
+            $esHistorico = (string) ($fila['fuente'] ?? '') === 'PLANO_HISTORICO';
+            $llaveArchivo = (int) ($fila['archivo_plano_id'] ?? 0) . ':' . (int) ($fila['fila_origen'] ?? 0);
+            $fila['medidores'] = $esHistorico ? ($porArchivoFila[$llaveArchivo] ?? []) : ($porConsumo[(int) $fila['id']] ?? []);
             if (!$fila['medidores'] && !empty($fila['medidor'])) {
                 $fila['medidores'][] = [
                     'numero_medidor' => $fila['medidor'],
@@ -1336,6 +1361,16 @@ class RpuController
         }
         unset($fila);
         return $historial;
+    }
+
+    private function planoHistoricoDisponible(PDO $conexion): bool
+    {
+        static $disponible = null;
+        if ($disponible !== null) {
+            return $disponible;
+        }
+        $disponible = (bool) $conexion->query("SHOW TABLES LIKE 'cfe_plano_historico'")->fetchColumn();
+        return $disponible;
     }
 
     private function vinculos(PDO $conexion, string $rpu): array
@@ -1353,17 +1388,24 @@ class RpuController
 
     private function ubicacionPlano(PDO $conexion, string $rpu): array
     {
-        $consulta = $conexion->prepare(
-            'SELECT pd.direccion_plano, pd.poblacion_plano, pd.municipio_plano, pd.estado_plano, pd.colonia_plano, pd.calle_1, pd.calle_2
+        $sql = 'SELECT pd.direccion_plano, pd.poblacion_plano, pd.municipio_plano, pd.estado_plano, pd.colonia_plano, pd.calle_1, pd.calle_2
              FROM cfe_plano_detalles pd
              INNER JOIN cfe_consumos cc ON cc.id = pd.consumo_id
              INNER JOIN cfe_reportes cr ON cr.id = cc.reporte_id
              WHERE pd.RPU = ?
-               AND (pd.direccion_plano IS NOT NULL OR pd.poblacion_plano IS NOT NULL OR pd.municipio_plano IS NOT NULL OR pd.colonia_plano IS NOT NULL)
-             ORDER BY cr.anio DESC, cr.mes DESC, pd.id DESC
-             LIMIT 1'
-        );
-        $consulta->execute([$rpu]);
+               AND (pd.direccion_plano IS NOT NULL OR pd.poblacion_plano IS NOT NULL OR pd.municipio_plano IS NOT NULL OR pd.colonia_plano IS NOT NULL)';
+        $parametros = [$rpu];
+        if ($this->planoHistoricoDisponible($conexion)) {
+            $sql .= ' UNION ALL
+                SELECT pd.direccion_plano, pd.poblacion_plano, pd.municipio_plano, pd.estado_plano, pd.colonia_plano, pd.calle_1, pd.calle_2
+                FROM cfe_plano_detalles pd
+                INNER JOIN cfe_plano_historico h ON h.archivo_plano_id = pd.archivo_plano_id AND h.fila_origen = pd.fila_origen
+                WHERE h.RPU = ?
+                  AND (pd.direccion_plano IS NOT NULL OR pd.poblacion_plano IS NOT NULL OR pd.municipio_plano IS NOT NULL OR pd.colonia_plano IS NOT NULL)';
+            $parametros[] = $rpu;
+        }
+        $consulta = $conexion->prepare('SELECT * FROM (' . $sql . ') ubicaciones LIMIT 1');
+        $consulta->execute($parametros);
         $fila = $consulta->fetch();
         if (!$fila) {
             return [];

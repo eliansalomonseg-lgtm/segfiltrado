@@ -218,6 +218,7 @@ CREATE TABLE IF NOT EXISTS `cfe_archivos_planos` (
   `total_registros` INT NOT NULL DEFAULT 0,
   `conciliados` INT NOT NULL DEFAULT 0,
   `no_conciliados` INT NOT NULL DEFAULT 0,
+  `historicos_sin_factura` INT NOT NULL DEFAULT 0,
   `con_diferencia_consumo` INT NOT NULL DEFAULT 0,
   `con_diferencia_total` INT NOT NULL DEFAULT 0,
   `errores_formato` INT NOT NULL DEFAULT 0,
@@ -303,6 +304,38 @@ CREATE TABLE IF NOT EXISTS `cfe_plano_detalles` (
   INDEX `idx_cfe_plano_detalles_consumo` (`consumo_id`),
   INDEX `idx_cfe_plano_detalles_rpu` (`RPU`),
   INDEX `idx_cfe_plano_detalles_ubicacion` (`poblacion_plano`, `municipio_plano`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `cfe_plano_historico` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `archivo_plano_id` INT NOT NULL,
+  `fila_origen` INT NOT NULL,
+  `RPU` VARCHAR(20) NOT NULL,
+  `desde` DATE NOT NULL,
+  `hasta` DATE NOT NULL,
+  `fecha_facturacion` DATE NULL,
+  `fecha_limite_pago` DATE NULL,
+  `division_cfe` VARCHAR(100) NULL,
+  `nombre_cfe` VARCHAR(255) NULL,
+  `direccion_cfe` VARCHAR(255) NULL,
+  `poblacion_cfe` VARCHAR(255) NULL,
+  `tarifa_cfe` VARCHAR(30) NULL,
+  `tipo_facturacion` VARCHAR(30) NULL,
+  `tipo_movimiento` VARCHAR(2) NULL,
+  `consumo` DECIMAL(14,2) NULL,
+  `energia` DECIMAL(14,2) NULL,
+  `iva` DECIMAL(14,2) NULL,
+  `dap` DECIMAL(14,2) NULL,
+  `cargos_depositos` DECIMAL(14,2) NULL,
+  `creditos_redondeos` DECIMAL(14,2) NULL,
+  `total` DECIMAL(14,2) NULL,
+  `adeudo_anterior` DECIMAL(14,2) NULL,
+  `numero_adeudo` VARCHAR(100) NULL,
+  `creado_en` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `actualizado_en` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uq_cfe_plano_historico_origen` (`archivo_plano_id`, `fila_origen`),
+  INDEX `idx_cfe_plano_historico_rpu_periodo` (`RPU`, `desde`, `hasta`),
+  INDEX `idx_cfe_plano_historico_archivo` (`archivo_plano_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `cfe_documentos_pdf` (

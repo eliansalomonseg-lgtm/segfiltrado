@@ -327,10 +327,13 @@ function etiquetaMovimiento(row) {
         '09': ['Ajuste (09)', 'movement-adjustment']
     };
     const movimiento = etiquetas[codigo];
+    const fuente = String(row.fuente || '') === 'PLANO_HISTORICO'
+        ? 'Archivo plano histórico sin factura'
+        : 'Archivo plano';
     if (!movimiento) {
-        return '<span class="movement-pill movement-undetermined">Movimiento no determinado</span><small>Sin archivo plano</small>';
+        return `<span class="movement-pill movement-undetermined">Movimiento no determinado</span><small>${escapeHtml(fuente)}</small>`;
     }
-    return `<span class="movement-pill ${movimiento[1]}">${movimiento[0]}</span><small>Código ${escapeHtml(codigo)} · Archivo plano</small>`;
+    return `<span class="movement-pill ${movimiento[1]}">${movimiento[0]}</span><small>Código ${escapeHtml(codigo)} · ${escapeHtml(fuente)}</small>`;
 }
 
 function resumenHistorial(historial) {
