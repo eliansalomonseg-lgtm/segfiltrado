@@ -517,6 +517,21 @@ function enlaceMapaEscuela(escuela) {
     return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(consulta)}`;
 }
 
+function camposUbicacionPlano(plano) {
+    const campos = [
+        ['Dirección', 'DIRECCION / DIRECC', plano.direccion],
+        ['Colonia', 'COLONIA', plano.colonia],
+        ['Población', 'CIUDAD / DSPOB / POBLACION', plano.poblacion],
+        ['Municipio', 'MUNICIPIO / NOMBREMUNICIPIO', plano.municipio],
+        ['Estado', 'ESTADO / DSEDO', plano.estado],
+        ['Calle 1', 'CALLE1', plano.calle_1],
+        ['Calle 2', 'CALLE2', plano.calle_2]
+    ].filter(([, , valor]) => Boolean(valor));
+    return campos.length
+        ? `<div class="match-plane-source"><i class="bi bi-file-earmark-check"></i>${campos.map(([etiqueta, columna, valor]) => `<small><b>${etiqueta} [${columna}]:</b> ${matchEscape(valor)}</small>`).join('')}</div>`
+        : '';
+}
+
 function tarjetaEscuelaSugerida(escuela, rpu, atributo) {
     const certeza = certezaEscuela(escuela);
     const clase = certeza >= 70 && escuela.ubicacion_confirmada ? 'status-ok' : 'status-warn';
@@ -525,15 +540,14 @@ function tarjetaEscuelaSugerida(escuela, rpu, atributo) {
     const rpuAtributo = atributo === 'data-suggested-cct' ? `data-suggested-rpu="${matchEscape(rpu)}"` : '';
     const evidenciaTipo = escuela.evidencia_tipo ? `<small class="match-type-evidence"><i class="bi bi-tags"></i>Tipo coincide: ${matchEscape(escuela.evidencia_tipo)}</small>` : '';
     const evidencias = Array.isArray(escuela.evidencias) && escuela.evidencias.length ? `<div class="d-flex flex-wrap gap-1 mt-2">${escuela.evidencias.map(evidencia => `<span class="badge text-bg-light border fw-semibold">${matchEscape(evidencia)}</span>`).join('')}</div>` : '';
-    const comparacion = Array.isArray(escuela.comparacion) && escuela.comparacion.length ? `<div class="match-field-comparison">${escuela.comparacion.map(item => `<div class="match-field-row ${item.coincide ? 'is-match' : 'is-review'}"><span>${matchEscape(item.campo)}</span><small><b>Recibo:</b> ${matchEscape(item.cfe || 'Sin dato')}</small><small><b>Plano:</b> ${matchEscape(item.plano || 'Sin dato')}</small><small><b>Catálogo:</b> ${matchEscape(item.catalogo || 'Sin dato')}</small><i class="bi ${item.coincide ? 'bi-check-circle-fill' : 'bi-dash-circle'}"></i></div>`).join('')}</div>` : '';
+    const comparacion = '';
     return `<article class="school-match-card ${escuela.ubicacion_confirmada ? 'is-confirmed-location' : 'is-review-location'}"><div><span class="status-pill ${clase}">${certeza.toFixed(0)}% certeza</span><span class="candidate-kind">${matchEscape(tipoCandidato)}</span><strong>${matchEscape(escuela.cct)} · ${matchEscape(escuela.nombre)}</strong><small>${matchEscape(escuela.domicilio || 'Sin domicilio')}</small><small>${matchEscape(escuela.localidad || 'Sin localidad')} · ${matchEscape(escuela.municipio || 'Sin municipio')}</small><small>${matchEscape(escuela.nivel || 'Sin nivel')} · ${matchEscape(escuela.subnivel || 'Sin subnivel')} · ${matchEscape(escuela.status || 'Sin estatus')}</small>${evidenciaTipo}${evidencias}${comparacion}<small class="match-location-state"><i class="bi bi-geo-alt"></i>${matchEscape(escuela.ubicacion || etiquetaUbicacion)} · ${etiquetaUbicacion}</small><small>${matchEscape(escuela.clasificacion || escuela.fuente || 'Padrón maestro')}</small></div><div class="school-match-actions"><a class="map-school-link" href="${enlaceMapaEscuela(escuela)}" target="_blank" rel="noopener"><i class="bi bi-map"></i>Ver mapa</a><button class="btn-seg compact-action" type="button" ${rpuAtributo} ${atributo}="${matchEscape(escuela.cct)}">Vincular</button></div></article>`;
 }
 
 function renderRpuMatch(data) {
     const cfe = data.cfe || {};
     const plano = cfe.plano || {};
-    const planoUbicacion = [plano.direccion, plano.colonia, plano.poblacion, plano.municipio].filter(Boolean).join(' · ');
-    const planoDetalle = planoUbicacion ? `<small class="match-plane-source"><i class="bi bi-file-earmark-check"></i>UbicaciÃ³n del archivo plano: ${matchEscape(planoUbicacion)}</small>` : '';
+    const planoDetalle = camposUbicacionPlano(plano);
     const cfeCard = `<article class="match-cfe-card"><span>RECIBO CFE</span><strong>${matchEscape(cfe.rpu || data.rpu)} - ${matchEscape(cfe.nombre || 'Sin nombre')}</strong><small>${matchEscape(cfe.direccion || 'Sin dirección')} · ${matchEscape(cfe.poblacion || 'Sin población')}</small>${planoDetalle}<small>División ${matchEscape(cfe.division || 'Sin división')} · Tarifa ${matchEscape(cfe.tarifa || 'N/D')} · Periodo ${matchEscape(cfe.periodo || 'Sin periodo')}</small></article>`;
     const vinculados = data.vinculos || [];
     const sugerencias = data.sugerencias || [];
@@ -617,8 +631,7 @@ function renderSugerencias(data) {
     suggestionList.innerHTML = coincidencias.length ? coincidencias.map((item) => {
         const cfe = item.cfe || {};
         const plano = cfe.plano || {};
-        const planoUbicacion = [plano.direccion, plano.colonia, plano.poblacion, plano.municipio].filter(Boolean).join(' · ');
-        const planoDetalle = planoUbicacion ? `<small class="match-plane-source"><i class="bi bi-file-earmark-check"></i>Plano CFE: ${matchEscape(planoUbicacion)}</small>` : '';
+        const planoDetalle = camposUbicacionPlano(plano);
         const opciones = item.sugerencias || [];
         return `<article class="suggested-rpu-card"><div class="suggested-rpu-head"><strong>${matchEscape(item.rpu)}</strong><span class="status-pill">${matchEscape(cfe.tarifa || 'N/D')}</span></div><div class="suggested-cfe-data"><strong>${matchEscape(cfe.nombre || 'Sin nombre CFE')}</strong><small>${matchEscape(cfe.direccion || 'Sin dirección')} · ${matchEscape(cfe.poblacion || 'Sin población')}</small>${planoDetalle}<small>${matchEscape(cfe.division || 'Sin división')} · ${matchEscape(cfe.periodo || 'Sin periodo')}</small></div><div class="match-suggestions"><div class="match-title"><strong>Opciones del padrón</strong><span>${opciones.length} sugerencias</span></div>${opciones.length ? opciones.map((escuela) => cardEscuelaSugerida(escuela, item.rpu)).join('') : `<button class="manual-suggest-search" type="button" data-open-manual-rpu="${matchEscape(item.rpu)}"><i class="bi bi-search me-1"></i>Buscar este RPU manualmente</button>`}${controlCctManual(item.rpu)}</div></article>`;
     }).join('') : '<div class="empty-state"><i class="bi bi-check2-circle"></i><strong>No hay RPUs pendientes</strong><span>Todos los RPUs cargados ya tienen al menos una escuela vinculada.</span></div>';

@@ -332,9 +332,6 @@ class RpuController
         $this->validarToken();
         try {
             $conexion = Conexion::conectar();
-            $this->asegurarIndice($conexion, 'cfe_consumos', 'idx_cfe_consumos_rpu_id', 'RPU, id');
-            $this->asegurarIndice($conexion, 'escuelas', 'idx_escuelas_localidad_municipio', 'NOMBRELOC, NOMBREMUN');
-            $this->asegurarIndice($conexion, 'escuelas', 'idx_escuelas_municipio_localidad', 'NOMBREMUN, NOMBRELOC');
             $pagina = max(1, (int) ($_POST['pagina'] ?? 1));
             $porPagina = 10;
             $offset = ($pagina - 1) * $porPagina;
@@ -1461,16 +1458,10 @@ class RpuController
                 'NOMBRELOC LIKE :localidad AND NOMBREMUN LIKE :municipio',
                 ['localidad' => $referencia['localidad'] . '%', 'municipio' => $referencia['municipio'] . '%']
             ];
-            $filtrosGeograficos[] = [
-                'NOMBRELOC LIKE :localidad AND NOMBREMUN LIKE :municipio',
-                ['localidad' => '%' . $referencia['localidad'] . '%', 'municipio' => '%' . $referencia['municipio'] . '%']
-            ];
         } elseif ($referencia['localidad'] !== '') {
             $filtrosGeograficos[] = ['NOMBRELOC LIKE :localidad', ['localidad' => $referencia['localidad'] . '%']];
-            $filtrosGeograficos[] = ['NOMBRELOC LIKE :localidad', ['localidad' => '%' . $referencia['localidad'] . '%']];
         } elseif ($referencia['municipio'] !== '') {
             $filtrosGeograficos[] = ['NOMBREMUN LIKE :municipio', ['municipio' => $referencia['municipio'] . '%']];
-            $filtrosGeograficos[] = ['NOMBREMUN LIKE :municipio', ['municipio' => '%' . $referencia['municipio'] . '%']];
         }
         $filas = [];
         foreach ($filtrosGeograficos as [$filtro, $parametros]) {
@@ -1479,7 +1470,7 @@ class RpuController
                  FROM escuelas
                  WHERE ' . $filtro . '
                  ORDER BY CASE WHEN CLASIFICACION = \'ESCUELA BASICA OFICIALIZADA (ACTIVA)\' THEN 0 WHEN CLASIFICACION LIKE \'ESCUELA%\' THEN 1 ELSE 2 END, STATUS DESC
-                 LIMIT 300'
+                  LIMIT 120'
             );
             $consulta->execute($parametros);
             $filas = $consulta->fetchAll();
@@ -1502,6 +1493,10 @@ class RpuController
 
     private function indiceEscuelasPorUbicacion(PDO $conexion): array
     {
+        static $indice = null;
+        if ($indice !== null) {
+            return $indice;
+        }
         $filas = $conexion->query(
             'SELECT id, CCT, NOMBRECT, DOMICILIO, NOMBREMUN, NOMBRELOC, STATUS, SUBNIVEL, NIVEL, HOMO, TURNO, ZONA, SECTOR, ORIGEN, CLASIFICACION, TIPOCT
              FROM escuelas
@@ -1538,7 +1533,8 @@ class RpuController
                 }
             }
         }
-        return ['localidad' => $porLocalidad, 'municipio' => $porMunicipio, 'ubicacion' => $porUbicacion, 'texto' => $porTexto];
+        $indice = ['localidad' => $porLocalidad, 'municipio' => $porMunicipio, 'ubicacion' => $porUbicacion, 'texto' => $porTexto];
+        return $indice;
     }
 
     private function candidatosRapidosPorUbicacion(array $indice, array $referencia, string $nombre = '', string $direccion = ''): array
