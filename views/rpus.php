@@ -100,7 +100,11 @@ if (empty($_SESSION['seg_csrf'])) {
             </div>
             <div class="rpu-history-tools">
                 <label class="rpu-history-filter"><span>Año</span><select id="rpu-history-year"><option value="all">Todo el historial</option></select></label>
-                <label class="rpu-print-filter"><span>Formato de impresión</span><select id="rpu-print-mode"><option value="summary">Todo el periodo seleccionado</option><option value="periods">Un periodo por hoja</option></select></label>
+                <label class="rpu-print-filter"><span>Formato de impresión</span><select id="rpu-print-mode">
+                    <option value="panoramic" selected>Gráfica panorámica completa (1 sola hoja)</option>
+                    <option value="summary">Resumen anual detallado</option>
+                    <option value="periods">Un periodo por hoja</option>
+                </select></label>
                 <button id="print-rpu-history" class="btn-seg compact-action" type="button"><i class="bi bi-printer me-2"></i>Imprimir RPU</button>
                 <button id="print-rpu-table" class="btn btn-outline-dark compact-action" type="button"><i class="bi bi-table me-2"></i>Imprimir tabla</button>
                 <button id="export-rpu-excel" class="btn btn-outline-dark compact-action" type="button"><i class="bi bi-file-earmark-excel me-2"></i>Exportar Excel</button>
@@ -554,7 +558,145 @@ function abrirImpresionRpu() {
     const mode = printModeFilter.value;
     const yearLabel = historyYearFilter.value === 'all' ? 'Todo el historial' : `Año ${historyYearFilter.value}`;
     const resumen = resumenHistorial(historial);
+    const encabezado = datosEncabezadoRpu();
     const maxTotal = Math.max(...historial.map((fila) => Number(fila.total) || 0), 1);
+
+    // Generar vista panorámica de 1 sola hoja con todos los reportes (limpia y comprensible)
+    const hojaPanoramicaCompleta = (filas) => {
+        const cronologico = filas.slice().sort((a, b) => (Number(a.anio) - Number(b.anio)) || (Number(a.mes) - Number(b.mes)));
+        const maximo = Math.max(...cronologico.map((f) => Number(f.total) || 0), 1);
+        const suma = resumenHistorial(cronologico);
+        const totalBarras = cronologico.length;
+        const barWidth = Math.max(8, Math.min(24, Math.floor(940 / Math.max(totalBarras, 1))));
+
+        // Generar barras limpias sin saturación de texto
+        const barras = cronologico.map((fila, idx) => {
+            const tot = Number(fila.total) || 0;
+            const con = Number(fila.consumo) || 0;
+            const esCero = con === 0;
+            const esAjuste = String(fila.tipo_movimiento || '') === '06' || String(fila.tipo_movimiento || '') === '09' || (fila.alertas && fila.alertas.toLowerCase().includes('ajuste')) || (tot > 15000);
+            
+            // Escala visual ponderada para que los cobros normales de $240-$1,500 sean perfectamente visibles junto a picos grandes
+            const height = esAjuste
+                ? 155
+                : Math.max(14, Math.round(Math.pow(tot / maximo, 0.45) * 130));
+            
+            const barClass = esAjuste ? 'bar-ajuste' : (esCero ? 'bar-cero' : 'bar-normal');
+            
+            // Solo poner etiqueta arriba a los picos/ajustes o cobros relevantes para no amontonar texto
+            let badge = '';
+            if (esAjuste) {
+                badge = `<span class="bar-badge ajuste">AJUSTE ${money.format(tot)}</span>`;
+            } else if (tot > 3000) {
+                badge = `<span class="bar-badge normal">${money.format(tot)}</span>`;
+            }
+
+            const periodoTexto = `${String(fila.mes).padStart(2,'0')}/${String(fila.anio).slice(-2)}`;
+            const infoTooltip = `Periodo: ${fila.mes}/${fila.anio} | Total: ${money.format(tot)} | Consumo: ${number.format(con)} kWh ${esAjuste ? '(AJUSTE CFE)' : ''}`;
+
+            return `<div class="panoramic-bar" style="width:${barWidth}px" title="${escapeHtml(infoTooltip)}">
+                ${badge}
+                <i class="${barClass}" style="height:${height}px"></i>
+                <small class="bar-date">${periodoTexto}</small>
+            </div>`;
+        }).join('');
+
+        // Resumen agrupado por año para tabla inferior compacta (sin NaN)
+        const porAnio = cronologico.reduce((acc, f) => {
+            (acc[f.anio] ||= []).push(f);
+            return acc;
+        }, {});
+        
+        const filasAnuales = Object.entries(porAnio).map(([anio, items]) => {
+            const totAnio = items.reduce((s, i) => s + (Number(i.total) || 0), 0);
+            const conAnio = items.reduce((s, i) => s + (Number(i.consumo) || 0), 0);
+            const ceros = items.filter(i => (Number(i.consumo) || 0) === 0).length;
+            const ajustes = items.filter(i => String(i.tipo_movimiento || '') === '06' || String(i.tipo_movimiento || '') === '09' || (Number(i.total) || 0) > 15000).length;
+            
+            let estadoTexto = '<span class="badge-ok">Consumo normal</span>';
+            if (ceros === items.length) {
+                estadoTexto = `<span class="badge-cero">100% en 0 kWh (${ceros} recibos)</span>`;
+            } else if (ceros > 0) {
+                estadoTexto = `<span class="badge-cero">${ceros} recibos en 0 kWh</span>`;
+            }
+            if (ajustes > 0) {
+                estadoTexto += ` <span class="badge-ajuste">⚠️ ${ajustes} ajuste CFE</span>`;
+            }
+
+            return `<tr>
+                <td><strong>${anio}</strong></td>
+                <td>${items.length} recibos</td>
+                <td>${number.format(conAnio)} kWh</td>
+                <td><strong>${money.format(totAnio)}</strong></td>
+                <td>${estadoTexto}</td>
+            </tr>`;
+        }).join('');
+
+        return `<section class="panoramic-sheet">
+            <header class="panoramic-header">
+                <div class="header-titles">
+                    <span>GOBIERNO DEL ESTADO DE GUERRERO · SECRETARÍA DE EDUCACIÓN GUERRERO</span>
+                    <h1>EXPEDIENTE DE CONSUMO Y FACTURACIÓN CFE · RPU ${escapeHtml(currentRpu)}</h1>
+                    <p><strong>${escapeHtml(encabezado.nombre)}</strong> ${encabezado.cct ? `(CCT: ${escapeHtml(encabezado.cct)})` : ''} · ${escapeHtml(encabezado.domicilio || '')} ${encabezado.municipio ? `· ${escapeHtml(encabezado.municipio)}` : ''}</p>
+                </div>
+                <div class="header-badge">
+                    <span>TARIFA CFE</span>
+                    <strong>${escapeHtml(currentCfe.tarifa || '02 / PDBT')}</strong>
+                </div>
+            </header>
+
+            <div class="kpi-strip">
+                <div class="kpi-item"><span class="kpi-lbl">TOTAL FACTURADO ACUMULADO</span><strong class="kpi-val">${money.format(suma.total_acumulado)}</strong></div>
+                <div class="kpi-item"><span class="kpi-lbl">CONSUMO TOTAL ACUMULADO</span><strong class="kpi-val">${number.format(suma.consumo_acumulado)} kWh</strong></div>
+                <div class="kpi-item"><span class="kpi-lbl">TOTAL DE REPORTES REGISTRADOS</span><strong class="kpi-val">${number.format(suma.registros)} reportes CFE</strong></div>
+                <div class="kpi-item"><span class="kpi-lbl">MEDIDOR / ESTATUS</span><strong class="kpi-val">${escapeHtml(etiquetaMedidorSeleccionado() || 'Registrado en sistema')}</strong></div>
+            </div>
+
+            <div class="chart-section">
+                <div class="chart-title-bar">
+                    <span>HISTORIAL CRONOLÓGICO DE FACTURACIÓN (TODOS LOS PERIODOS CARGADOS)</span>
+                    <div class="chart-legend">
+                        <span><i class="dot dot-normal"></i> Facturación con consumo</span>
+                        <span><i class="dot dot-cero"></i> Factura en 0 kWh (cargo base / DAP)</span>
+                        <span><i class="dot dot-ajuste"></i> Ajuste / Refacturación CFE</span>
+                    </div>
+                </div>
+                <div class="panoramic-chart-wrap">
+                    <div class="panoramic-chart">${barras}</div>
+                </div>
+            </div>
+
+            <div class="summary-bottom">
+                <table class="compact-year-table">
+                    <thead>
+                        <tr>
+                            <th>Año fiscal</th>
+                            <th>Reportes</th>
+                            <th>Consumo anual</th>
+                            <th>Total facturado</th>
+                            <th>Comportamiento operativo anual</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${filasAnuales}
+                        <tr class="row-total">
+                            <td><strong>TOTAL HISTÓRICO</strong></td>
+                            <td><strong>${number.format(suma.registros)} reportes</strong></td>
+                            <td><strong>${number.format(suma.consumo_acumulado)} kWh</strong></td>
+                            <td><strong>${money.format(suma.total_acumulado)}</strong></td>
+                            <td><strong>Expediente completo</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <footer class="panoramic-footer">
+                <span>Expediente oficial generado desde el Sistema de Gestión Energética SEG · Fecha de emisión: ${new Date().toLocaleDateString('es-MX', {year:'numeric', month:'long', day:'numeric'})}</span>
+                <span>Documento oficial de consulta</span>
+            </footer>
+        </section>`;
+    };
+
     const resumenEnHoja = (filas, etiqueta) => {
         const suma = resumenHistorial(filas);
         const maximo = Math.max(...filas.map((fila) => Number(fila.total) || 0), 1);
@@ -571,13 +713,100 @@ function abrirImpresionRpu() {
             return grupos;
         }, {})).sort((a, b) => Number(a[0].anio) - Number(b[0].anio)).map((filas) => resumenEnHoja(filas, `Año ${filas[0].anio}`)).join('')
         : resumenEnHoja(historial, yearLabel);
-    const content = mode === 'periods' ? detallePorPeriodo : resumenesPorAnio;
+
+    let content = '';
+    if (mode === 'panoramic') {
+        content = hojaPanoramicaCompleta(historial);
+    } else if (mode === 'periods') {
+        content = detallePorPeriodo;
+    } else {
+        content = resumenesPorAnio;
+    }
+
     const printWindow = window.open('', '_blank', 'width=1200,height=900');
     if (!printWindow) {
         statusBox.textContent = 'El navegador bloqueo la ventana de impresión. Permite ventanas emergentes e inténtalo otra vez.';
         return;
     }
-    printWindow.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>RPU ${escapeHtml(currentRpu)}</title><style>@page{size:landscape;margin:12mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{color:#222;font-family:Arial,sans-serif;margin:0}header{border-bottom:3px solid #6a1b29;margin-bottom:18px;padding-bottom:10px}header span{color:#6a1b29;font-size:10px;font-weight:800;letter-spacing:1.2px}h1{font-size:25px;margin:5px 0}header p{color:#555;font-size:12px;margin:0}.summary-sheet,.period-sheet{break-after:page;min-height:180mm}.chart{align-items:end;display:flex;gap:10px;justify-content:space-around;min-height:265px;padding:18px 4px}.bar{align-items:center;display:grid;gap:6px;justify-items:center;min-width:58px}.bar i,.single-bar i{background:#bfa276;border:2px solid #6a1b29;border-radius:8px 8px 2px 2px;display:block;width:25px}.bar strong{font-size:10px;text-align:center}.bar small{color:#555;font-size:9px;line-height:1.3;text-align:center}table{border-collapse:collapse;font-size:10px;width:100%}th{background:#6a1b29;color:#fff;text-align:left}th,td{border:1px solid #d9d4d0;padding:6px;vertical-align:top}.period-grid{display:grid;gap:10px;grid-template-columns:repeat(4,1fr)}.period-grid div{border:1px solid #d9d4d0;padding:12px}.period-grid span,.period-grid strong{display:block}.period-grid span{color:#666;font-size:11px}.period-grid strong{font-size:17px;margin-top:5px}.single-bar{align-items:center;display:grid;gap:10px;justify-content:center;justify-items:center;min-height:310px}.single-bar strong{font-size:20px}.alerts{border-top:1px solid #d9d4d0;font-size:12px;padding-top:10px}@media print{.summary-sheet:last-child,.period-sheet:last-child{break-after:auto}}</style></head><body>${content}</body></html>`);
+    printWindow.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>RPU ${escapeHtml(currentRpu)} - Expediente</title><style>
+@page { size: landscape; margin: 8mm 10mm; }
+* { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { color: #222; font-family: 'Segoe UI', Arial, sans-serif; margin: 0; background: #fff; }
+
+/* HOJA PANORÁMICA 1 SOLA PÁGINA */
+.panoramic-sheet { height: 100vh; max-height: 190mm; display: flex; flex-direction: column; justify-content: space-between; page-break-inside: avoid; page-break-after: avoid; }
+.panoramic-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2.5px solid #6a1b29; padding-bottom: 6px; }
+.header-titles span { color: #6a1b29; font-size: 9px; font-weight: 800; letter-spacing: 1px; display: block; }
+.header-titles h1 { font-size: 20px; margin: 2px 0; color: #111; font-weight: 800; }
+.header-titles p { margin: 0; font-size: 11px; color: #444; }
+.header-badge { background: #fbf6ee; border: 1.5px solid #bfa276; border-radius: 6px; padding: 4px 10px; text-align: center; }
+.header-badge span { display: block; font-size: 8px; color: #6a1b29; font-weight: 700; }
+.header-badge strong { font-size: 14px; color: #6a1b29; }
+
+/* STRIP DE KPIS (4 COLUMNAS LIMPIAS) */
+.kpi-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 10px 0; }
+.kpi-item { background: #fdfbf9; border: 1px solid #e7ded4; border-radius: 6px; padding: 7px 12px; border-left: 3.5px solid #6a1b29; }
+.kpi-lbl { font-size: 8.5px; color: #777; font-weight: 700; display: block; letter-spacing: 0.5px; }
+.kpi-val { font-size: 14px; color: #111; font-weight: 800; margin-top: 2px; display: block; }
+
+/* SECCIÓN DE GRÁFICA PANORÁMICA */
+.chart-section { background: #fff; border: 1px solid #e7ded4; border-radius: 8px; padding: 10px 14px; flex: 1; display: flex; flex-direction: column; justify-content: space-between; min-height: 220px; max-height: 250px; margin-bottom: 10px; }
+.chart-title-bar { display: flex; justify-content: space-between; align-items: center; font-size: 9.5px; font-weight: 800; color: #6a1b29; margin-bottom: 6px; border-bottom: 1px dashed #eee; padding-bottom: 4px; }
+.chart-legend { display: flex; gap: 14px; font-size: 9px; color: #444; }
+.chart-legend span { display: flex; align-items: center; gap: 5px; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; }
+.dot-normal { background: linear-gradient(180deg, #bfa276 0%, #6a1b29 100%); }
+.dot-cero { background: #d0c8be; border: 1px solid #999; }
+.dot-ajuste { background: #d9534f; }
+
+.panoramic-chart-wrap { position: relative; width: 100%; height: 180px; display: flex; flex-direction: column; justify-content: flex-end; background: repeating-linear-gradient(to top, #f9f9f9 0px, #f9f9f9 35px, #f0f0f0 36px); border-radius: 4px; padding: 15px 4px 0 4px; border-bottom: 2px solid #6a1b29; }
+.panoramic-chart { display: flex; align-items: flex-end; justify-content: space-between; gap: 3px; height: 100%; width: 100%; }
+.panoramic-bar { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; position: relative; height: 100%; }
+.panoramic-bar i { display: block; width: 100%; border-radius: 3px 3px 0 0; min-height: 4px; transition: height 0.2s ease; }
+.bar-normal { background: linear-gradient(180deg, #bfa276 0%, #6a1b29 100%); border: 1px solid #52141f; }
+.bar-cero { background: #e2ded9; border-top: 2px solid #8e8780; border-left: 1px solid #ccc; border-right: 1px solid #ccc; }
+.bar-ajuste { background: #d9534f; border: 1px solid #b52b27; box-shadow: 0 0 6px rgba(217,83,79,0.6); }
+.bar-date { font-size: 8px; color: #555; margin-top: 5px; transform: rotate(-55deg); transform-origin: top left; white-space: nowrap; font-family: monospace; font-weight: 600; }
+.bar-badge { position: absolute; top: -16px; font-size: 7px; font-weight: 800; background: #d9534f; color: #fff; padding: 2px 4px; border-radius: 3px; white-space: nowrap; z-index: 10; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+.bar-badge.normal { background: #6a1b29; }
+
+/* TABLA INFERIOR COMPACTA */
+.summary-bottom { margin-bottom: 6px; }
+.compact-year-table { width: 100%; border-collapse: collapse; font-size: 9px; }
+.compact-year-table th { background: #6a1b29; color: #fff; padding: 4.5px 8px; text-align: left; font-size: 8.5px; letter-spacing: 0.5px; }
+.compact-year-table td { padding: 3.5px 8px; border: 1px solid #e7ded4; font-size: 9px; }
+.compact-year-table tr:nth-child(even) { background: #fdfbf9; }
+.compact-year-table tr.row-total { background: #f6efe2; font-weight: 800; border-top: 2px solid #6a1b29; }
+.badge-cero { background: #f0e6e6; color: #a94442; padding: 1.5px 5px; border-radius: 3px; font-weight: 700; font-size: 8px; }
+.badge-ok { color: #2e6b30; font-weight: 700; font-size: 8px; }
+.badge-ajuste { background: #f2dede; color: #a94442; padding: 1.5px 5px; border-radius: 3px; font-weight: 800; font-size: 8px; }
+
+/* FOOTER */
+.panoramic-footer { display: flex; justify-content: space-between; font-size: 8px; color: #888; border-top: 1px solid #e7ded4; padding-top: 4px; }
+
+/* ESTILOS DE FORMATOS ANTERIORES */
+.summary-sheet, .period-sheet { break-after: page; min-height: 180mm; }
+.chart { align-items: end; display: flex; gap: 10px; justify-content: space-around; min-height: 265px; padding: 18px 4px; }
+.bar { align-items: center; display: grid; gap: 6px; justify-items: center; min-width: 58px; }
+.bar i, .single-bar i { background: #bfa276; border: 2px solid #6a1b29; border-radius: 8px 8px 2px 2px; display: block; width: 25px; }
+.bar strong { font-size: 10px; text-align: center; }
+.bar small { color: #555; font-size: 9px; line-height: 1.3; text-align: center; }
+table { border-collapse: collapse; font-size: 10px; width: 100%; }
+th { background: #6a1b29; color: #fff; text-align: left; }
+th, td { border: 1px solid #d9d4d0; padding: 6px; vertical-align: top; }
+.period-grid { display: grid; gap: 10px; grid-template-columns: repeat(4, 1fr); }
+.period-grid div { border: 1px solid #d9d4d0; padding: 12px; }
+.period-grid span, .period-grid strong { display: block; }
+.period-grid span { color: #666; font-size: 11px; }
+.period-grid strong { font-size: 17px; margin-top: 5px; }
+.single-bar { align-items: center; display: grid; gap: 10px; justify-content: center; justify-items: center; min-height: 310px; }
+.single-bar strong { font-size: 20px; }
+.alerts { border-top: 1px solid #d9d4d0; font-size: 12px; padding-top: 10px; }
+
+@media print {
+    .summary-sheet:last-child, .period-sheet:last-child, .panoramic-sheet:last-child { break-after: auto; }
+}
+</style></head><body>${content}</body></html>`);
     printWindow.document.close();
     printWindow.focus();
     window.setTimeout(() => printWindow.print(), 800);
