@@ -238,6 +238,50 @@ function renderSchool(data) {
         : `${cfePanel(cfe)}<div class="empty-state"><i class="bi bi-link-45deg"></i><strong>RPU sin vinculo confirmado</strong><span>Este medidor todavia no tiene escuela asignada.</span></div>`;
 }
 
+function codigoIncidenciaPeriodo(fila) {
+    if (!fila) return null;
+    const medidores = Array.isArray(fila.medidores) ? fila.medidores : [];
+    const anomalias = [...new Set(medidores
+        .map((m) => String(m.anomalia || '').trim())
+        .filter((a) => a !== '' && a !== '0' && a !== '00' && a !== '000' && a !== 'N')
+    )];
+    
+    const mov = String(fila.tipo_movimiento || '').trim().padStart(2, '0');
+    const esAjusteMov = mov === '06' || mov === '09' || mov === '04';
+    const estim = String(fila.tipo_estimacion || '0').trim();
+    const esEstimada = estim !== '' && estim !== '0';
+
+    if (anomalias.length > 0 && esAjusteMov) {
+        return {
+            codigo: `Cód. ${anomalias[0]} · M${mov}`,
+            tipo: 'ajuste',
+            detalle: `Anomalía CFE: ${anomalias.join(', ')} con Movimiento ${mov}`
+        };
+    }
+    if (anomalias.length > 0) {
+        return {
+            codigo: `Cód. ${anomalias.join('/')}`,
+            tipo: 'anomalia',
+            detalle: `Código de anomalía CFE en medidor: ${anomalias.join(', ')}`
+        };
+    }
+    if (esAjusteMov) {
+        return {
+            codigo: `Mov. ${mov}`,
+            tipo: 'ajuste',
+            detalle: `Movimiento de facturación CFE ${mov} (${mov === '06' ? 'Ajuste regular' : (mov === '09' ? 'Ajuste especial' : 'Finiquito')})`
+        };
+    }
+    if (esEstimada) {
+        return {
+            codigo: `Est. ${estim}`,
+            tipo: 'estimacion',
+            detalle: `Consumo facturado por estimación CFE (Código ${estim})`
+        };
+    }
+    return null;
+}
+
 function renderChart(historial) {
     if (!historial.length) {
         chart.classList.remove('is-long-history');
@@ -252,10 +296,11 @@ function renderChart(historial) {
         const height = Math.max(8, Math.round(total / maxTotal * 120));
         const proporcion = total / maxTotal;
         const nivel = proporcion >= .999 ? 'is-peak' : (proporcion >= .75 ? 'is-high' : (proporcion >= .4 ? 'is-medium' : 'is-low'));
-        return `<div class="rpu-bar ${nivel}" title="${Math.round(proporcion * 100)}% del importe más alto de este RPU">
+        const inc = codigoIncidenciaPeriodo(row);
+        return `<div class="rpu-bar ${nivel}" title="${Math.round(proporcion * 100)}% del importe más alto de este RPU${inc ? ` · ${escapeHtml(inc.detalle)}` : ''}">
             <span style="height:${height}px"></span>
             <strong>${money.format(total)}</strong>
-            <small>${escapeHtml(row.anio)}-${String(row.mes).padStart(2, '0')}<br>${number.format(consumo)} kWh</small>
+            <small>${escapeHtml(row.anio)}-${String(row.mes).padStart(2, '0')}<br>${number.format(consumo)} kWh${inc ? `<br><span class="badge bg-danger-subtle text-danger border border-danger-subtle" style="font-size:7.5px;padding:1px 3px;font-weight:700">${escapeHtml(inc.codigo)}</span>` : ''}</small>
         </div>`;
     }).join('');
 }
@@ -569,28 +614,37 @@ function abrirImpresionRpu() {
         const totalBarras = cronologico.length;
         const barWidth = Math.max(8, Math.min(24, Math.floor(940 / Math.max(totalBarras, 1))));
 
-        // Generar barras limpias con montos arriba y periodos perfectamente legibles abajo
+        // Generar barras limpias con montos arriba, periodos y códigos de error/anomalía abajo
         const barras = cronologico.map((fila, idx) => {
             const tot = Number(fila.total) || 0;
             const con = Number(fila.consumo) || 0;
             const esCero = con === 0;
-            const esAjuste = String(fila.tipo_movimiento || '') === '06' || String(fila.tipo_movimiento || '') === '09' || (fila.alertas && fila.alertas.toLowerCase().includes('ajuste')) || (tot > 15000);
+            const esAjuste = String(fila.tipo_movimiento || '') === '06' || String(fila.tipo_movimiento || '') === '09' || (fila.alertas && fila.alertas.toLowerCase().includes('ajuste'));
+            const incidencia = codigoIncidenciaPeriodo(fila);
             
-            // Escala visual ponderada para que los cobros normales de $240-$1,500 sean perfectamente visibles junto a picos grandes
+            // Escala visual ponderada para que los cobros normales sean perfectamente visibles
             const height = esAjuste
-                ? 110
-                : Math.max(10, Math.round(Math.pow(tot / maximo, 0.45) * 95));
+                ? 95
+                : Math.max(8, Math.round(Math.pow(tot / maximo, 0.45) * 85));
             
             const barClass = esAjuste ? 'bar-ajuste' : (esCero ? 'bar-cero' : 'bar-normal');
             const valClass = esAjuste ? 'bar-val-top is-ajuste' : (esCero ? 'bar-val-top is-cero' : 'bar-val-top');
             
             const periodoTexto = `${String(fila.mes).padStart(2,'0')}/${String(fila.anio).slice(-2)}`;
-            const infoTooltip = `Periodo: ${fila.mes}/${fila.anio} | Total: ${money.format(tot)} | Consumo: ${number.format(con)} kWh ${esAjuste ? '(AJUSTE CFE)' : ''}`;
+            const infoTooltip = `Periodo: ${fila.mes}/${fila.anio} | Total: ${money.format(tot)} | Consumo: ${number.format(con)} kWh ${esAjuste ? '(AJUSTE CFE)' : ''}${incidencia ? ` | ${incidencia.detalle}` : ''}`;
+            const badgeError = incidencia
+                ? `<span class="bar-error-badge is-${incidencia.tipo}" title="${escapeHtml(incidencia.detalle)}">${escapeHtml(incidencia.codigo)}</span>`
+                : '';
 
             return `<div class="panoramic-bar" style="width:${barWidth}px" title="${escapeHtml(infoTooltip)}">
-                <span class="${valClass}" title="${money.format(tot)}">${money.format(tot)}</span>
-                <i class="${barClass}" style="height:${height}px"></i>
-                <span class="bar-date">${periodoTexto}</span>
+                <div class="bar-col-top">
+                    <span class="${valClass}" title="${money.format(tot)}">${money.format(tot)}</span>
+                    <i class="${barClass}" style="height:${height}px"></i>
+                </div>
+                <div class="bar-col-bottom">
+                    <span class="bar-date">${periodoTexto}</span>
+                    ${badgeError}
+                </div>
             </div>`;
         }).join('');
 
@@ -604,7 +658,7 @@ function abrirImpresionRpu() {
             const totAnio = items.reduce((s, i) => s + (Number(i.total) || 0), 0);
             const conAnio = items.reduce((s, i) => s + (Number(i.consumo) || 0), 0);
             const ceros = items.filter(i => (Number(i.consumo) || 0) === 0).length;
-            const ajustes = items.filter(i => String(i.tipo_movimiento || '') === '06' || String(i.tipo_movimiento || '') === '09' || (Number(i.total) || 0) > 15000).length;
+            const ajustes = items.filter(i => String(i.tipo_movimiento || '') === '06' || String(i.tipo_movimiento || '') === '09' || (i.alertas && i.alertas.toLowerCase().includes('ajuste'))).length;
             
             let estadoTexto = '<span class="badge-ok">Consumo normal</span>';
             if (ceros === items.length) {
@@ -652,6 +706,7 @@ function abrirImpresionRpu() {
                         <span><i class="dot dot-normal"></i> Facturación con consumo</span>
                         <span><i class="dot dot-cero"></i> Factura en 0 kWh (cargo base / DAP)</span>
                         <span><i class="dot dot-ajuste"></i> Ajuste / Refacturación CFE</span>
+                        <span><span class="legend-err-sample">Cód. XX</span> Código anomalía / error CFE</span>
                     </div>
                 </div>
                 <div class="panoramic-chart-wrap">
@@ -695,7 +750,8 @@ function abrirImpresionRpu() {
         const maximo = Math.max(...filas.map((fila) => Number(fila.total) || 0), 1);
         const barras = filas.map((fila) => {
             const height = Math.max(10, Math.round((Number(fila.total) || 0) / maximo * 180));
-            return `<div class="bar"><i style="height:${height}px"></i><strong>${money.format(fila.total || 0)}</strong><small>${escapeHtml(fila.anio)}-${String(fila.mes).padStart(2, '0')}<br>${number.format(fila.consumo || 0)} kWh</small></div>`;
+            const inc = codigoIncidenciaPeriodo(fila);
+            return `<div class="bar"><i style="height:${height}px"></i><strong>${money.format(fila.total || 0)}</strong><small>${escapeHtml(fila.anio)}-${String(fila.mes).padStart(2, '0')}<br>${number.format(fila.consumo || 0)} kWh${inc ? `<br><b style="color:#b91c1c;font-size:7.5px;font-family:monospace">${escapeHtml(inc.codigo)}</b>` : ''}</small></div>`;
         }).join('');
         return `<section class="summary-sheet"><header><span>SECRETARÍA DE EDUCACIÓN GUERRERO</span><h1>RPU ${escapeHtml(currentRpu)}</h1><p>${escapeHtml(etiqueta)} · ${number.format(suma.registros)} reportes · Total acumulado ${money.format(suma.total_acumulado)} · Consumo ${number.format(suma.consumo_acumulado)} kWh</p><small>${escapeHtml(etiquetaMedidorSeleccionado())}</small></header><div class="chart">${barras}</div><table><thead><tr><th>Periodo</th><th>Total</th><th>Consumo</th><th>Tarifa</th><th>Alertas</th></tr></thead><tbody>${filas.slice().reverse().map((fila) => `<tr><td>${escapeHtml(fila.anio)}-${String(fila.mes).padStart(2, '0')}</td><td>${money.format(fila.total || 0)}</td><td>${number.format(fila.consumo || 0)} kWh</td><td>${escapeHtml(fila.tarifa_cfe || 'Sin tarifa')}</td><td>${escapeHtml(fila.alertas || 'Sin alertas')}</td></tr>`).join('')}</tbody></table></section>`;
     };
@@ -743,18 +799,21 @@ body { color: #222; font-family: 'Segoe UI', Arial, sans-serif; margin: 0; backg
 .kpi-val { font-size: 14px; color: #111; font-weight: 800; margin-top: 2px; display: block; }
 
 /* SECCIÓN DE GRÁFICA PANORÁMICA */
-.chart-section { background: #fff; border: 1px solid #e7ded4; border-radius: 8px; padding: 10px 14px 12px 14px; flex: 1; display: flex; flex-direction: column; justify-content: space-between; min-height: 250px; max-height: 275px; margin-bottom: 8px; }
+.chart-section { background: #fff; border: 1px solid #e7ded4; border-radius: 8px; padding: 8px 14px 10px 14px; flex: 1; display: flex; flex-direction: column; justify-content: space-between; min-height: 255px; max-height: 285px; margin-bottom: 6px; }
 .chart-title-bar { display: flex; justify-content: space-between; align-items: center; font-size: 9.5px; font-weight: 800; color: #6a1b29; margin-bottom: 6px; border-bottom: 1px dashed #eee; padding-bottom: 4px; }
-.chart-legend { display: flex; gap: 14px; font-size: 9px; color: #444; }
-.chart-legend span { display: flex; align-items: center; gap: 5px; }
+.chart-legend { display: flex; gap: 12px; font-size: 8.5px; color: #444; }
+.chart-legend span { display: flex; align-items: center; gap: 4px; }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; }
 .dot-normal { background: linear-gradient(180deg, #bfa276 0%, #6a1b29 100%); }
 .dot-cero { background: #d0c8be; border: 1px solid #999; }
 .dot-ajuste { background: #d9534f; }
+.legend-err-sample { font-size: 7.5px; font-weight: 800; color: #991b1b; background: #fee2e2; border: 0.5px solid #ef4444; border-radius: 2px; padding: 1px 4px; font-family: monospace; display: inline-block; }
 
-.panoramic-chart-wrap { position: relative; width: 100%; height: 215px; display: flex; flex-direction: column; justify-content: flex-end; background: repeating-linear-gradient(to top, #fcfcfc 0px, #fcfcfc 35px, #f3f0eb 36px); border-radius: 4px; padding: 6px 6px 0 6px; border-bottom: 2px solid #6a1b29; }
-.panoramic-chart { display: flex; align-items: flex-end; justify-content: space-between; gap: 4px; height: 100%; width: 100%; }
-.panoramic-bar { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; position: relative; height: 100%; }
+.panoramic-chart-wrap { position: relative; width: 100%; height: 230px; display: flex; flex-direction: column; justify-content: flex-end; background: repeating-linear-gradient(to top, #fcfcfc 0px, #fcfcfc 35px, #f3f0eb 36px); border-radius: 4px; padding: 6px 6px 2px 6px; border-bottom: 2px solid #6a1b29; }
+.panoramic-chart { display: flex; align-items: stretch; justify-content: space-between; gap: 4px; height: 100%; width: 100%; }
+.panoramic-bar { display: flex; flex-direction: column; align-items: center; justify-content: space-between; position: relative; height: 100%; }
+.bar-col-top { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; width: 100%; }
+.bar-col-bottom { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; width: 100%; padding-top: 3px; min-height: 48px; }
 .panoramic-bar i { display: block; width: 100%; border-radius: 3px 3px 0 0; min-height: 5px; transition: height 0.2s ease; }
 .bar-normal { background: linear-gradient(180deg, #bfa276 0%, #6a1b29 100%); border: 1px solid #52141f; }
 .bar-cero { background: #e2ded9; border-top: 2px solid #8e8780; border-left: 1px solid #ccc; border-right: 1px solid #ccc; }
@@ -766,7 +825,13 @@ body { color: #222; font-family: 'Segoe UI', Arial, sans-serif; margin: 0; backg
 .bar-val-top.is-cero { color: #888; font-weight: 600; }
 
 /* Fechas de periodo abajo */
-.bar-date { font-size: 8px; color: #6a1b29; font-weight: 800; writing-mode: vertical-rl; transform: rotate(180deg); margin-top: 5px; margin-bottom: 2px; white-space: nowrap; font-family: monospace; letter-spacing: 0.5px; background: #faf6f0; border-radius: 2px; padding: 3px 1px; border: 0.5px solid #e7ded4; }
+.bar-date { font-size: 8px; color: #6a1b29; font-weight: 800; writing-mode: vertical-rl; transform: rotate(180deg); margin-top: 0; margin-bottom: 2px; white-space: nowrap; font-family: monospace; letter-spacing: 0.5px; background: #faf6f0; border-radius: 2px; padding: 3px 1px; border: 0.5px solid #e7ded4; }
+
+/* Códigos de error / anomalía / ajuste debajo de cada fecha */
+.bar-error-badge { font-size: 7px; font-weight: 800; writing-mode: vertical-rl; transform: rotate(180deg); margin-top: 1px; margin-bottom: 0; white-space: nowrap; font-family: 'Consolas', monospace; letter-spacing: -0.3px; line-height: 1; border-radius: 2px; padding: 3px 1px; }
+.bar-error-badge.is-anomalia { color: #991b1b; background: #fee2e2; border: 0.5px solid #ef4444; }
+.bar-error-badge.is-ajuste { color: #991b1b; background: #fecaca; border: 0.5px solid #dc2626; font-weight: 900; }
+.bar-error-badge.is-estimacion { color: #92400e; background: #fef3c7; border: 0.5px solid #f59e0b; }
 
 /* TABLA INFERIOR COMPACTA */
 .summary-bottom { margin-bottom: 6px; }

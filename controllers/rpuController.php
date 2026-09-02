@@ -1326,7 +1326,7 @@ class RpuController
             return [];
         }
         $lecturas = $conexion->prepare(
-            'SELECT consumo_id, archivo_plano_id, fila_origen, numero_medidor, tipo_medidor, posicion, ley_medidor, lectura_anterior, lectura_actual, diferencia_lectura, multiplicador
+            'SELECT consumo_id, archivo_plano_id, fila_origen, numero_medidor, tipo_medidor, posicion, ley_medidor, anomalia, lectura_anterior, lectura_actual, diferencia_lectura, multiplicador
              FROM cfe_lecturas_medidores
              WHERE RPU = ?
              ORDER BY archivo_plano_id, fila_origen, tipo_medidor, posicion'
@@ -1340,9 +1340,26 @@ class RpuController
             }
             $porArchivoFila[(int) $lectura['archivo_plano_id'] . ':' . (int) $lectura['fila_origen']][] = $lectura;
         }
+
+        $estimacionesPorConsumo = [];
+        $estimacionesPorArchivo = [];
+        try {
+            $stmtDet = $conexion->prepare('SELECT consumo_id, archivo_plano_id, fila_origen, tipo_estimacion FROM cfe_plano_detalles WHERE RPU = ?');
+            $stmtDet->execute([$rpu]);
+            foreach ($stmtDet->fetchAll() as $det) {
+                if ($det['consumo_id'] !== null) {
+                    $estimacionesPorConsumo[(int) $det['consumo_id']] = (string) $det['tipo_estimacion'];
+                }
+                $estimacionesPorArchivo[(int) $det['archivo_plano_id'] . ':' . (int) $det['fila_origen']] = (string) $det['tipo_estimacion'];
+            }
+        } catch (Throwable) {}
+
         foreach ($historial as &$fila) {
             $esHistorico = (string) ($fila['fuente'] ?? '') === 'PLANO_HISTORICO';
             $llaveArchivo = (int) ($fila['archivo_plano_id'] ?? 0) . ':' . (int) ($fila['fila_origen'] ?? 0);
+            $fila['tipo_estimacion'] = $esHistorico
+                ? ($estimacionesPorArchivo[$llaveArchivo] ?? '0')
+                : ($estimacionesPorConsumo[(int) $fila['id']] ?? '0');
             $fila['medidores'] = $esHistorico ? ($porArchivoFila[$llaveArchivo] ?? []) : ($porConsumo[(int) $fila['id']] ?? []);
             if (!$fila['medidores'] && !empty($fila['medidor'])) {
                 $fila['medidores'][] = [
