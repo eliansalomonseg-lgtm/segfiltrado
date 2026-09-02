@@ -569,7 +569,7 @@ function abrirImpresionRpu() {
         const totalBarras = cronologico.length;
         const barWidth = Math.max(8, Math.min(24, Math.floor(940 / Math.max(totalBarras, 1))));
 
-        // Generar barras limpias sin saturación de texto
+        // Generar barras limpias con montos arriba y periodos perfectamente legibles abajo
         const barras = cronologico.map((fila, idx) => {
             const tot = Number(fila.total) || 0;
             const con = Number(fila.consumo) || 0;
@@ -578,26 +578,19 @@ function abrirImpresionRpu() {
             
             // Escala visual ponderada para que los cobros normales de $240-$1,500 sean perfectamente visibles junto a picos grandes
             const height = esAjuste
-                ? 155
-                : Math.max(14, Math.round(Math.pow(tot / maximo, 0.45) * 130));
+                ? 110
+                : Math.max(10, Math.round(Math.pow(tot / maximo, 0.45) * 95));
             
             const barClass = esAjuste ? 'bar-ajuste' : (esCero ? 'bar-cero' : 'bar-normal');
+            const valClass = esAjuste ? 'bar-val-top is-ajuste' : (esCero ? 'bar-val-top is-cero' : 'bar-val-top');
             
-            // Solo poner etiqueta arriba a los picos/ajustes o cobros relevantes para no amontonar texto
-            let badge = '';
-            if (esAjuste) {
-                badge = `<span class="bar-badge ajuste">AJUSTE ${money.format(tot)}</span>`;
-            } else if (tot > 3000) {
-                badge = `<span class="bar-badge normal">${money.format(tot)}</span>`;
-            }
-
             const periodoTexto = `${String(fila.mes).padStart(2,'0')}/${String(fila.anio).slice(-2)}`;
             const infoTooltip = `Periodo: ${fila.mes}/${fila.anio} | Total: ${money.format(tot)} | Consumo: ${number.format(con)} kWh ${esAjuste ? '(AJUSTE CFE)' : ''}`;
 
             return `<div class="panoramic-bar" style="width:${barWidth}px" title="${escapeHtml(infoTooltip)}">
-                ${badge}
+                <span class="${valClass}" title="${money.format(tot)}">${money.format(tot)}</span>
                 <i class="${barClass}" style="height:${height}px"></i>
-                <small class="bar-date">${periodoTexto}</small>
+                <span class="bar-date">${periodoTexto}</span>
             </div>`;
         }).join('');
 
@@ -750,7 +743,7 @@ body { color: #222; font-family: 'Segoe UI', Arial, sans-serif; margin: 0; backg
 .kpi-val { font-size: 14px; color: #111; font-weight: 800; margin-top: 2px; display: block; }
 
 /* SECCIÓN DE GRÁFICA PANORÁMICA */
-.chart-section { background: #fff; border: 1px solid #e7ded4; border-radius: 8px; padding: 10px 14px; flex: 1; display: flex; flex-direction: column; justify-content: space-between; min-height: 220px; max-height: 250px; margin-bottom: 10px; }
+.chart-section { background: #fff; border: 1px solid #e7ded4; border-radius: 8px; padding: 10px 14px 12px 14px; flex: 1; display: flex; flex-direction: column; justify-content: space-between; min-height: 250px; max-height: 275px; margin-bottom: 8px; }
 .chart-title-bar { display: flex; justify-content: space-between; align-items: center; font-size: 9.5px; font-weight: 800; color: #6a1b29; margin-bottom: 6px; border-bottom: 1px dashed #eee; padding-bottom: 4px; }
 .chart-legend { display: flex; gap: 14px; font-size: 9px; color: #444; }
 .chart-legend span { display: flex; align-items: center; gap: 5px; }
@@ -759,16 +752,21 @@ body { color: #222; font-family: 'Segoe UI', Arial, sans-serif; margin: 0; backg
 .dot-cero { background: #d0c8be; border: 1px solid #999; }
 .dot-ajuste { background: #d9534f; }
 
-.panoramic-chart-wrap { position: relative; width: 100%; height: 180px; display: flex; flex-direction: column; justify-content: flex-end; background: repeating-linear-gradient(to top, #f9f9f9 0px, #f9f9f9 35px, #f0f0f0 36px); border-radius: 4px; padding: 15px 4px 0 4px; border-bottom: 2px solid #6a1b29; }
-.panoramic-chart { display: flex; align-items: flex-end; justify-content: space-between; gap: 3px; height: 100%; width: 100%; }
+.panoramic-chart-wrap { position: relative; width: 100%; height: 215px; display: flex; flex-direction: column; justify-content: flex-end; background: repeating-linear-gradient(to top, #fcfcfc 0px, #fcfcfc 35px, #f3f0eb 36px); border-radius: 4px; padding: 6px 6px 0 6px; border-bottom: 2px solid #6a1b29; }
+.panoramic-chart { display: flex; align-items: flex-end; justify-content: space-between; gap: 4px; height: 100%; width: 100%; }
 .panoramic-bar { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; position: relative; height: 100%; }
-.panoramic-bar i { display: block; width: 100%; border-radius: 3px 3px 0 0; min-height: 4px; transition: height 0.2s ease; }
+.panoramic-bar i { display: block; width: 100%; border-radius: 3px 3px 0 0; min-height: 5px; transition: height 0.2s ease; }
 .bar-normal { background: linear-gradient(180deg, #bfa276 0%, #6a1b29 100%); border: 1px solid #52141f; }
 .bar-cero { background: #e2ded9; border-top: 2px solid #8e8780; border-left: 1px solid #ccc; border-right: 1px solid #ccc; }
-.bar-ajuste { background: #d9534f; border: 1px solid #b52b27; box-shadow: 0 0 6px rgba(217,83,79,0.6); }
-.bar-date { font-size: 8px; color: #555; margin-top: 5px; transform: rotate(-55deg); transform-origin: top left; white-space: nowrap; font-family: monospace; font-weight: 600; }
-.bar-badge { position: absolute; top: -16px; font-size: 7px; font-weight: 800; background: #d9534f; color: #fff; padding: 2px 4px; border-radius: 3px; white-space: nowrap; z-index: 10; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
-.bar-badge.normal { background: #6a1b29; }
+.bar-ajuste { background: #d9534f; border: 1px solid #b52b27; box-shadow: 0 0 6px rgba(217,83,79,0.5); }
+
+/* Montos arriba de cada periodo */
+.bar-val-top { font-size: 7.5px; font-weight: 800; color: #333; writing-mode: vertical-rl; transform: rotate(180deg); margin-bottom: 4px; white-space: nowrap; font-family: 'Segoe UI', Arial, sans-serif; letter-spacing: -0.2px; line-height: 1; text-shadow: 0 0 2px #fff; }
+.bar-val-top.is-ajuste { color: #c02622; font-weight: 900; background: #fee2e2; border-radius: 2px; padding: 2px 1px; }
+.bar-val-top.is-cero { color: #888; font-weight: 600; }
+
+/* Fechas de periodo abajo */
+.bar-date { font-size: 8px; color: #6a1b29; font-weight: 800; writing-mode: vertical-rl; transform: rotate(180deg); margin-top: 5px; margin-bottom: 2px; white-space: nowrap; font-family: monospace; letter-spacing: 0.5px; background: #faf6f0; border-radius: 2px; padding: 3px 1px; border: 0.5px solid #e7ded4; }
 
 /* TABLA INFERIOR COMPACTA */
 .summary-bottom { margin-bottom: 6px; }
