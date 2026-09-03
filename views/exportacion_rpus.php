@@ -47,9 +47,9 @@ if (empty($_SESSION['seg_csrf'])) {
             <textarea id="annual-rpus" name="rpus" rows="8" placeholder="Ejemplo:&#10;275920302458&#10;289960200152&#10;293190600871" required></textarea>
             <div class="annual-period-controls">
                 <label><span>Desde mes</span><select id="annual-start-month"><?php foreach ([1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril', 5 => 'Mayo', 6 => 'Junio', 7 => 'Julio', 8 => 'Agosto', 9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre'] as $numero => $nombre): ?><option value="<?= $numero ?>" <?= $numero === 1 ? 'selected' : '' ?>><?= $nombre ?></option><?php endforeach; ?></select></label>
-                <label><span>Desde año</span><input id="annual-start-year" type="number" min="2021" max="2100" value="2021"></label>
+                <label><span>Desde año</span><input id="annual-start-year" type="number" min="2000" max="2100" value="2020"></label>
                 <label><span>Hasta mes</span><select id="annual-end-month"><?php foreach ([1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril', 5 => 'Mayo', 6 => 'Junio', 7 => 'Julio', 8 => 'Agosto', 9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre'] as $numero => $nombre): ?><option value="<?= $numero ?>" <?= $numero === (int) date('n') ? 'selected' : '' ?>><?= $nombre ?></option><?php endforeach; ?></select></label>
-                <label><span>Hasta año</span><input id="annual-end-year" type="number" min="2021" max="2100" value="<?= (int) date('Y') ?>"></label>
+                <label><span>Hasta año</span><input id="annual-end-year" type="number" min="2000" max="2100" value="<?= (int) date('Y') ?>"></label>
             </div>
             <div class="annual-export-actions">
                 <button class="btn-seg" type="submit"><i class="bi bi-search me-2"></i>Comprobar servicios</button>

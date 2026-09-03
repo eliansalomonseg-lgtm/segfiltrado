@@ -1022,10 +1022,10 @@ class RpuController
 
     private function rangoExportacionAnual(): array
     {
-        $inicio = [(int) ($_POST['anio_inicio'] ?? 2021), (int) ($_POST['mes_inicio'] ?? 1)];
+        $inicio = [(int) ($_POST['anio_inicio'] ?? 2020), (int) ($_POST['mes_inicio'] ?? 1)];
         $fin = [(int) ($_POST['anio_fin'] ?? date('Y')), (int) ($_POST['mes_fin'] ?? date('n'))];
         foreach ([$inicio, $fin] as [$anio, $mes]) {
-            if ($anio < 2021 || $anio > 2100 || $mes < 1 || $mes > 12) {
+            if ($anio < 2000 || $anio > 2100 || $mes < 1 || $mes > 12) {
                 throw new RuntimeException('Selecciona un rango de meses valido.');
             }
         }
