@@ -1354,6 +1354,11 @@ class RpuController
             }
         } catch (Throwable) {}
 
+        $stmtUpdateAlertas = null;
+        try {
+            $stmtUpdateAlertas = $conexion->prepare('UPDATE cfe_consumos SET alertas = ? WHERE id = ?');
+        } catch (Throwable) {}
+
         foreach ($historial as &$fila) {
             $esHistorico = (string) ($fila['fuente'] ?? '') === 'PLANO_HISTORICO';
             $llaveArchivo = (int) ($fila['archivo_plano_id'] ?? 0) . ':' . (int) ($fila['fila_origen'] ?? 0);
@@ -1372,9 +1377,67 @@ class RpuController
                     'multiplicador' => $fila['multiplicador']
                 ];
             }
+
+            // Normalizar texto de alertas: eliminar alertas pasadas/ruido y formatear ajustes de fecha a fecha
+            $alertaLimpia = $this->normalizarAlertasFila($fila);
+            if ($stmtUpdateAlertas !== null && !$esHistorico && !empty($fila['id']) && (string)($fila['alertas'] ?? '') !== $alertaLimpia) {
+                try {
+                    $stmtUpdateAlertas->execute([$alertaLimpia, (int) $fila['id']]);
+                } catch (Throwable) {}
+            }
+            $fila['alertas'] = $alertaLimpia;
         }
         unset($fila);
         return $historial;
+    }
+
+    public function normalizarAlertasFila(array $fila): string
+    {
+        $mov = str_pad(trim((string) ($fila['tipo_movimiento'] ?? '')), 2, '0', STR_PAD_LEFT);
+        $esAjusteMov = in_array($mov, ['06', '09', '04'], true);
+        $dias = is_numeric($fila['dias'] ?? null) ? (int) $fila['dias'] : null;
+        $desde = trim((string) ($fila['desde'] ?? ''));
+        $hasta = trim((string) ($fila['hasta'] ?? ''));
+
+        $formatear = static function (string $f): string {
+            if (!$f || !str_contains($f, '-')) return $f;
+            $parts = explode('-', $f);
+            return count($parts) === 3 ? "{$parts[2]}/{$parts[1]}/{$parts[0]}" : $f;
+        };
+
+        $textoPeriodoAjuste = ($desde !== '' && $hasta !== '')
+            ? 'Ajuste del ' . $formatear($desde) . ' al ' . $formatear($hasta)
+            : ($esAjusteMov ? 'Ajuste CFE' : '');
+
+        $esPeriodoAjuste = $esAjusteMov || ($dias !== null && ($dias > 75 || $dias < 0 || $dias <= 15));
+
+        $partes = array_filter(array_map('trim', explode('|', (string) ($fila['alertas'] ?? ''))));
+        $limpias = [];
+
+        if ($esPeriodoAjuste && $textoPeriodoAjuste !== '') {
+            $limpias[] = $textoPeriodoAjuste;
+        }
+
+        foreach ($partes as $al) {
+            // Eliminar ruido de importación mensual de lote
+            if (stripos($al, 'fuera del mes del reporte') !== false) {
+                continue;
+            }
+            if (stripos($al, 'periodo no coincide') !== false) {
+                if ($esPeriodoAjuste) {
+                    continue; // Ya colocado como "Ajuste del DD/MM/AAAA al DD/MM/AAAA"
+                }
+                if ($dias !== null && $dias > 0) {
+                    $limpias[] = "Periodo de {$dias} días";
+                }
+                continue;
+            }
+            if (!in_array($al, $limpias, true)) {
+                $limpias[] = $al;
+            }
+        }
+
+        return $limpias !== [] ? implode(' | ', $limpias) : 'Sin alertas';
     }
 
     private function planoHistoricoDisponible(PDO $conexion): bool

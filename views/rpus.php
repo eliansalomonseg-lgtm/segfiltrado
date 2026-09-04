@@ -305,16 +305,77 @@ function renderChart(historial) {
     }).join('');
 }
 
+function formatearFechaCorta(fecha) {
+    if (!fecha || !fecha.includes('-')) return fecha || '';
+    const partes = fecha.split('-');
+    return partes.length === 3 ? `${partes[2]}/${partes[1]}/${partes[0]}` : fecha;
+}
+
+function limpiarAlertasRpu(fila) {
+    if (!fila) return 'Sin alertas';
+    const mov = String(fila.tipo_movimiento || '').trim().padStart(2, '0');
+    const esAjusteMov = mov === '06' || mov === '09' || mov === '04';
+    const dias = Number(fila.dias);
+    const desde = fila.desde || '';
+    const hasta = fila.hasta || '';
+
+    const textoPeriodoAjuste = (desde && hasta)
+        ? `Ajuste del ${formatearFechaCorta(desde)} al ${formatearFechaCorta(hasta)}`
+        : (esAjusteMov ? `Ajuste CFE` : '');
+
+    const esPeriodoAjuste = esAjusteMov || (Number.isFinite(dias) && (dias > 75 || dias < 0 || dias <= 15));
+
+    const partes = String(fila.alertas || '').split('|').map((s) => s.trim()).filter(Boolean);
+    const limpias = [];
+
+    if (esPeriodoAjuste && textoPeriodoAjuste) {
+        limpias.push(textoPeriodoAjuste);
+    }
+
+    for (const al of partes) {
+        if (al.toLowerCase().includes('fuera del mes del reporte')) {
+            continue;
+        }
+        if (al.toLowerCase().includes('periodo no coincide')) {
+            if (esPeriodoAjuste) {
+                continue;
+            }
+            if (Number.isFinite(dias) && dias > 0) {
+                limpias.push(`Periodo de ${dias} días`);
+            }
+            continue;
+        }
+        if (!limpias.includes(al)) {
+            limpias.push(al);
+        }
+    }
+
+    return limpias.length ? limpias.join(' | ') : 'Sin alertas';
+}
+
+function etiquetaMovimientoTexto(row) {
+    const codigo = String(row.tipo_movimiento || '').trim().padStart(2, '0');
+    if (codigo === '01') return 'Normal (01)';
+    if (codigo === '06') return 'Ajuste Reg. (06)';
+    if (codigo === '09') return 'Ajuste Esp. (09)';
+    if (codigo === '04') return 'Finiquito (04)';
+    return codigo ? `Mov. ${codigo}` : 'No determinado';
+}
+
 function renderHistory(historial) {
     historyBody.innerHTML = historial.length
-        ? historial.slice().reverse().map((row) => `<tr>
+        ? historial.slice().reverse().map((row) => {
+            const alerta = limpiarAlertasRpu(row);
+            const esAjuste = String(row.tipo_movimiento || '').includes('06') || String(row.tipo_movimiento || '').includes('09') || alerta.startsWith('Ajuste');
+            return `<tr class="${esAjuste ? 'row-ajuste-table' : ''}">
             <td><strong>${escapeHtml(row.anio)}-${String(row.mes).padStart(2, '0')}</strong><small>${escapeHtml(row.desde || '')} / ${escapeHtml(row.hasta || '')}</small></td>
             <td><strong>${money.format(row.total || 0)}</strong><small>${escapeHtml(row.tarifa_cfe || 'Sin tarifa')}</small></td>
             <td><strong>${number.format(row.consumo || 0)}</strong><small>kWh</small></td>
             <td>${lecturasFacturadas(row)}</td>
             <td>${etiquetaMovimiento(row)}</td>
-            <td><span class="status-pill ${Number(row.severidad) >= 4 ? 'status-warn' : 'status-ok'}">Sev. ${escapeHtml(row.severidad || 0)}</span><small>${escapeHtml(row.alertas || 'Sin alertas')}</small></td>
-        </tr>`).join('')
+            <td><span class="status-pill ${Number(row.severidad) >= 4 || esAjuste ? 'status-warn' : 'status-ok'}">Sev. ${escapeHtml(row.severidad || 0)}</span><small class="${esAjuste ? 'text-danger fw-bold' : ''}">${escapeHtml(alerta)}</small></td>
+        </tr>`;
+        }).join('')
         : '<tr><td colspan="6" class="empty-state"><i class="bi bi-clock-history"></i><strong>Sin historial</strong><span>Analiza reportes en Ajustes CFE para alimentar esta vista.</span></td></tr>';
 }
 
@@ -436,7 +497,11 @@ function tablaRpuAnual(historial, paraExcel = false, mostrarFechas = false) {
     return gruposAnuales(historial).map(([anio, filas]) => {
         const total = filas.reduce((suma, fila) => suma + Number(fila.total || 0), 0);
         const consumo = filas.reduce((suma, fila) => suma + Number(fila.consumo || 0), 0);
-        const detalle = filas.slice().reverse().map((fila) => `<tr><td>${escapeHtml(fila.anio)}-${String(fila.mes).padStart(2, '0')}</td>${mostrarFechas ? `<td>${escapeHtml(fila.desde || 'Sin fecha')}</td><td>${escapeHtml(fila.hasta || 'Sin fecha')}</td>` : `<td>${escapeHtml(diasFacturados(fila))}</td>`}<td>${escapeHtml(fila.tarifa_cfe || 'Sin tarifa')}</td><td class="currency">${paraExcel ? Number(fila.total || 0).toFixed(2) : money.format(fila.total || 0)}</td><td>${paraExcel ? Number(fila.consumo || 0).toFixed(0) : `${number.format(fila.consumo || 0)} kWh`}</td><td>${escapeHtml(textoLecturas(fila) || 'Sin archivo plano')}</td><td>${escapeHtml(fila.tipo_movimiento || 'No determinado')}</td><td>${escapeHtml(fila.alertas || 'Sin alertas')}</td></tr>`).join('');
+        const detalle = filas.slice().reverse().map((fila) => {
+            const alerta = limpiarAlertasRpu(fila);
+            const fechas = (fila.desde && fila.hasta) ? `${formatearFechaCorta(fila.desde)} al ${formatearFechaCorta(fila.hasta)}` : 'Sin fechas';
+            return `<tr><td>${escapeHtml(fila.anio)}-${String(fila.mes).padStart(2, '0')}</td>${mostrarFechas ? `<td>${escapeHtml(formatearFechaCorta(fila.desde || ''))}</td><td>${escapeHtml(formatearFechaCorta(fila.hasta || ''))}</td>` : `<td>${escapeHtml(diasFacturados(fila))}</td>`}<td>${escapeHtml(fila.tarifa_cfe || 'Sin tarifa')}</td><td class="currency">${paraExcel ? Number(fila.total || 0).toFixed(2) : money.format(fila.total || 0)}</td><td>${paraExcel ? Number(fila.consumo || 0).toFixed(0) : `${number.format(fila.consumo || 0)} kWh`}</td><td>${escapeHtml(textoLecturas(fila) || 'Sin archivo plano')}</td><td>${escapeHtml(etiquetaMovimientoTexto(fila))}</td><td>${escapeHtml(alerta)}</td></tr>`;
+        }).join('');
         const subtotal = mostrarFechas
             ? `<tr class="rpu-year-total"><td colspan="4">TOTAL DEL AÑO ${escapeHtml(anio)} - ${number.format(filas.length)} reportes</td><td class="currency">${paraExcel ? total.toFixed(2) : money.format(total)}</td><td>${paraExcel ? consumo.toFixed(0) : `${number.format(consumo)} kWh`}</td><td colspan="3"></td></tr>`
             : `<tr class="rpu-year-total"><td colspan="3">TOTAL DEL AÑO ${escapeHtml(anio)} - ${number.format(filas.length)} reportes</td><td class="currency">${paraExcel ? total.toFixed(2) : money.format(total)}</td><td>${paraExcel ? consumo.toFixed(0) : `${number.format(consumo)} kWh`}</td><td colspan="3"></td></tr>`;
@@ -508,17 +573,91 @@ function etiquetaMedidorSeleccionado() {
 }
 
 function contenidoImpresionFormal(historial) {
-    const hojas = gruposAnuales(historial).map(([anio, filas]) => `<section class="rpu-print-sheet" style="break-after:page;min-height:180mm">${encabezadoFormalRpu(`Relacion anual de pagos - ${anio}`)}<table class="rpu-export-table"><thead><tr><th>Periodo</th><th>Desde</th><th>Hasta</th><th>Tarifa</th><th>Importe pagado</th><th>Consumo</th><th>Lectura actual - anterior</th><th>Movimiento</th><th>Alertas</th></tr></thead><tbody>${tablaRpuAnual(filas, false, true)}</tbody></table></section>`).join('');
+    const encabezado = datosEncabezadoRpu();
     const resumen = resumenGeneralRpu(historial);
     const vigencia = estadoVigenciaRpu();
-    const filasResumen = gruposAnuales(historial).map(([anio, filas]) => {
-        const totalAnual = resumenGeneralRpu(filas);
-        return `<tr><td>AÑO ${escapeHtml(anio)}</td><td>${number.format(totalAnual.reportes)}</td><td>${money.format(totalAnual.total)}</td><td>${number.format(totalAnual.consumo)} kWh</td></tr>`;
+    const grupos = gruposAnuales(historial);
+
+    const cuerpoTabla = grupos.map(([anio, filas]) => {
+        const totalAnio = filas.reduce((s, f) => s + Number(f.total || 0), 0);
+        const consumoAnio = filas.reduce((s, f) => s + Number(f.consumo || 0), 0);
+
+        const filasAnio = filas.slice().reverse().map((fila) => {
+            const alerta = limpiarAlertasRpu(fila);
+            const fechas = (fila.desde && fila.hasta) ? `${formatearFechaCorta(fila.desde)} - ${formatearFechaCorta(fila.hasta)}` : 'Sin fechas';
+            const mov = etiquetaMovimientoTexto(fila);
+            const esAjuste = String(fila.tipo_movimiento || '').includes('06') || String(fila.tipo_movimiento || '').includes('09') || alerta.startsWith('Ajuste');
+            return `<tr class="${esAjuste ? 'row-ajuste' : ''}">
+                <td class="cell-center"><strong>${escapeHtml(fila.anio)}-${String(fila.mes).padStart(2, '0')}</strong></td>
+                <td class="cell-center cell-fechas">${escapeHtml(fechas)}</td>
+                <td class="cell-center">${escapeHtml(fila.tarifa_cfe || 'Sin tarifa')}</td>
+                <td class="cell-right"><strong>${money.format(fila.total || 0)}</strong></td>
+                <td class="cell-right">${number.format(fila.consumo || 0)} kWh</td>
+                <td>${escapeHtml(textoLecturas(fila) || 'Sin archivo plano')}</td>
+                <td class="cell-center"><span class="badge-mov ${esAjuste ? 'badge-ajuste' : ''}">${escapeHtml(mov)}</span></td>
+                <td class="${esAjuste ? 'alerta-ajuste' : ''}">${escapeHtml(alerta)}</td>
+            </tr>`;
+        }).join('');
+
+        return `<tr class="rpu-year-separator">
+            <td colspan="3"><span class="year-title">AÑO FISCAL ${escapeHtml(anio)}</span> <span class="year-badge">(${filas.length} recibos)</span></td>
+            <td class="cell-right"><strong>${money.format(totalAnio)}</strong></td>
+            <td class="cell-right"><strong>${number.format(consumoAnio)} kWh</strong></td>
+            <td colspan="3" class="cell-subtotal-text">Subtotal anual acumulado ${escapeHtml(anio)}</td>
+        </tr>${filasAnio}`;
     }).join('');
-    const tablaResumen = `<table class="rpu-export-table"><thead><tr><th>Año</th><th>Reportes</th><th>Importe pagado</th><th>Consumo</th></tr></thead><tbody>${filasResumen}<tr class="rpu-year-total"><td>TOTAL DE TODOS LOS AÑOS</td><td>${number.format(resumen.reportes)}</td><td>${money.format(resumen.total)}</td><td>${number.format(resumen.consumo)} kWh</td></tr></tbody></table>`;
-    const colorEstatus = vigencia.activo ? '#087957' : '#a34726';
-    const tablaVigencia = `<table class="rpu-export-table" style="margin-bottom:16px"><thead><tr><th>Primer periodo con reporte</th><th>Ultimo periodo con reporte</th><th>Estatus del RPU</th></tr></thead><tbody><tr><td>${escapeHtml(vigencia.desde)}</td><td>${escapeHtml(vigencia.hasta)}</td><td style="color:${colorEstatus};font-weight:800">${escapeHtml(vigencia.estado)}</td></tr></tbody></table>`;
-    return `${hojas}<section class="rpu-print-total" style="min-height:180mm">${encabezadoFormalRpu('Resumen general del historial')}${tablaVigencia}${tablaResumen}</section>`;
+
+    return `<section class="rpu-sheet-page">
+        <header class="rpu-doc-header">
+            <div class="doc-header-left">
+                <span class="doc-org">GOBIERNO DEL ESTADO DE GUERRERO · SECRETARÍA DE EDUCACIÓN GUERRERO</span>
+                <h1 class="doc-title">EXPEDIENTE DE FACTURACIÓN Y CONSUMO CFE · RPU ${escapeHtml(currentRpu)}</h1>
+                <p class="doc-meta"><strong>${escapeHtml(encabezado.nombre)}</strong> ${encabezado.cct ? `· <b>CCT:</b> ${escapeHtml(encabezado.cct)}` : ''} · ${escapeHtml(encabezado.domicilio || '')} ${encabezado.municipio ? `· ${escapeHtml(encabezado.municipio)}` : ''}</p>
+            </div>
+            <div class="doc-header-right">
+                <div class="doc-tariff">
+                    <span>TARIFA CFE</span>
+                    <strong>${escapeHtml(currentCfe.tarifa || '02 / PDBT')}</strong>
+                </div>
+            </div>
+        </header>
+
+        <div class="doc-kpis">
+            <div class="kpi-card"><span class="kpi-tag">TOTAL FACTURADO HISTÓRICO</span><strong class="kpi-num">${money.format(resumen.total)}</strong></div>
+            <div class="kpi-card"><span class="kpi-tag">CONSUMO HISTÓRICO</span><strong class="kpi-num">${number.format(resumen.consumo)} kWh</strong></div>
+            <div class="kpi-card"><span class="kpi-tag">RECIBOS CARGADOS</span><strong class="kpi-num">${number.format(resumen.reportes)} periodos</strong></div>
+            <div class="kpi-card"><span class="kpi-tag">ESTATUS DE VIGENCIA</span><strong class="kpi-num" style="color:${vigencia.activo ? '#166534' : '#991b1b'}">${escapeHtml(vigencia.estado)} (${escapeHtml(vigencia.desde)} a ${escapeHtml(vigencia.hasta)})</strong></div>
+        </div>
+
+        <table class="rpu-sheet-table">
+            <thead>
+                <tr>
+                    <th style="width:68px">Periodo</th>
+                    <th style="width:130px">Fechas recibo</th>
+                    <th style="width:52px">Tarifa</th>
+                    <th style="width:95px;text-align:right">Importe CFE</th>
+                    <th style="width:90px;text-align:right">Consumo</th>
+                    <th style="width:170px">Lectura actual - anterior</th>
+                    <th style="width:95px">Movimiento</th>
+                    <th>Alertas e Incidencias</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${cuerpoTabla}
+                <tr class="rpu-grand-total">
+                    <td colspan="3"><strong>TOTAL GENERAL CONSOLIDADO (${number.format(resumen.reportes)} RECIBOS)</strong></td>
+                    <td class="cell-right"><strong>${money.format(resumen.total)}</strong></td>
+                    <td class="cell-right"><strong>${number.format(resumen.consumo)} kWh</strong></td>
+                    <td colspan="3">Historial completo oficial verificado</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <footer class="doc-footer">
+            <span>Sistema Integral de Gestión y Auditoría Eléctrica · Secretaría de Educación Guerrero · Emitido: ${new Date().toLocaleDateString('es-MX', {year:'numeric', month:'long', day:'numeric'})}</span>
+            <span>RPU ${escapeHtml(currentRpu)} · Hoja de expediente oficial</span>
+        </footer>
+    </section>`;
 }
 
 function escapeXml(value) {
@@ -532,7 +671,7 @@ function celdaExcel(valor, tipo = 'String', estilo = '') {
 function hojaExcelAnual(anio, filas) {
     const encabezado = datosEncabezadoRpu();
     const total = resumenGeneralRpu(filas);
-    const datos = filas.slice().reverse().map((fila) => `<Row>${celdaExcel(`${fila.anio}-${String(fila.mes).padStart(2, '0')}`)}${celdaExcel(diasFacturados(fila))}${celdaExcel(fila.tarifa_cfe || 'Sin tarifa')}${celdaExcel(Number(fila.total || 0), 'Number', 'Currency')}${celdaExcel(Number(fila.consumo || 0), 'Number', 'Integer')}${celdaExcel(textoLecturas(fila) || 'Sin archivo plano')}${celdaExcel(fila.tipo_movimiento || 'No determinado')}${celdaExcel(fila.alertas || 'Sin alertas')}</Row>`).join('');
+    const datos = filas.slice().reverse().map((fila) => `<Row>${celdaExcel(`${fila.anio}-${String(fila.mes).padStart(2, '0')}`)}${celdaExcel(diasFacturados(fila))}${celdaExcel(fila.tarifa_cfe || 'Sin tarifa')}${celdaExcel(Number(fila.total || 0), 'Number', 'Currency')}${celdaExcel(Number(fila.consumo || 0), 'Number', 'Integer')}${celdaExcel(textoLecturas(fila) || 'Sin archivo plano')}${celdaExcel(etiquetaMovimientoTexto(fila))}${celdaExcel(limpiarAlertasRpu(fila))}</Row>`).join('');
     const filaCct = encabezado.cct ? `<Row><Cell ss:MergeAcross="7"><Data ss:Type="String">CCT vinculado: ${escapeXml(encabezado.cct)}</Data></Cell></Row>` : '';
     return `<Worksheet ss:Name="${escapeXml(String(anio))}"><Table><Column ss:Width="90"/><Column ss:Width="105"/><Column ss:Width="65"/><Column ss:Width="105"/><Column ss:Width="90"/><Column ss:Width="155"/><Column ss:Width="90"/><Column ss:Width="220"/><Row><Cell ss:MergeAcross="7" ss:StyleID="Institution"><Data ss:Type="String">SECRETARIA DE EDUCACION GUERRERO</Data></Cell></Row><Row><Cell ss:MergeAcross="7" ss:StyleID="Title"><Data ss:Type="String">RPU ${escapeXml(currentRpu)}</Data></Cell></Row><Row><Cell ss:MergeAcross="7" ss:StyleID="Name"><Data ss:Type="String">${escapeXml(encabezado.nombre)}</Data></Cell></Row>${filaCct}<Row><Cell ss:MergeAcross="7"><Data ss:Type="String">${escapeXml([encabezado.domicilio, encabezado.localidad, encabezado.municipio].filter(Boolean).join(' - '))}</Data></Cell></Row><Row/><Row>${['Periodo', 'Días facturados', 'Tarifa', 'Importe pagado', 'Consumo', 'Lectura actual - anterior', 'Movimiento', 'Alertas'].map((titulo) => celdaExcel(titulo, 'String', 'TableHeader')).join('')}</Row>${datos}<Row>${celdaExcel(`TOTAL ${anio} - ${filas.length} reportes`, 'String', 'TotalLabel')}<Cell ss:MergeAcross="1" ss:StyleID="TotalLabel"/><Cell ss:StyleID="TotalLabel"/>${celdaExcel(total.total, 'Number', 'TotalCurrency')}${celdaExcel(total.consumo, 'Number', 'TotalInteger')}<Cell ss:MergeAcross="2" ss:StyleID="TotalLabel"/></Row></Table></Worksheet>`;
 }
@@ -568,12 +707,48 @@ function imprimirTablaRpu() {
     const historial = validarTablaRpu();
     if (!historial) return;
     const contenido = contenidoImpresionFormal(historial);
-    const printWindow = window.open('', '_blank', 'width=1150,height=850');
+    const printWindow = window.open('', '_blank', 'width=1200,height=900');
     if (!printWindow) {
         statusBox.textContent = 'El navegador bloqueo la ventana de impresion. Permite ventanas emergentes e intentalo otra vez.';
         return;
     }
-    printWindow.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>RPU ${escapeHtml(currentRpu)}</title><style>@page{size:landscape;margin:12mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{color:#222;font-family:Arial,sans-serif;margin:0}.rpu-export-header{border-bottom:3px solid #6a1b29;margin-bottom:16px;padding-bottom:10px}.rpu-export-header span{color:#6a1b29;font-size:10px;font-weight:800;letter-spacing:1.1px}.rpu-export-header h1{font-size:26px;margin:5px 0}.rpu-export-header p{font-size:12px;margin:3px 0}.rpu-export-header small{color:#666;font-size:10px}.rpu-export-table{border-collapse:collapse;font-size:10px;width:100%}.rpu-export-table th{background:#6a1b29;color:#fff;text-align:left}.rpu-export-table th,.rpu-export-table td{border:1px solid #d9d4d0;padding:7px;vertical-align:top}.rpu-year-label td{background:#f6efe2;color:#6a1b29;font-size:11px;font-weight:800}.rpu-year-total td{background:#f8f0f1;font-weight:800}.rpu-export-table td:nth-child(5),.rpu-export-table td:nth-child(6){text-align:right;white-space:nowrap}</style></head><body>${contenido}</body></html>`);
+    printWindow.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>RPU ${escapeHtml(currentRpu)} - Expediente</title><style>
+@page { size: landscape; margin: 6mm 8mm; }
+* { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { color: #1a1a1a; font-family: 'Segoe UI', Arial, sans-serif; margin: 0; background: #fff; font-size: 8px; line-height: 1.25; }
+.rpu-sheet-page { width: 100%; display: flex; flex-direction: column; justify-content: space-between; page-break-inside: avoid; }
+.rpu-doc-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2.5px solid #6a1b29; padding-bottom: 4px; margin-bottom: 5px; }
+.doc-org { color: #6a1b29; font-size: 8px; font-weight: 800; letter-spacing: 0.8px; display: block; }
+.doc-title { font-size: 16px; margin: 2px 0; color: #111; font-weight: 800; }
+.doc-meta { margin: 0; font-size: 10px; color: #333; }
+.doc-tariff { background: #fbf6ee; border: 1.5px solid #bfa276; border-radius: 4px; padding: 3px 8px; text-align: center; }
+.doc-tariff span { font-size: 7.5px; color: #6a1b29; font-weight: 700; display: block; }
+.doc-tariff strong { font-size: 13px; color: #6a1b29; }
+.doc-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 6px; }
+.kpi-card { background: #fdfbf9; border: 1px solid #e7ded4; border-left: 3.5px solid #6a1b29; border-radius: 4px; padding: 3px 6px; }
+.kpi-tag { font-size: 7px; color: #666; font-weight: 700; display: block; letter-spacing: 0.3px; }
+.kpi-num { font-size: 11.5px; color: #111; font-weight: 800; display: block; margin-top: 1px; }
+.rpu-sheet-table { width: 100%; border-collapse: collapse; font-size: 8px; }
+.rpu-sheet-table th { background: #6a1b29; color: #fff; padding: 3.5px 5px; text-align: left; font-size: 7.5px; font-weight: 700; letter-spacing: 0.3px; border: 1px solid #5a1421; }
+.rpu-sheet-table td { border: 1px solid #ddd6cf; padding: 2.5px 5px; vertical-align: middle; }
+.rpu-year-separator td { background: #f6efe2; color: #6a1b29; font-size: 8px; font-weight: 800; border-top: 1.5px solid #bfa276; border-bottom: 1.5px solid #bfa276; padding: 3px 5px; }
+.year-title { font-size: 8.5px; font-weight: 800; }
+.year-badge { font-size: 7.5px; font-weight: normal; color: #555; }
+.cell-subtotal-text { font-size: 7.5px; color: #666; font-style: italic; }
+.rpu-grand-total td { background: #f8f0f1; font-weight: 800; border-top: 2px solid #6a1b29; font-size: 8.5px; padding: 4px 6px; }
+.row-ajuste { background: #fff5f5; }
+.alerta-ajuste { color: #991b1b; font-weight: 700; }
+.badge-mov { display: inline-block; padding: 1px 4px; border-radius: 3px; font-size: 7px; font-weight: 600; background: #f3f4f6; color: #374151; }
+.badge-ajuste { background: #fee2e2; color: #991b1b; font-weight: 800; border: 0.5px solid #ef4444; }
+.cell-center { text-align: center; }
+.cell-right { text-align: right; white-space: nowrap; }
+.cell-fechas { font-family: monospace; font-size: 7px; }
+.doc-footer { display: flex; justify-content: space-between; font-size: 7px; color: #888; border-top: 1px solid #e7ded4; margin-top: 4px; padding-top: 2px; }
+@media print {
+    body { background: #fff; }
+    .rpu-sheet-page { page-break-inside: avoid; }
+}
+</style></head><body>${contenido}</body></html>`);
     printWindow.document.close();
     printWindow.focus();
     window.setTimeout(() => printWindow.print(), 700);
